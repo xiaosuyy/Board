@@ -38,7 +38,7 @@ import com.board.ime.dictionary.DictionarySource
         Device::class,
         SyncOperation::class,
     ],
-    version = 7,
+    version = 9,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -257,6 +257,55 @@ abstract class BoardDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8：剪贴板内容「内联 / 文件」分流。
+         *
+         * SQLite 通过 `CursorWindow`（约 2MB）读数据，单行超过它就会
+         * `Row too big to fit into CursorWindow`，而且会让整个列表 / 搜索查询一起失败。
+         * 所以超长文本改存 Board 私有目录的文件，数据库里只留元信息。
+         *
+         * 三个新列都有默认值，老数据（全部是内联）一条不丢：
+         * - `contentStorage` 默认 INLINE
+         * - `contentFilePath` 默认空
+         * - `contentSize` 用 SQL 直接按现有内容长度回填
+         */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE clipboard_item ADD COLUMN contentStorage TEXT NOT NULL DEFAULT 'INLINE'",
+                )
+                db.execSQL(
+                    "ALTER TABLE clipboard_item ADD COLUMN contentFilePath TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL(
+                    "ALTER TABLE clipboard_item ADD COLUMN contentSize INTEGER NOT NULL DEFAULT 0",
+                )
+                // 老数据都是内联的，顺便把大小补上（SQLite 的 length() 对 TEXT 返回字符数）
+                db.execSQL("UPDATE clipboard_item SET contentSize = length(content)")
+            }
+        }
+
+        /**
+         * v9：给剪贴板加**轻量搜索索引**（内容开头约 2KB）。
+         *
+         * 文件型条目的 `content` 是空的，只用 `content LIKE` 会「搜不到大文本」。
+         * `searchText` 保存开头一小段，搜索时 `content LIKE OR searchText LIKE`，
+         * 两种存储都能命中，又不会把几十 MB 正文带进索引。
+         *
+         * 老数据用 `substr(content, 1, 2048)` 回填 —— SQLite 只物化这一小段，
+         * 不会把整行大内容读出来。
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE clipboard_item ADD COLUMN searchText TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL(
+                    "UPDATE clipboard_item SET searchText = substr(content, 1, 2048)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: BoardDatabase? = null
 
@@ -310,6 +359,8 @@ abstract class BoardDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
                 )
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

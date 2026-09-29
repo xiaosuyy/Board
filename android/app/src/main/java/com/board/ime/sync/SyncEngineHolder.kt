@@ -30,6 +30,7 @@ object SyncEngineHolder {
             sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector {
                 preferences.skipSensitiveClipboard
             },
+            contentStore = ClipboardRepository.contentStoreFor(context),
         )
         val dictionaryRepository = com.board.ime.dictionary.DictionaryRepository(
             database.dictionaryDao(),

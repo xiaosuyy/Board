@@ -46,7 +46,10 @@ class BoardSettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         preferences = BoardPreferences(this)
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
-        clipboardRepository = ClipboardRepository(BoardDatabase.get(this).clipboardDao())
+        clipboardRepository = ClipboardRepository(
+            BoardDatabase.get(this).clipboardDao(),
+            contentStore = ClipboardRepository.contentStoreFor(this),
+        )
 
         setContentView(buildHome())
     }

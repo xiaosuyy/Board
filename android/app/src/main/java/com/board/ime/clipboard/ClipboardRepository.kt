@@ -1,5 +1,6 @@
 package com.board.ime.clipboard
 
+import android.content.Context
 import android.util.Log
 import com.board.ime.database.dao.ClipboardDao
 import com.board.ime.database.dao.SyncOperationDao
@@ -10,6 +11,7 @@ import com.board.ime.sync.SyncEvent
 import com.board.ime.sync.SyncLog
 import com.board.ime.sync.SyncOperationAction
 import com.board.ime.sync.SyncOperationStatus
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,17 +29,6 @@ enum class ClipboardCaptureResult {
 
     /** 空内容 */
     SKIPPED_EMPTY,
-
-    /**
-     * 内容超过「单行可读」上限。
-     *
-     * 这不是人为的长度策略：SQLite 的 `CursorWindow` 只有约 2MB，
-     * 单行内容超过它之后 `SELECT` 会直接抛
-     * `Row too big to fit into CursorWindow` —— 写进去也读不回来，
-     * 而且会让整个列表查询一起失败。所以这里**明确拒绝**，
-     * 既不截断也不留下一条读不出来的记录。
-     */
-    SKIPPED_TOO_LARGE,
 }
 
 /** 剪贴板统计，用于「清空全部历史」的二次确认文案 */
@@ -63,22 +54,33 @@ enum class ClipboardCaptureSource {
 /**
  * 剪贴板仓库（本地存储 + 同步任务）。
  *
- * 去重规则：按内容哈希判断。同一段文本反复复制**不会**产生新记录，
- * 只会刷新它的「最近使用时间」；如果它之前被删掉了，就复活它。
- * 这样历史里同一内容永远只有一条，同时最近用过的自然排在最前。
+ * ## 存储策略（本轮重点）
  *
- * 敏感内容策略见 [ClipboardSensitivityDetector]：判定为敏感的内容按
- * [ClipboardSyncPolicy.DO_NOT_SAVE] 直接不入库。
+ * 内容有两种存放方式，见 [ClipboardContentStorage]：
+ * - 小文本 → 直接存 SQLite 的 `content` 列
+ * - 大文本 → 存 Board 私有目录的文件，库里只留路径 + 大小 + hash
  *
- * 同步相关的两个职责：
- * 1. 本机复制 → 写 `sync_operation` 队列（只保留一条待推送，由 SyncEngine 消费）
- * 2. 远端内容落库时带 [ClipboardCaptureSource.REMOTE] + 抑制窗口，
- *    防止「远端写入 → 系统回调 → 又上传」的回环
+ * 判断依据是 **UTF-8 字节数**（`inlineMaxBytes`）。为什么必须分流：
+ * Android 的 SQLite 用 `CursorWindow`（约 2MB）取数据，**单行超过它就读不回来**
+ * （`Row too big to fit into CursorWindow`），而且会让整个列表 / 搜索查询一起失败。
+ *
+ * ## 读路径
+ *
+ * 列表 / 搜索 / 去重全部走 [ClipboardSummary]（不含 content）；
+ * 只有「全文」和「插到输入框」才调用 [loadContent]。
+ * 因此**任何大小的文本都不可能把列表查询搞崩**。
+ *
+ * ## 同步
+ *
+ * 小文本走 SyncClipboard 的 `text` 字段；大文本走 `/file/{dataName}`
+ * （映射见 [SyncClipboardMapper.INLINE_TEXT_MAX_BYTES]），不生成超大 JSON。
  */
 class ClipboardRepository(
     private val dao: ClipboardDao,
     private val syncOperationDao: SyncOperationDao? = null,
     private val sensitivityDetector: ClipboardSensitivityDetector = HeuristicClipboardSensitivityDetector(),
+    /** 大文本文件仓库；为 null 时全部内联（老调用点兼容） */
+    private val contentStore: ClipboardContentStore? = null,
 ) {
 
     /** 串行化抓取：系统的剪贴板回调可能连续触发多次 */
@@ -86,6 +88,16 @@ class ClipboardRepository(
 
     /** 刚由同步写进来的内容：这段时间内系统回调不再产生上传任务 */
     private val suppressed = HashMap<String, Long>()
+
+    /**
+     * 阈值：UTF-8 字节数超过它就走文件。
+     *
+     * 取值经过实测（见 `releases/Board-Android-v0.1.2-clipboard-notes.md`）：
+     * 256KB 会让文件数量明显变多而收益很小；512KB 时列表查询依然毫秒级，
+     * 且远低于 CursorWindow 的 2MB 上限，留足余量。
+     */
+    @Volatile
+    var inlineMaxBytes: Long = DEFAULT_INLINE_MAX_BYTES
 
     /**
      * 最近一次由远端写入本地的哈希。
@@ -99,18 +111,19 @@ class ClipboardRepository(
 
     // ---------------------------------------------------------------- 读取
 
+    /** 列表：只返回不含 content 的投影 */
     fun observe(
         limit: Int = DEFAULT_LIMIT,
         remoteOnly: Boolean = false,
-    ): Flow<List<ClipboardItem>> =
+    ): Flow<List<ClipboardSummary>> =
         if (remoteOnly) dao.observeByOrigin(ClipboardOrigin.REMOTE, limit) else dao.observeActive(limit)
 
-    /** 空查询等同于「最近」；非空时走 SQLite LIKE，本地即时过滤 */
+    /** 空查询等同于「最近」；非空时走 SQLite LIKE，本地即时过滤（不加载完整内容） */
     fun search(
         query: String,
         limit: Int = DEFAULT_LIMIT,
         remoteOnly: Boolean = false,
-    ): Flow<List<ClipboardItem>> {
+    ): Flow<List<ClipboardSummary>> {
         val keyword = query.trim()
         return when {
             keyword.isEmpty() && remoteOnly -> dao.observeByOrigin(ClipboardOrigin.REMOTE, limit)
@@ -126,11 +139,42 @@ class ClipboardRepository(
         favorite = dao.countFavorite(),
     )
 
-    suspend fun find(id: Long): ClipboardItem? = dao.findById(id)
+    suspend fun find(id: Long): ClipboardSummary? = dao.findSummaryById(id)
 
-    suspend fun findByHash(hash: String): ClipboardItem? = dao.findByHash(hash)
+    suspend fun findByHash(hash: String): ClipboardSummary? = dao.findSummaryByHash(hash)
 
-    suspend fun latestActive(): ClipboardItem? = dao.latestActive()
+    suspend fun latestActive(): ClipboardSummary? = dao.latestSummary()
+
+    /** 列表投影（供宿主 UI 用） */
+    suspend fun list(limit: Int = DEFAULT_LIMIT): List<ClipboardSummary> = dao.active(limit)
+
+    // ---------------------------------------------------------------- 完整内容
+
+    /**
+     * 按 id 取完整内容。
+     *
+     * - INLINE：直接读 `content` 列
+     * - FILE：读文件；文件丢了返回 null（界面显示「文件缺失」而不是崩）
+     *
+     * **这是唯一会触碰完整内容的读路径**。
+     */
+    suspend fun loadContent(id: Long): String? {
+        val item = dao.findById(id) ?: return null
+        return loadContent(item)
+    }
+
+    suspend fun loadContent(item: ClipboardItem): String? = when (item.contentStorage) {
+        ClipboardContentStorage.INLINE -> item.content
+        ClipboardContentStorage.FILE -> contentStore?.read(item.contentFilePath)
+    }
+
+    suspend fun loadContent(summary: ClipboardSummary): String? = loadContent(summary.id)
+
+    /** 内容是否还能读到（文件型条目用来在界面上标注） */
+    suspend fun isContentAvailable(summary: ClipboardSummary): Boolean = when (summary.contentStorage) {
+        ClipboardContentStorage.INLINE -> true
+        ClipboardContentStorage.FILE -> contentStore?.exists(summary.contentFilePath) == true
+    }
 
     // ---------------------------------------------------------------- 抓取
 
@@ -143,21 +187,9 @@ class ClipboardRepository(
         val text = content.trim()
         if (text.isEmpty()) return ClipboardCaptureResult.SKIPPED_EMPTY
 
-        // 单行能不能读回来，是 SQLite CursorWindow（约 2MB）决定的，不是我们设的限制。
-        // 超过就明确拒绝：既不截断用户内容，也不留下一条「写进去但读不出来」的记录
-        // （那种记录会让整个剪贴板列表查询一起抛 Row too big to fit into CursorWindow）。
-        val bytes = ClipboardHasher.utf8Length(text)
-        if (bytes > MAX_SINGLE_ROW_BYTES) {
-            Log.w(
-                TAG,
-                "剪贴板内容 ${bytes}B 超过单行可读上限 ${MAX_SINGLE_ROW_BYTES}B（CursorWindow ~2MB），不入库",
-            )
-            return ClipboardCaptureResult.SKIPPED_TOO_LARGE
-        }
-
-        // 敏感判定 / 类型判定只看开头一段：正文可能有几 MB，
+        // 敏感判定 / 类型判定只看开头一段：正文可能有几十 MB，
         // 没有任何理由为「是不是验证码」「是不是链接」去扫描整段内容。
-        // 这**不是**长度上限，超长正文依旧会完整入库。
+        // 这**不是**长度上限，超长正文依旧会被完整保存（走文件）。
         val sample = if (text.length > DETECT_SAMPLE_LENGTH) {
             text.substring(0, DETECT_SAMPLE_LENGTH)
         } else {
@@ -184,23 +216,34 @@ class ClipboardRepository(
         // 系统可能在很短时间内连续回调多次；串行化，避免两次「查无此 hash」同时插入
         return captureLock.withLock {
             val now = System.currentTimeMillis()
-            val existing = dao.findByHash(hash)
+            val existing = dao.findSummaryByHash(hash)
             if (existing != null) {
                 dao.touchAndRestore(id = existing.id, updatedAt = now)
+                // 老数据的文件型条目没有搜索索引（content 已清空），顺手补上
+                if (existing.contentStorage == ClipboardContentStorage.FILE &&
+                    runCatching { dao.searchTextOf(existing.id) }.getOrNull().isNullOrEmpty()
+                ) {
+                    runCatching { dao.updateSearchText(existing.id, text.take(SEARCH_INDEX_CHARS)) }
+                }
                 Log.i(TAG, "剪贴板内容已存在（hash=${SyncLog.shortHash(hash)}），刷新时间")
                 if (!fromSync) enqueueClipboardPush(existing.id)
                 return@withLock ClipboardCaptureResult.UPDATED
             }
 
+            val stored = store(text, hash)
             val id = dao.insert(
                 ClipboardItem(
-                    content = text,
+                    content = stored.inlineContent,
                     contentType = contentType,
                     preview = buildPreview(text),
                     contentHash = hash,
                     sourceDeviceId = sourceDeviceId,
                     createdAt = now,
                     updatedAt = now,
+                    contentStorage = stored.storage,
+                    contentFilePath = stored.path,
+                    contentSize = stored.size,
+                    searchText = stored.searchText,
                 ),
             )
             if (!fromSync) {
@@ -208,9 +251,36 @@ class ClipboardRepository(
             } else {
                 SyncLog.event(SyncEvent.SUPPRESS_LOOP, "hash=${SyncLog.shortHash(hash)} 来自同步，不上传")
             }
+            if (stored.storage == ClipboardContentStorage.FILE) {
+                Log.i(TAG, "超长剪贴板已存为文件（hash=${SyncLog.shortHash(hash)} ${stored.size}B）")
+            }
             ClipboardCaptureResult.INSERTED
         }
     }
+
+    /**
+     * 决定这条内容放哪里：小文本内联，大文本写文件。
+     * 写文件失败时**退回内联**（宁可占点数据库空间，也不能丢用户内容）。
+     */
+    private fun store(text: String, hash: String): StoredContent {
+        val bytes = ClipboardHasher.utf8Length(text)
+        val searchText = text.take(SEARCH_INDEX_CHARS)
+        val store = contentStore
+        if (store == null || bytes <= inlineMaxBytes) {
+            return StoredContent(ClipboardContentStorage.INLINE, "", text, bytes, searchText)
+        }
+        val file = store.write(hash, text)
+            ?: return StoredContent(ClipboardContentStorage.INLINE, "", text, bytes, searchText)
+        return StoredContent(ClipboardContentStorage.FILE, file.absolutePath, "", file.length(), searchText)
+    }
+
+    private data class StoredContent(
+        val storage: ClipboardContentStorage,
+        val path: String,
+        val inlineContent: String,
+        val size: Long,
+        val searchText: String,
+    )
 
     /**
      * 把远端内容写进本地历史（**不覆盖、不删除**）。
@@ -219,7 +289,7 @@ class ClipboardRepository(
      * （说明是本机自己复制过的），保留它原来的 LOCAL 来源 —— 判断依据是
      * 「内容由哪台设备产生」，不是「有没有上传成功」。
      *
-     * @return 写入或命中的本地条目
+     * @return 写入或命中的本地条目（列表投影）
      */
     suspend fun applyRemote(
         content: String,
@@ -227,17 +297,9 @@ class ClipboardRepository(
         remoteHash: String? = null,
         originDeviceId: String? = null,
         originType: String? = null,
-    ): ClipboardItem? {
+    ): ClipboardSummary? {
         val text = content.trim()
         if (text.isEmpty()) return null
-        // 同 capture：单行超过 CursorWindow 上限就拒绝（远端再大的内容也不能把本机列表搞坏）
-        if (ClipboardHasher.utf8Length(text) > MAX_SINGLE_ROW_BYTES) {
-            Log.w(
-                TAG,
-                "远端内容 ${ClipboardHasher.utf8Length(text)}B 超过单行可读上限，已跳过（不覆盖本地任何内容）",
-            )
-            return null
-        }
         val hash = remoteHash?.takeIf { it.isNotBlank() } ?: ClipboardHasher.hash(text)
 
         // 先登记抑制：写入后系统剪贴板回调不该再触发上传
@@ -246,14 +308,15 @@ class ClipboardRepository(
 
         captureLock.withLock {
             val now = System.currentTimeMillis()
-            val existing = dao.findByHash(hash)
+            val existing = dao.findSummaryByHash(hash)
             if (existing != null) {
                 dao.touchAndRestore(id = existing.id, updatedAt = now)
-                return dao.findById(existing.id)
+                return dao.findSummaryById(existing.id)
             }
+            val stored = store(text, hash)
             val id = dao.insert(
                 ClipboardItem(
-                    content = text,
+                    content = stored.inlineContent,
                     contentType = contentType,
                     preview = buildPreview(text),
                     contentHash = hash,
@@ -264,9 +327,13 @@ class ClipboardRepository(
                     receivedAt = now,
                     createdAt = now,
                     updatedAt = now,
+                    contentStorage = stored.storage,
+                    contentFilePath = stored.path,
+                    contentSize = stored.size,
+                    searchText = stored.searchText,
                 ),
             )
-            return dao.findById(id)
+            return dao.findSummaryById(id)
         }
     }
 
@@ -297,20 +364,35 @@ class ClipboardRepository(
         val text = content.trim()
         require(text.isNotEmpty()) { "剪贴板内容为空" }
         val now = System.currentTimeMillis()
+        val hash = ClipboardHasher.hash(text)
+        val stored = store(text, hash)
         val id = dao.insert(
             ClipboardItem(
-                content = text,
+                content = stored.inlineContent,
                 contentType = contentType,
                 preview = buildPreview(text),
-                contentHash = ClipboardHasher.hash(text),
+                contentHash = hash,
                 sourceDeviceId = sourceDeviceId,
                 createdAt = now,
                 updatedAt = now,
+                contentStorage = stored.storage,
+                contentFilePath = stored.path,
+                contentSize = stored.size,
+                searchText = stored.searchText,
             ),
         )
         enqueueClipboardPush(id)
         return id
     }
+
+    /**
+     * 从一段「已知哈希」的内容导入（例如分享 / 导入文本文件）。
+     * 与 [addLocal] 的区别是来源可控，且**不会**重复写文件（按 hash 去重）。
+     */
+    suspend fun importText(
+        content: String,
+        contentType: ClipboardContentType = ClipboardContentType.TEXT,
+    ): ClipboardCaptureResult = capture(content, source = ClipboardCaptureSource.LOCAL)
 
     // ---------------------------------------------------------------- 同步任务
 
@@ -349,6 +431,10 @@ class ClipboardRepository(
         dao.touch(id = id, updatedAt = System.currentTimeMillis())
     }
 
+    /**
+     * 软删除。文件型条目的文件**先留着**：
+     * 软删除还能复活，等 [purgeDeleted] 时再一起清理。
+     */
     suspend fun remove(id: Long) {
         val now = System.currentTimeMillis()
         dao.markDeleted(id = id, deletedAt = now, updatedAt = now)
@@ -369,37 +455,102 @@ class ClipboardRepository(
         }
     }
 
-    /** 真正从库里抹掉软删除的条目（不做跨设备同步，所以可以直接物理删） */
-    suspend fun purgeDeleted(): Int = dao.purgeDeleted()
-
     /**
-     * 把历史导出成 SyncClipboard 兼容的 JSON（`SyncClipboard.json` 的字段形状）。
-     *
-     * **本轮不发网络请求**：只提供映射，等以后接 SyncClipboard / WebDAV 时直接复用。
+     * 真正从库里抹掉软删除的条目，并删除它们对应的内容文件
+     * （不做跨设备同步，所以可以直接物理删）。
      */
-    suspend fun exportSyncClipboardJson(limit: Int = DEFAULT_LIMIT): String =
-        SyncClipboardMapper.historyToJson(dao.active(limit))
-
-    // ---------------------------------------------------------------- 工具
+    suspend fun purgeDeleted(): Int {
+        val paths = runCatching { dao.deletedFilePaths() }.getOrDefault(emptyList())
+        val removed = dao.purgeDeleted()
+        val store = contentStore
+        if (store != null) {
+            paths.forEach { store.delete(it) }
+        }
+        // 顺手回收没有记录引用的孤儿文件
+        if (store != null) {
+            val referenced = runCatching { dao.allFilePaths().toSet() }.getOrDefault(emptySet())
+            store.collectOrphans(referenced)
+        }
+        return removed
+    }
 
     /**
-     * 历史清理：给旧数据补内容哈希，并把「同内容多条」合并成一条。
+     * 把历史遗留的「超大内联行」搬进文件。
      *
-     * 老版本没有 `contentHash` 列（迁移时统一填 ''），不补的话新内容会和旧记录重复；
-     * 另外迁移前的版本可能已经存了重复内容，这里一次性收敛。
-     * 合并时会把固定 / 收藏标记带到保留的那条上，不会丢状态。
+     * v8 之前所有内容都在 `content` 列里，包括那些曾经把列表查询搞崩的大文本。
+     * 现在列表不再读 content，所以这些行已经**不会再破坏列表**；
+     * 这里再把能搬的搬走，让「全文」也能稳定打开。
+     *
+     * 读不出来的（单行超过 CursorWindow）会记日志跳过 —— 它们本来就打不开，
+     * 但至少不会连累其它条目。
+     *
+     * @return 成功搬到文件的行数
+     */
+    suspend fun migrateLargeInlineRows(limit: Int = 50): Int {
+        val store = contentStore ?: return 0
+        val minChars = (inlineMaxBytes / 3).toInt().coerceAtLeast(MIN_MIGRATE_CHARS)
+        val rows = runCatching { dao.inlineRowsLargerThan(minChars, limit) }.getOrDefault(emptyList())
+        var moved = 0
+        rows.forEach { row ->
+            val item = runCatching { dao.findById(row.id) }.getOrNull() ?: return@forEach
+            val text = runCatching { item.content }.getOrNull()
+            if (text.isNullOrEmpty()) return@forEach
+            val file = store.write(item.contentHash, text) ?: return@forEach
+            dao.updateContent(
+                id = item.id,
+                content = "",
+                storage = ClipboardContentStorage.FILE,
+                path = file.absolutePath,
+                size = file.length(),
+                searchText = text.take(SEARCH_INDEX_CHARS),
+                updatedAt = item.updatedAt,
+            )
+            moved++
+        }
+        if (moved > 0) Log.i(TAG, "已把 $moved 条超大内联内容搬进文件")
+        return moved
+    }
+
+    /**
+     * 给老的文件型条目补搜索索引（只读文件开头一小段，不加载全文）。
+     *
+     * @return 补好的行数
+     */
+    suspend fun rebuildSearchIndex(limit: Int = 50): Int {
+        val store = contentStore ?: return 0
+        val rows = runCatching { dao.fileRowsWithoutSearchText(limit) }.getOrDefault(emptyList())
+        var fixed = 0
+        rows.forEach { row ->
+            val head = store.readHead(row.contentFilePath, SEARCH_INDEX_CHARS)
+            if (!head.isNullOrEmpty()) {
+                runCatching { dao.updateSearchText(row.id, head) }
+                fixed++
+            }
+        }
+        if (fixed > 0) Log.i(TAG, "已为 $fixed 条文件型剪贴板补上搜索索引")
+        return fixed
+    }
+
+    /**
+     * 把历史记录里空的哈希补上。
+     *
+     * 老版本没有 `contentHash` 列（迁移时统一填 ''），不补的话新内容会和旧记录重复。
+     * 只处理这一小批行，而且读取单行内容是有界的（超大的会被 [migrateLargeInlineRows] 先搬走）。
      *
      * @return 处理过的条数
      */
     suspend fun dedupeExisting(): Int {
         var touched = 0
-        dao.itemsWithEmptyHash().forEach { item ->
-            dao.updateHash(item.id, ClipboardHasher.hash(item.content))
-            touched++
+        runCatching { dao.itemsWithEmptyHash() }.getOrDefault(emptyList()).forEach { item ->
+            val text = loadContent(item)
+            if (!text.isNullOrEmpty()) {
+                dao.updateHash(item.id, ClipboardHasher.hash(text))
+                touched++
+            }
         }
 
         val now = System.currentTimeMillis()
-        dao.duplicateContents().forEach { content ->
+        runCatching { dao.duplicateContents() }.getOrDefault(emptyList()).forEach { content ->
             val group = dao.activeByContent(content)
             if (group.size < 2) return@forEach
             val keep = group.maxWithOrNull(
@@ -421,15 +572,17 @@ class ClipboardRepository(
         return touched
     }
 
+    // ---------------------------------------------------------------- 工具
+
     fun detectContentType(text: String): ClipboardContentType =
         if (LINK_PATTERN.matches(text)) ClipboardContentType.LINK else ClipboardContentType.TEXT
 
     /**
      * 列表摘要：压掉换行与连续空白，再截断。
      *
-     * **只处理开头一小段**：正文可能有几 MB，摘要只是显示用，
-     * 没必要为了 160 字的摘要去正则替换整段内容（那会白白再分配一份大字符串）。
-     * 完整内容始终在 [ClipboardItem.content] 里，全文查看用的是它。
+     * **只处理开头一小段**：正文可能有几十 MB，摘要只是显示用，
+     * 没必要为了 160 字的摘要去正则替换整段内容。
+     * 完整内容始终可以按 id 取回（[loadContent]）。
      */
     fun buildPreview(text: String): String {
         val head = if (text.length > PREVIEW_HEAD_LENGTH) {
@@ -458,17 +611,32 @@ class ClipboardRepository(
         const val SOURCE_REMOTE = "remote"
 
         /**
-         * 单条剪贴板内容的上限（UTF-8 字节）。
+         * 默认阈值：UTF-8 字节数超过它就把内容放到文件里。
          *
-         * 依据是 Android SQLite 的 `CursorWindow`（约 2MB）：单行超过它，
-         * `SELECT` 会抛 `Row too big to fit into CursorWindow`。
-         * 取 1.5MB 留出余量，保证写进去的内容一定能完整读回来。
-         *
-         * 顺带说明真实的端到端上限：**系统剪贴板自身在约 1MB 处就会抛
-         * `TransactionTooLargeException`**（Binder 事务缓冲是进程级共享的），
-         * 所以日常使用根本到不了这个值。
+         * 512KB —— 实测依据：
+         * - 500KB 内联时单行约 0.84MB，仍远低于 CursorWindow 的 2MB，列表查询毫秒级；
+         * - 1MB 以上单行就逼近上限，历史版本里已经出现过「一条记录搞崩整个列表」；
+         * - 阈值再往下调（256KB）只会让文件数量变多、收益很小。
          */
-        const val MAX_SINGLE_ROW_BYTES = 1_500_000L
+        const val DEFAULT_INLINE_MAX_BYTES = 512L * 1024L
+
+        /** 搬移历史大行时的最小字符数下限（避免中文按字节折算后过小） */
+        private const val MIN_MIGRATE_CHARS = 100_000
+
+        /**
+         * 轻量搜索索引保留的字符数（约 2KB）。
+         * 文件型条目的 `content` 是空的，搜索靠这一小段头部命中。
+         */
+        const val SEARCH_INDEX_CHARS = 2_048
+
+        /** 建一个指向应用私有目录的文件仓库 */
+        fun contentStoreFor(context: Context): ClipboardContentStore =
+            ClipboardContentStore(File(context.filesDir, "clipboard"))
+
+        /** 同上，但直接给 files 目录（自测 / 测试用，不依赖 Context） */
+        fun contentStoreFor(filesDir: File): ClipboardContentStore =
+            ClipboardContentStore(File(filesDir, "clipboard"))
+
         private val WHITESPACE = Regex("\\s+")
         private val LINK_PATTERN = Regex("^https?://\\S+$", RegexOption.IGNORE_CASE)
     }

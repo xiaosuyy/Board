@@ -18,7 +18,7 @@ import android.widget.TextView
 import com.board.ime.clipboard.ClipboardContentType
 import com.board.ime.clipboard.ClipboardCounts
 import com.board.ime.clipboard.ClipboardOrigin
-import com.board.ime.database.entity.ClipboardItem
+import com.board.ime.clipboard.ClipboardSummary
 import com.board.ime.ui.KeyboardTheme
 
 /**
@@ -46,11 +46,20 @@ class ClipboardPanel @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : LinearLayout(context, attrs, defStyleAttr) {
 
-    var onInsert: ((ClipboardItem) -> Unit)? = null
-    var onTogglePin: ((ClipboardItem) -> Unit)? = null
-    var onToggleFavorite: ((ClipboardItem) -> Unit)? = null
-    var onDelete: ((ClipboardItem) -> Unit)? = null
+    var onInsert: ((ClipboardSummary) -> Unit)? = null
+    var onTogglePin: ((ClipboardSummary) -> Unit)? = null
+    var onToggleFavorite: ((ClipboardSummary) -> Unit)? = null
+    var onDelete: ((ClipboardSummary) -> Unit)? = null
     var onClearHistory: ((Boolean) -> Unit)? = null
+
+    /**
+     * 按 id 异步取完整内容（「全文」和「插到输入框」用）。
+     *
+     * 面板自己不碰数据库 / 文件：列表只有摘要，完整内容可能在几十 MB 的文件里，
+     * 必须放到后台线程读，读完再回调回主线程。
+     * 回调参数为 null 表示内容已不可读（例如文件被清理了）。
+     */
+    var onLoadContent: ((Long, (String?) -> Unit) -> Unit)? = null
 
     private enum class Mode { LIST, ACTION, DETAIL, CLEAR }
 
@@ -59,13 +68,13 @@ class ClipboardPanel @JvmOverloads constructor(
         com.board.ime.settings.ThemeMode.SYSTEM,
     )
 
-    private var items: List<ClipboardItem> = emptyList()
+    private var items: List<ClipboardSummary> = emptyList()
     private var counts: ClipboardCounts = ClipboardCounts(0, 0, 0)
     private var mode = Mode.LIST
     private var editMode = false
     private var searching = false
     private var remoteOnly = false
-    private var selected: ClipboardItem? = null
+    private var selected: ClipboardSummary? = null
 
     /** 最近一次真正画出来的「结构 + 内容」指纹，用来跳过无意义的整树重建 */
     private var renderedKey: String? = null
@@ -120,7 +129,7 @@ class ClipboardPanel @JvmOverloads constructor(
         render()
     }
 
-    fun submit(newItems: List<ClipboardItem>, counts: ClipboardCounts = this.counts) {
+    fun submit(newItems: List<ClipboardSummary>, counts: ClipboardCounts = this.counts) {
         items = newItems
         this.counts = counts
         // 选中的条目可能已经被删掉
@@ -268,7 +277,7 @@ class ClipboardPanel @JvmOverloads constructor(
         else -> ""
     }
 
-    private fun addSection(title: String, sectionItems: List<ClipboardItem>) {
+    private fun addSection(title: String, sectionItems: List<ClipboardSummary>) {
         if (sectionItems.isEmpty()) return
         grid.addView(
             TextView(context).apply {
@@ -281,7 +290,7 @@ class ClipboardPanel @JvmOverloads constructor(
         addRows(sectionItems)
     }
 
-    private fun addRows(rowItems: List<ClipboardItem>) {
+    private fun addRows(rowItems: List<ClipboardSummary>) {
         rowItems.chunked(COLUMNS).forEach { chunk ->
             val row = LinearLayout(context).apply {
                 orientation = HORIZONTAL
@@ -310,10 +319,10 @@ class ClipboardPanel @JvmOverloads constructor(
         val starSlot: View,
         val originLabel: TextView,
     ) {
-        var item: ClipboardItem? = null
+        var item: ClipboardSummary? = null
     }
 
-    private fun createCard(item: ClipboardItem): View {
+    private fun createCard(item: ClipboardSummary): View {
         val card = LinearLayout(context).apply {
             orientation = HORIZONTAL
             minimumHeight = theme.clipboardCardMinHeight
@@ -392,10 +401,11 @@ class ClipboardPanel @JvmOverloads constructor(
     }
 
     /** 只在原 View 上改内容（增量路径也走这里） */
-    private fun updateCard(binder: CardBinder, item: ClipboardItem) {
+    private fun updateCard(binder: CardBinder, item: ClipboardSummary) {
         binder.item = item
-        binder.preview.text = item.preview ?: item.content
-        binder.card.contentDescription = item.preview ?: item.content
+        // 列表不再持有完整内容，只有摘要；完整内容点「全文」时按 id 取
+        binder.preview.text = item.preview.orEmpty()
+        binder.card.contentDescription = item.preview.orEmpty()
         binder.pinSlot.visibility = if (item.isPinned) VISIBLE else GONE
         binder.starSlot.visibility = if (item.isFavorite) VISIBLE else GONE
         binder.originLabel.text = originText(item)
@@ -411,7 +421,7 @@ class ClipboardPanel @JvmOverloads constructor(
      * - 云端：`云端 · Windows`（设备名读得到就带上，读不到只写「云端」）
      * - 本机：`本机`
      */
-    private fun originText(item: ClipboardItem): String {
+    private fun originText(item: ClipboardSummary): String {
         if (item.origin == ClipboardOrigin.REMOTE) {
             val device = item.originType?.takeIf { it.isNotBlank() }
             return if (device != null) "云端 · $device" else "云端"
@@ -478,22 +488,30 @@ class ClipboardPanel @JvmOverloads constructor(
         sectionLabel.visibility = VISIBLE
         sectionLabel.text = "完整内容"
 
-        grid.addView(
-            TextView(context).apply {
-                text = item.content
-                setTextSize(TypedValue.COMPLEX_UNIT_PX, theme.clipboardTextSize)
-                setTextColor(theme.candidateText)
-                setTextIsSelectable(true)
-                background = cardBackground(false)
-                setPadding(
-                    theme.clipboardPadding,
-                    theme.clipboardPadding,
-                    theme.clipboardPadding,
-                    theme.clipboardPadding,
-                )
-            },
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
-        )
+        // 只显示摘要里的信息，完整内容**异步**取（可能在几十 MB 的文件里）
+        val body = TextView(context).apply {
+            text = "加载中…"
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, theme.clipboardTextSize)
+            setTextColor(theme.candidateText)
+            setTextIsSelectable(true)
+            background = cardBackground(false)
+            setPadding(
+                theme.clipboardPadding,
+                theme.clipboardPadding,
+                theme.clipboardPadding,
+                theme.clipboardPadding,
+            )
+        }
+        grid.addView(body, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+
+        val sizeHint = item.sizeLabel
+        onLoadContent?.invoke(item.id) { content ->
+            body.text = when {
+                content == null -> "内容已不可读（文件可能已被清理）"
+                else -> content
+            }
+            sectionLabel.text = if (sizeHint.isEmpty()) "完整内容" else "完整内容 · $sizeHint"
+        } ?: run { body.text = "无法读取内容（未接入内容仓库）" }
 
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -571,7 +589,7 @@ class ClipboardPanel @JvmOverloads constructor(
 
     // ---------------------------------------------------------------- 小工具
 
-    private fun insert(item: ClipboardItem) {
+    private fun insert(item: ClipboardSummary) {
         onInsert?.invoke(item)
     }
 

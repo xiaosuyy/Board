@@ -80,8 +80,8 @@ object SyncClipboardMapper {
     /** 超长文本在 `/file/` 下的名字 */
     fun dataNameFor(hash: String): String = "${hash.ifEmpty { "board" }}.txt"
 
-    /** Board → 协议（保持内联，短文本用） */
-    fun toPayload(item: ClipboardItem): SyncClipboardPayload {
+    /** Board → 协议（保持内联，短文本用）。[content] 是调用方读出来的完整内容 */
+    fun toPayload(item: ClipboardItem, content: String): SyncClipboardPayload {
         val type = when (item.contentType) {
             ClipboardContentType.TEXT, ClipboardContentType.LINK -> TYPE_TEXT
             ClipboardContentType.IMAGE -> TYPE_IMAGE
@@ -90,12 +90,12 @@ object SyncClipboardMapper {
         }
         val isData = item.contentType == ClipboardContentType.IMAGE ||
             item.contentType == ClipboardContentType.FILE
-        val hash = item.contentHash.ifEmpty { ClipboardHasher.hash(item.content) }
-        val bytes = ClipboardHasher.utf8Length(item.content)
+        val hash = item.contentHash.ifEmpty { ClipboardHasher.hash(content) }
+        val bytes = ClipboardHasher.utf8Length(content)
         return SyncClipboardPayload(
             type = type,
             hash = hash,
-            text = if (isData) null else item.content,
+            text = if (isData) null else content,
             hasData = isData,
             dataName = if (isData) item.preview else null,
             size = bytes,
@@ -103,15 +103,15 @@ object SyncClipboardMapper {
     }
 
     /** Board → 协议（超长文本：正文走 `/file/`，清单里只有元信息） */
-    fun toFilePayload(item: ClipboardItem): SyncClipboardPayload {
-        val hash = item.contentHash.ifEmpty { ClipboardHasher.hash(item.content) }
+    fun toFilePayload(item: ClipboardItem, content: String): SyncClipboardPayload {
+        val hash = item.contentHash.ifEmpty { ClipboardHasher.hash(content) }
         return SyncClipboardPayload(
             type = TYPE_TEXT,
             hash = hash,
             text = null,
             hasData = true,
             dataName = dataNameFor(hash),
-            size = ClipboardHasher.utf8Length(item.content),
+            size = ClipboardHasher.utf8Length(content),
         )
     }
 
@@ -151,9 +151,28 @@ object SyncClipboardMapper {
         null
     }
 
-    /** 整段历史 → JSON 数组（导出 / 以后上传用） */
-    fun historyToJson(items: List<ClipboardItem>): String = JSONArray().apply {
-        items.forEach { put(toJsonObject(toPayload(it))) }
+    /**
+     * 整段历史 → JSON 数组（导出用）。
+     *
+     * 只接受 [ClipboardSummary]：超长内容现在存在文件里，这条导出路径
+     * **不会**去读完整内容（否则导出几十条 MB 级记录会把内存打爆）。
+     * 需要完整正文时用真正的同步路径（按条读 + `/file/`）。
+     */
+    fun historyToJson(items: List<ClipboardSummary>): String = JSONArray().apply {
+        items.forEach { item ->
+            put(
+                toJsonObject(
+                    SyncClipboardPayload(
+                        type = TYPE_TEXT,
+                        hash = item.contentHash,
+                        text = item.preview,
+                        hasData = item.isFileBacked,
+                        dataName = if (item.isFileBacked) dataNameFor(item.contentHash) else null,
+                        size = item.contentSize,
+                    ),
+                ),
+            )
+        }
     }.toString(2)
 
     fun historyFromJson(json: String): List<ClipboardItem> = try {

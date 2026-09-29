@@ -4,7 +4,7 @@ import android.animation.ValueAnimator
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import com.board.ime.clipboard.ClipboardCounts
-import com.board.ime.database.entity.ClipboardItem
+import com.board.ime.clipboard.ClipboardSummary
 import com.board.ime.engine.Candidate
 import com.board.ime.engine.InputMode
 import com.board.ime.keyboard.KeySpec
@@ -47,10 +47,12 @@ class TopPanelController(
     var onComposingClicked: (() -> Unit)? = null
 
     /** 点剪贴板条目：直接插进输入框 */
-    var onClipboardInsert: ((ClipboardItem) -> Unit)? = null
-    var onClipboardTogglePin: ((ClipboardItem) -> Unit)? = null
-    var onClipboardToggleFavorite: ((ClipboardItem) -> Unit)? = null
-    var onClipboardDelete: ((ClipboardItem) -> Unit)? = null
+    var onClipboardInsert: ((ClipboardSummary) -> Unit)? = null
+    /** 「全文」按 id 取内容（IO 线程读，回主线程回调） */
+    var onClipboardLoadContent: ((Long, (String?) -> Unit) -> Unit)? = null
+    var onClipboardTogglePin: ((ClipboardSummary) -> Unit)? = null
+    var onClipboardToggleFavorite: ((ClipboardSummary) -> Unit)? = null
+    var onClipboardDelete: ((ClipboardSummary) -> Unit)? = null
 
     /** 清空全部历史；参数为 true 表示连固定 / 收藏一起删 */
     var onClipboardClearHistory: ((Boolean) -> Unit)? = null
@@ -124,6 +126,7 @@ class TopPanelController(
         clipboardPanel.onTogglePin = { item -> onClipboardTogglePin?.invoke(item) }
         clipboardPanel.onToggleFavorite = { item -> onClipboardToggleFavorite?.invoke(item) }
         clipboardPanel.onDelete = { item -> onClipboardDelete?.invoke(item) }
+        clipboardPanel.onLoadContent = { id, onLoaded -> onClipboardLoadContent?.invoke(id, onLoaded) }
         clipboardPanel.onClearHistory = { includeProtected ->
             onClipboardClearHistory?.invoke(includeProtected)
         }
@@ -216,7 +219,7 @@ class TopPanelController(
         applyState()
     }
 
-    fun submitClipboard(items: List<ClipboardItem>, counts: ClipboardCounts) {
+    fun submitClipboard(items: List<ClipboardSummary>, counts: ClipboardCounts) {
         clipboardPanel.submit(items, counts)
     }
 

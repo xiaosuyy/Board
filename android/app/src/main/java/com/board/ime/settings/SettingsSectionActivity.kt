@@ -81,6 +81,11 @@ class SettingsSectionActivity : AppCompatActivity() {
             uri?.let { handleImport(it) }
         }
 
+    private val importTextFileLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { handleTextFileImport(it) }
+        }
+
     private val exportJsonLauncher =
         registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
             uri?.let { handleExport(it) }
@@ -109,7 +114,10 @@ class SettingsSectionActivity : AppCompatActivity() {
             boardDatabase.dictionarySourceDao(),
             boardDatabase,
         )
-        clipboardRepository = ClipboardRepository(boardDatabase.clipboardDao())
+        clipboardRepository = ClipboardRepository(
+            boardDatabase.clipboardDao(),
+            contentStore = ClipboardRepository.contentStoreFor(this),
+        )
         render()
     }
 
@@ -339,8 +347,16 @@ class SettingsSectionActivity : AppCompatActivity() {
             SettingsUi.buttonRow(
                 this,
                 listOf(
+                    SettingsUi.button(this, "导入文本文件") { importTextFileLauncher.launch(arrayOf("text/*")) },
                     SettingsUi.button(this, "清空全部历史") { confirmClearClipboard() },
                 ),
+            ),
+        )
+        card.addView(
+            SettingsUi.hint(
+                this,
+                "超过阈值的文本会存成文件（不占数据库行），列表与搜索不会因此变慢；\n" +
+                    "其它 App 也可直接「分享给 Board」。",
             ),
         )
         content.addView(SettingsUi.cardView(this, card))
@@ -358,24 +374,75 @@ class SettingsSectionActivity : AppCompatActivity() {
         if (preferences.developerMode) {
             val stress = SettingsUi.card(this)
             stress.addView(SettingsUi.heading(this, "大文本自测（开发者）"))
-            val out = SettingsUi.value(this, "10KB ~ 10MB 逐档：抓取 / 入库 / 全文 / 搜索 / 系统剪贴板")
+            val out = SettingsUi.value(this, "100KB ~ 10MB 逐档：抓取 / 列表 / 搜索 / 全文 / 删除 / 系统剪贴板")
             stress.addView(out)
+            // 阈值实测：256KB vs 512KB，分别跑一遍比较
             stress.addView(
-                SettingsUi.button(this, "运行大文本压力测试（10KB~10MB）") {
-                    runClipboardStress(out)
-                },
+                SettingsUi.buttonRow(
+                    this,
+                    listOf(
+                        SettingsUi.button(this, "跑测试 · 内联阈值 256KB") { runClipboardStress(out, 256L * 1024L) },
+                        SettingsUi.button(this, "跑测试 · 内联阈值 512KB") { runClipboardStress(out, 512L * 1024L) },
+                    ),
+                ),
+            )
+            stress.addView(
+                SettingsUi.hint(
+                    this,
+                    "超过阈值的文本会存到 Board 私有目录的文件里；列表查询永远不读完整内容。\n" +
+                        "系统剪贴板写入被拒是 Android 的 Binder 限制，不是 Board 的限制。",
+                ),
             )
             content.addView(SettingsUi.cardView(this, stress))
         }
 
         lifecycleScope.launch {
-            val total = withContext(Dispatchers.IO) { clipboardRepository.counts().total }
+            val total = withContext(Dispatchers.IO) {
+                // 老版本把超长内容直接写在 content 列里；这里把能搬的搬进文件，
+                // 之后「全文」也能稳定打开（列表本来就已经不读 content 了）
+                runCatching { clipboardRepository.migrateLargeInlineRows() }
+                runCatching { clipboardRepository.rebuildSearchIndex() }
+                clipboardRepository.counts().total
+            }
             counts.text = "共 $total 条"
         }
     }
 
-    /** 开发者模式：逐档自测剪贴板大文本（真抓取 / 真入库 / 真写系统剪贴板） */
-    private fun runClipboardStress(out: TextView) {
+    /** 「导入文本文件」：几十 MB 的纯文本也能进入 Board 自己的剪贴板系统 */
+    private fun handleTextFileImport(uri: Uri) {
+        lifecycleScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val text = contentResolver.openInputStream(uri)?.use {
+                        it.bufferedReader().readText()
+                    } ?: throw IllegalStateException("无法读取文件")
+                    clipboardRepository.importText(text)
+                }
+            }
+            outcome.fold(
+                onSuccess = { result ->
+                    val message = when (result) {
+                        com.board.ime.clipboard.ClipboardCaptureResult.INSERTED -> "已导入 Board 剪贴板"
+                        com.board.ime.clipboard.ClipboardCaptureResult.UPDATED -> "这段内容已经在剪贴板里了"
+                        com.board.ime.clipboard.ClipboardCaptureResult.SKIPPED_SENSITIVE -> "疑似敏感内容，未导入"
+                        com.board.ime.clipboard.ClipboardCaptureResult.SKIPPED_EMPTY -> "文件里没有文本"
+                    }
+                    Toast.makeText(this@SettingsSectionActivity, message, Toast.LENGTH_SHORT).show()
+                    render()
+                },
+                onFailure = { error ->
+                    Toast.makeText(
+                        this@SettingsSectionActivity,
+                        "导入失败：${error.javaClass.simpleName}",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                },
+            )
+        }
+    }
+
+    /** 开发者模式：逐档自测剪贴板大文本（真抓取 / 真分流 / 真列表 / 真全文 / 真删除） */
+    private fun runClipboardStress(out: TextView, inlineMaxBytes: Long) {
         out.text = "正在运行（10MB 档会比较慢）…"
         lifecycleScope.launch {
             val rows = withContext(Dispatchers.IO) {
@@ -383,6 +450,8 @@ class SettingsSectionActivity : AppCompatActivity() {
                     ClipboardStressTest.run(
                         boardDatabase,
                         getSystemService(android.content.ClipboardManager::class.java),
+                        filesDir,
+                        inlineMaxBytes,
                     )
                 }.getOrElse { throwable ->
                     Log.w("BoardClipboard", "压力测试失败：${throwable.message}")
@@ -393,21 +462,32 @@ class SettingsSectionActivity : AppCompatActivity() {
                 out.text = "压力测试失败（见日志）"
                 return@launch
             }
-            out.text = rows.joinToString("\n") { row ->
-                val clip = when {
-                    row.clipboardOk -> "系统剪贴板 ✓"
-                    else -> "系统剪贴板 ✗ ${row.clipboardError.orEmpty()}"
+            out.text = buildString {
+                append("内联阈值 ${inlineMaxBytes / 1024}KB\n")
+                rows.forEach { row ->
+                    val verdict = when {
+                        row.error != null -> "✗ ${row.error}"
+                        row.boardOk -> "Board 全链路 ✓"
+                        else -> "△ 部分环节未通过"
+                    }
+                    val clip = when {
+                        row.clipboardOk -> "系统剪贴板 ✓"
+                        else -> "系统限制：${row.clipboardError.orEmpty()}"
+                    }
+                    append(
+                        "${row.label}（${row.bytes}B，${row.storage}）: " +
+                            "哈希 ${row.hashMs}ms 抓取 ${row.captureMs}ms 存 ${row.storedChars} 字\n" +
+                            "  列表 ${ok(row.listHit)} 搜索 ${ok(row.searchHit)} " +
+                            "全文 ${ok(row.contentIntact)} 删除 ${ok(row.deletedOk)}\n" +
+                            "  $verdict · $clip\n",
+                    )
                 }
-                val verdict = when {
-                    row.error != null -> "✗ ${row.error}"
-                    else -> "✓ 入库/全文/搜索通过"
-                }
-                "${row.label}（${row.bytes} B）: 哈希 ${row.hashMs}ms 抓取 ${row.captureMs}ms " +
-                    "存 ${row.storedChars} 字 摘要 ${row.previewChars} 字\n  $verdict\n  $clip"
             }
-            Toast.makeText(this@SettingsSectionActivity, "压力测试完成，结果见上方", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@SettingsSectionActivity, "压力测试完成", Toast.LENGTH_SHORT).show()
         }
     }
+
+    private fun ok(value: Boolean): String = if (value) "✓" else "✗"
 
     private fun confirmClearClipboard() {
         MaterialAlertDialogBuilder(this)

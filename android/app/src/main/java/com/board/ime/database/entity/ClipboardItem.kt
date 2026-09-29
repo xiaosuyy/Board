@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.board.ime.clipboard.ClipboardContentStorage
 import com.board.ime.clipboard.ClipboardContentType
 import com.board.ime.clipboard.ClipboardOrigin
 
@@ -58,7 +59,34 @@ data class ClipboardItem(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val deletedAt: Long? = null,
+    /**
+     * 内容是内联在 [content] 里，还是放在 Board 自己的文件里。
+     *
+     * 超长文本走文件：SQLite 单行超过 `CursorWindow`（约 2MB）就再也读不回来，
+     * 而且会连累整个列表 / 搜索查询。放在文件里之后，**列表查询根本不会碰 content**，
+     * 多大的文本都只是「一条记录 + 一个文件」。
+     */
+    @ColumnInfo(defaultValue = "INLINE")
+    val contentStorage: ClipboardContentStorage = ClipboardContentStorage.INLINE,
+    /** 内容在文件里时的绝对路径；[contentStorage] 为 INLINE 时是空串 */
+    @ColumnInfo(defaultValue = "")
+    val contentFilePath: String = "",
+    /** 完整内容的字节数（展示 + 阈值判断用） */
+    @ColumnInfo(defaultValue = "0")
+    val contentSize: Long = 0L,
+    /**
+     * **轻量搜索索引**：内容开头的一小段（约 2KB）。
+     *
+     * 文件型条目的 `content` 是空的，如果只用 `content LIKE` 搜索，
+     * 大文本就会「搜不到」。这里保留一个很短的头部副本，搜索两种存储方式都能命中，
+     * 又不会把几十 MB 的正文带进索引。
+     */
+    @ColumnInfo(defaultValue = "")
+    val searchText: String = "",
 ) {
     /** 固定和收藏都不该被普通清理带走 */
     val isProtected: Boolean get() = isPinned || isFavorite
+
+    /** 内容是否放在文件里（此时 [content] 是空的，要用 ClipboardRepository.loadContent） */
+    val isFileBacked: Boolean get() = contentStorage == ClipboardContentStorage.FILE
 }

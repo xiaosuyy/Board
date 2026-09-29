@@ -67,6 +67,14 @@ class Converters {
         enumValueOrDefault(value, ClipboardOrigin.LOCAL)
 
     @TypeConverter
+    fun fromClipboardContentStorage(value: com.board.ime.clipboard.ClipboardContentStorage): String =
+        value.name
+
+    @TypeConverter
+    fun toClipboardContentStorage(value: String): com.board.ime.clipboard.ClipboardContentStorage =
+        enumValueOrDefault(value, com.board.ime.clipboard.ClipboardContentStorage.INLINE)
+
+    @TypeConverter
     fun fromDictionarySourceType(value: com.board.ime.dictionary.DictionarySourceType): String =
         value.name
 

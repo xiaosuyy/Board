@@ -24,8 +24,8 @@ import com.board.ime.BuildConfig
 import com.board.ime.clipboard.ClipboardCaptureResult
 import com.board.ime.clipboard.ClipboardHasher
 import com.board.ime.clipboard.ClipboardRepository
+import com.board.ime.clipboard.ClipboardSummary
 import com.board.ime.database.BoardDatabase
-import com.board.ime.database.entity.ClipboardItem
 import com.board.ime.databinding.BoardKeyboardBinding
 import com.board.ime.dictionary.DictionaryRepository
 import com.board.ime.engine.BasicEngine
@@ -116,6 +116,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         clipboardRepository = ClipboardRepository(
             dao = BoardDatabase.get(this).clipboardDao(),
             syncOperationDao = BoardDatabase.get(this).syncOperationDao(),
+            contentStore = ClipboardRepository.contentStoreFor(this),
         )
         registerClipboardListener()
         startSync()
@@ -146,6 +147,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onClipboardToggleFavorite = { item -> setClipboardFavorite(item, !item.isFavorite) }
         panel.onClipboardDelete = { item -> deleteClipboardItem(item) }
         panel.onClipboardClearHistory = { includeProtected -> clearClipboardHistory(includeProtected) }
+        panel.onClipboardLoadContent = { id, onLoaded -> loadClipboardContent(id, onLoaded) }
         panel.onPanelLayoutChanged = { mode -> applyPanelLayout(mode) }
         panel.onClipboardOpened = { onClipboardOpened() }
         panel.onSearchQueryChanged = { query -> observeClipboard(query, panel.isRemoteOnly) }
@@ -286,25 +288,46 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         requestHideSelf(0)
     }
 
-    private fun insertClipboardItem(item: ClipboardItem) {
+    private fun insertClipboardItem(item: ClipboardSummary) {
         // 组词中的话先按原样结束组词，插入内容不会覆盖拼音
         if (controller.hasComposition) {
             controller.commitCompositionAsIs()
         }
-        controller.commitText(item.content)
-        // 用过的条目算一次「最近使用」，下次排在更前面
-        serviceScope.launch { clipboardRepository?.markUsed(item.id) }
+        // 完整内容可能在几十 MB 的文件里：后台读，读完回主线程上屏
+        serviceScope.launch {
+            val content = clipboardRepository?.loadContent(item.id)
+            mainHandler.post {
+                if (content.isNullOrEmpty()) {
+                    Toast.makeText(
+                        this@BoardInputMethodService,
+                        "这条内容已不可读（文件可能已被清理）",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                } else {
+                    controller.commitText(content)
+                }
+            }
+            clipboardRepository?.markUsed(item.id)
+        }
     }
 
-    private fun setClipboardPinned(item: ClipboardItem, pinned: Boolean) {
+    /** 「全文」按 id 取内容：IO 线程读，回主线程回调 */
+    private fun loadClipboardContent(id: Long, onLoaded: (String?) -> Unit) {
+        serviceScope.launch {
+            val content = clipboardRepository?.loadContent(id)
+            mainHandler.post { onLoaded(content) }
+        }
+    }
+
+    private fun setClipboardPinned(item: ClipboardSummary, pinned: Boolean) {
         serviceScope.launch { clipboardRepository?.setPinned(item.id, pinned) }
     }
 
-    private fun setClipboardFavorite(item: ClipboardItem, favorite: Boolean) {
+    private fun setClipboardFavorite(item: ClipboardSummary, favorite: Boolean) {
         serviceScope.launch { clipboardRepository?.setFavorite(item.id, favorite) }
     }
 
-    private fun deleteClipboardItem(item: ClipboardItem) {
+    private fun deleteClipboardItem(item: ClipboardSummary) {
         serviceScope.launch { clipboardRepository?.remove(item.id) }
     }
 

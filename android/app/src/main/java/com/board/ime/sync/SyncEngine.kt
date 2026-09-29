@@ -353,18 +353,26 @@ class SyncEngine(
             return null
         }
 
-        val payload = SyncClipboardMapper.toPayload(item)
+        // 完整内容可能在文件里（超长剪贴板），这里按 id 读出来
+        val content = clipboardRepository.loadContent(item)
+        if (content.isNullOrEmpty()) {
+            SyncLog.warn(SyncEvent.IGNORED_TYPE, "这条记录的内容已不可读（文件缺失？），跳过上传")
+            complete(operation)
+            return null
+        }
+
+        val payload = SyncClipboardMapper.toPayload(item, content)
         // 超长文本不内联进 JSON：正文先上传到 /file/{dataName}，清单里只留元信息。
         // 否则一个 5MB 的剪贴板会在「拼 JSON / 序列化 / 解析」环节反复分配好几份内存。
         val inline = if (payload.size > SyncClipboardMapper.INLINE_TEXT_MAX_BYTES) {
-            val dataName = payload.dataName ?: SyncClipboardMapper.dataNameFor(payload.hash)
+            val dataName = SyncClipboardMapper.dataNameFor(payload.hash)
             val filePut = client.putText(
                 SyncClipboardPaths.file(dataName),
-                item.content,
+                content,
                 CONTENT_TYPE_TEXT,
             )
             if (!filePut.isOk) return failPush(operation, filePut)
-            SyncClipboardMapper.toFilePayload(item)
+            SyncClipboardMapper.toFilePayload(item, content)
         } else {
             payload
         }
@@ -466,13 +474,13 @@ class SyncEngine(
             return PullOutcome.Applied(0, 1, 0)
         }
 
-        val local = clipboardDao.findByHash(computed)
+        val local = clipboardDao.findSummaryByHash(computed)
         if (local != null) {
             SyncLog.event(SyncEvent.SKIP_SAME_HASH, "hash=${SyncLog.shortHash(computed)} 本地已存在")
             return PullOutcome.Applied(0, 0, 1)
         }
 
-        val localLatest = clipboardDao.latestActive()
+        val localLatest = clipboardDao.latestSummary()
         if (localLatest != null) {
             // 双方内容不同：按时间判断谁更新
             val remoteTime = response.lastModified
@@ -504,7 +512,7 @@ class SyncEngine(
                     SyncEvent.DOWNLOAD,
                     "hash=${SyncLog.shortHash(computed)} bytes=${payload.size}",
                 )
-                _applied.tryEmit(applied.content)
+                _applied.tryEmit(text)
             }
             return PullOutcome.Applied(if (applied != null) 1 else 0, 1, 0)
         }
@@ -524,7 +532,7 @@ class SyncEngine(
                 "hash=${SyncLog.shortHash(computed)} bytes=${payload.size}",
             )
             // 通知宿主把它设为系统剪贴板（宿主会先登记抑制，避免回环）
-            _applied.tryEmit(applied.content)
+            _applied.tryEmit(text)
         }
         return PullOutcome.Applied(if (applied != null) 1 else 0, 0, 0)
     }
