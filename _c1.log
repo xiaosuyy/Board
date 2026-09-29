@@ -1,0 +1,11 @@
+
+> Task :android:app:externalNativeBuildCleanDebug
+Clean board_rime-armeabi-v7a
+Clean board_rime-arm64-v8a
+Clean board_rime-x86_64
+
+> Task :android:app:externalNativeBuildCleanRelease
+> Task :android:app:clean
+
+BUILD SUCCESSFUL in 965ms
+3 actionable tasks: 3 executed

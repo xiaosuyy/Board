@@ -157,6 +157,15 @@ class DictionaryRepository(
      */
     suspend fun mergeRecords(remote: List<SyncWordRecord>): Int {
         if (remote.isEmpty()) return 0
+        // 安全阀：远端文件异常（例如误把整份词典当成同步文件）时不要往本地灌几十万条，
+        // 直接拒绝并记日志，避免「词条数量爆炸」这种不可逆的破坏。
+        if (remote.size > MAX_MERGE_RECORDS) {
+            Log.w(
+                TAG,
+                "拒绝合并：远端记录数 ${remote.size} 超过上限 $MAX_MERGE_RECORDS，疑似文件异常",
+            )
+            return 0
+        }
         val local = dao.exportAll(SYNC_TYPES).map { it.toSyncRecord() }
         val merged = SyncWordMerge.merge(local, remote)
         var touched = 0
@@ -406,6 +415,9 @@ class DictionaryRepository(
         const val SOURCE_RIME = "rime"
         const val SOURCE_SEEDED = "seeded"
         const val SOURCE_SYNCED = "synced"
+
+        /** 单次合并允许的最大记录数：超出基本可以断定同步文件异常 */
+        const val MAX_MERGE_RECORDS = 5_000
 
         /** 参与同步的类型（学习词单独走 librime 用户词典合并） */
         val SYNC_TYPES = listOf(
