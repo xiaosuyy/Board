@@ -9,8 +9,9 @@ versionCode : 2
 
 Git
 ---
-Git commit : 见下方「Git 状态」（本机未预装 git，见说明）
-Git tag    : v0.1.0-mobile（目标标签名）
+Git commit : d4c5f4a0363165586934a4a44d320ff75394daba
+Git tag    : v0.1.0-mobile（指向基线提交 d4c5f4a）
+仓库       : 本目录已 `git init`，180 个文件已提交，工作区干净
 
 APK
 ---
@@ -78,17 +79,17 @@ Rime 预编译库
   脚本会从 fcitx5-android/prebuilt 按月下载 librime 1.17.0 + opencc/leveldb/marisa/yaml-cpp/glog，
   校验后解到 third_party/rime/<abi>/，因此源码包不依赖二进制也能复现构建。
 
-Git 状态
+Git 说明
 --------
-本机（Windows 开发机）**没有安装 git**（PATH、Program Files、ProgramData、scoop 等常见位置
-都找不到 git.exe，`where git` 也查不到）。我尝试下载便携版 MinGit 来初始化仓库，
-但当前网络对 GitHub 大文件不稳定（两次都只下到 18MB / 28.9MB，压缩包不完整）。
+本机（Windows 开发机）**没有预装 git**（PATH、Program Files、ProgramData、scoop 等常见位置
+都找不到 git.exe，`where git` 也查不到）。为了完成「提交 + 打标签」的要求，我下载了官方
+便携版 **MinGit 2.56.0**（放在临时目录，没有安装到系统里），用它完成了：
 
-因此：
-- `.gitignore` 已经准备好（排除 build/.gradle/.kotlin/local.properties/third_party/rime/releases 二进制）
-- 源码、APK、版本信息都已按 release 要求落盘
-- 只要本机装上 git，在该目录执行即可得到与本文件一致的基线：
-      git init
-      git add -A
-      git commit -m "Board Android mobile stable baseline"
-      git tag -a v0.1.0-mobile -m "Board Android mobile stable baseline"
+    git init
+    git add -A
+    git commit -m "Board Android mobile stable baseline"   -> d4c5f4a
+    git tag -a v0.1.0-mobile -m "Board Android mobile stable baseline"
+
+`.gitignore` 已排除 build/、.gradle/、.kotlin/、.cxx/、local.properties、
+third_party/rime/（预编译库用 tools/fetch_rime.ps1 还原）、releases 里的 APK / zip。
+仓库本身不依赖那把便携 git，换任何 git 都能正常使用。
