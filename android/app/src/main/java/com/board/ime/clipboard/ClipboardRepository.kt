@@ -27,6 +27,17 @@ enum class ClipboardCaptureResult {
 
     /** 空内容 */
     SKIPPED_EMPTY,
+
+    /**
+     * 内容超过「单行可读」上限。
+     *
+     * 这不是人为的长度策略：SQLite 的 `CursorWindow` 只有约 2MB，
+     * 单行内容超过它之后 `SELECT` 会直接抛
+     * `Row too big to fit into CursorWindow` —— 写进去也读不回来，
+     * 而且会让整个列表查询一起失败。所以这里**明确拒绝**，
+     * 既不截断也不留下一条读不出来的记录。
+     */
+    SKIPPED_TOO_LARGE,
 }
 
 /** 剪贴板统计，用于「清空全部历史」的二次确认文案 */
@@ -132,8 +143,28 @@ class ClipboardRepository(
         val text = content.trim()
         if (text.isEmpty()) return ClipboardCaptureResult.SKIPPED_EMPTY
 
-        val contentType = detectContentType(text)
-        val sensitivity = sensitivityDetector.detect(text, contentType)
+        // 单行能不能读回来，是 SQLite CursorWindow（约 2MB）决定的，不是我们设的限制。
+        // 超过就明确拒绝：既不截断用户内容，也不留下一条「写进去但读不出来」的记录
+        // （那种记录会让整个剪贴板列表查询一起抛 Row too big to fit into CursorWindow）。
+        val bytes = ClipboardHasher.utf8Length(text)
+        if (bytes > MAX_SINGLE_ROW_BYTES) {
+            Log.w(
+                TAG,
+                "剪贴板内容 ${bytes}B 超过单行可读上限 ${MAX_SINGLE_ROW_BYTES}B（CursorWindow ~2MB），不入库",
+            )
+            return ClipboardCaptureResult.SKIPPED_TOO_LARGE
+        }
+
+        // 敏感判定 / 类型判定只看开头一段：正文可能有几 MB，
+        // 没有任何理由为「是不是验证码」「是不是链接」去扫描整段内容。
+        // 这**不是**长度上限，超长正文依旧会完整入库。
+        val sample = if (text.length > DETECT_SAMPLE_LENGTH) {
+            text.substring(0, DETECT_SAMPLE_LENGTH)
+        } else {
+            text
+        }
+        val contentType = detectContentType(sample)
+        val sensitivity = sensitivityDetector.detect(sample, contentType)
         val policy = sensitivityDetector.policyFor(sensitivity)
         if (policy == ClipboardSyncPolicy.DO_NOT_SAVE) {
             Log.i(TAG, "剪贴板内容判定为敏感（$sensitivity），按策略不入库")
@@ -199,6 +230,14 @@ class ClipboardRepository(
     ): ClipboardItem? {
         val text = content.trim()
         if (text.isEmpty()) return null
+        // 同 capture：单行超过 CursorWindow 上限就拒绝（远端再大的内容也不能把本机列表搞坏）
+        if (ClipboardHasher.utf8Length(text) > MAX_SINGLE_ROW_BYTES) {
+            Log.w(
+                TAG,
+                "远端内容 ${ClipboardHasher.utf8Length(text)}B 超过单行可读上限，已跳过（不覆盖本地任何内容）",
+            )
+            return null
+        }
         val hash = remoteHash?.takeIf { it.isNotBlank() } ?: ClipboardHasher.hash(text)
 
         // 先登记抑制：写入后系统剪贴板回调不该再触发上传
@@ -385,9 +424,20 @@ class ClipboardRepository(
     fun detectContentType(text: String): ClipboardContentType =
         if (LINK_PATTERN.matches(text)) ClipboardContentType.LINK else ClipboardContentType.TEXT
 
-    /** 列表摘要：压掉换行与连续空白，再截断；完整内容仍然在 [ClipboardItem.content] 里 */
+    /**
+     * 列表摘要：压掉换行与连续空白，再截断。
+     *
+     * **只处理开头一小段**：正文可能有几 MB，摘要只是显示用，
+     * 没必要为了 160 字的摘要去正则替换整段内容（那会白白再分配一份大字符串）。
+     * 完整内容始终在 [ClipboardItem.content] 里，全文查看用的是它。
+     */
     fun buildPreview(text: String): String {
-        val compact = text.replace(WHITESPACE, " ").trim()
+        val head = if (text.length > PREVIEW_HEAD_LENGTH) {
+            text.substring(0, PREVIEW_HEAD_LENGTH)
+        } else {
+            text
+        }
+        val compact = head.replace(WHITESPACE, " ").trim()
         return if (compact.length <= PREVIEW_MAX_LENGTH) {
             compact
         } else {
@@ -398,10 +448,27 @@ class ClipboardRepository(
     companion object {
         private const val TAG = "BoardClipboard"
         const val DEFAULT_LIMIT = 200
+        /** 摘要只取开头这么多字符（显示 160 字足够，避免处理整段超长文本） */
         const val PREVIEW_MAX_LENGTH = 160
+        private const val PREVIEW_HEAD_LENGTH = PREVIEW_MAX_LENGTH * 4
+        /** 敏感 / 类型判定只看开头这么多字符 */
+        private const val DETECT_SAMPLE_LENGTH = 4_096
         /** 同步写入后，多久之内不再把系统回调当作本机复制 */
         const val SUPPRESS_WINDOW_MS = 15_000L
         const val SOURCE_REMOTE = "remote"
+
+        /**
+         * 单条剪贴板内容的上限（UTF-8 字节）。
+         *
+         * 依据是 Android SQLite 的 `CursorWindow`（约 2MB）：单行超过它，
+         * `SELECT` 会抛 `Row too big to fit into CursorWindow`。
+         * 取 1.5MB 留出余量，保证写进去的内容一定能完整读回来。
+         *
+         * 顺带说明真实的端到端上限：**系统剪贴板自身在约 1MB 处就会抛
+         * `TransactionTooLargeException`**（Binder 事务缓冲是进程级共享的），
+         * 所以日常使用根本到不了这个值。
+         */
+        const val MAX_SINGLE_ROW_BYTES = 1_500_000L
         private val WHITESPACE = Regex("\\s+")
         private val LINK_PATTERN = Regex("^https?://\\S+$", RegexOption.IGNORE_CASE)
     }

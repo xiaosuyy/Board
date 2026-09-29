@@ -38,7 +38,7 @@ import com.board.ime.dictionary.DictionarySource
         Device::class,
         SyncOperation::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -229,6 +229,34 @@ abstract class BoardDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7：词库数据源补齐「跨设备文件同步」需要的字段。
+         *
+         * - `sourceId`：稳定 ID（由名字派生），用作云端目录名，两台设备对得上同一个词库
+         * - `version`：内容版本号，内容变化时 +1
+         * - `ready`：是否已生成 Rime 词典配置并部署成功
+         *
+         * 全部是 ADD COLUMN，老数据（路径 / hash / 条数 / 大小）一条不丢；
+         * `sourceId` 对老行留空，由仓库层按名字补齐（幂等）。
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE dictionary_source ADD COLUMN sourceId TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL(
+                    "ALTER TABLE dictionary_source ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+                )
+                db.execSQL(
+                    "ALTER TABLE dictionary_source ADD COLUMN ready INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_dictionary_source_sourceId " +
+                        "ON dictionary_source (sourceId)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: BoardDatabase? = null
 
@@ -252,7 +280,12 @@ abstract class BoardDatabase : RoomDatabase() {
                 return build(context)
             }
             return try {
-                build(context)
+                val db = build(context)
+                // 关键：Room 是**懒加载**的，不主动碰一次的话，
+                // 迁移校验失败不会在这里抛，而是变成「之后每次查询都抛、
+                // 但 App 不崩也不自愈」的半坏状态（真机上就是这种表现）。
+                db.openHelper.writableDatabase
+                db
             } catch (throwable: Throwable) {
                 Log.e(TAG, "打开数据库失败，尝试重建：${throwable.message}", throwable)
                 recovering = true
@@ -270,7 +303,14 @@ abstract class BoardDatabase : RoomDatabase() {
                 BoardDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                )
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
     }

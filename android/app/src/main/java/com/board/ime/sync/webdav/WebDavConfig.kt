@@ -20,6 +20,24 @@ data class WebDavConfig(
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank()
 
+    /**
+     * 地址 scheme 是否合法。
+     *
+     * OkHttp 对 `htpps://…` 这种拼错的 scheme 会直接抛 `IllegalArgumentException`，
+     * 如果不在这里挡住，错误会以「未预期的异常」形式冒到 UI（真机上见过
+     * 「同步失败 · IllegalArgumentException」这种看不懂的提示）。
+     */
+    val hasValidScheme: Boolean
+        get() {
+            val url = baseUrl.trim()
+            return url.startsWith("http://", ignoreCase = true) ||
+                url.startsWith("https://", ignoreCase = true)
+        }
+
+    /** 配置是否「可以尝试同步」 */
+    val isUsable: Boolean
+        get() = isConfigured && hasValidScheme
+
     val hasCredentials: Boolean
         get() = username.isNotBlank() || password.isNotEmpty()
 

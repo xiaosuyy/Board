@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.board.ime.sync.SyncPart
+import com.board.ime.sync.SyncPartState
 import com.board.ime.sync.SyncStatus
 
 /**
@@ -117,6 +119,10 @@ class WebDavConfigStore(context: Context) {
                 .putLong(KEY_LAST_SYNC_AT, result.lastSyncAt ?: 0L)
                 .putString(KEY_LAST_SUMMARY, result.lastSummary.orEmpty())
                 .putString(KEY_LAST_ERROR, result.lastError.orEmpty())
+                .putString(KEY_PART_CLIPBOARD, result.clipboard.state.name)
+                .putString(KEY_PART_CLIPBOARD_DETAIL, result.clipboard.detail.orEmpty())
+                .putString(KEY_PART_DICTIONARY, result.dictionary.state.name)
+                .putString(KEY_PART_DICTIONARY_DETAIL, result.dictionary.detail.orEmpty())
                 .apply()
         }
     }
@@ -127,6 +133,20 @@ class WebDavConfigStore(context: Context) {
         val error = plain.getString(KEY_LAST_ERROR, "").orEmpty().ifBlank { null }
         Triple(at, summary, error)
     }.getOrDefault(Triple(null, null, null))
+
+    /** 上次各通道的结束状态（重启设置页后仍然显示「剪贴板 ✓ 已同步」） */
+    fun loadLastParts(): Pair<SyncPart, SyncPart> = runCatching {
+        SyncPart(
+            state = plain.getString(KEY_PART_CLIPBOARD, null)?.let(::partState) ?: SyncPartState.IDLE,
+            detail = plain.getString(KEY_PART_CLIPBOARD_DETAIL, "").orEmpty().ifBlank { null },
+        ).settledIfRunning("上次同步中断") to SyncPart(
+            state = plain.getString(KEY_PART_DICTIONARY, null)?.let(::partState) ?: SyncPartState.IDLE,
+            detail = plain.getString(KEY_PART_DICTIONARY_DETAIL, "").orEmpty().ifBlank { null },
+        ).settledIfRunning("上次同步中断")
+    }.getOrDefault(SyncPart() to SyncPart())
+
+    private fun partState(name: String): SyncPartState =
+        runCatching { SyncPartState.valueOf(name) }.getOrDefault(SyncPartState.IDLE)
 
     fun clear() {
         runCatching { plain.edit().clear().apply() }
@@ -146,5 +166,9 @@ class WebDavConfigStore(context: Context) {
         const val KEY_LAST_SYNC_AT = "last_sync_at"
         const val KEY_LAST_SUMMARY = "last_sync_summary"
         const val KEY_LAST_ERROR = "last_sync_error"
+        const val KEY_PART_CLIPBOARD = "last_part_clipboard"
+        const val KEY_PART_CLIPBOARD_DETAIL = "last_part_clipboard_detail"
+        const val KEY_PART_DICTIONARY = "last_part_dictionary"
+        const val KEY_PART_DICTIONARY_DETAIL = "last_part_dictionary_detail"
     }
 }

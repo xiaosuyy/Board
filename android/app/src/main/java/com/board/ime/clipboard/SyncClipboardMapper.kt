@@ -59,15 +59,28 @@ object SyncClipboardMapper {
     const val TYPE_GROUP = "Group"
 
     /**
-     * 本轮只真正支持纯文本。
+     * 真正支持的是**文本**，包含两种形态：
+     * - 短文本：`type=Text` + `text` 内联（与 SyncClipboard 官方完全兼容）
+     * - 超长文本：`type=Text` + `hasData=true` + `dataName`，正文放 `/file/{dataName}`
+     *   （Board 自己的扩展用法，避免几十 MB 的正文被塞进 JSON 导致内存暴涨）
      *
      * `Image` / `File` / `Group` 一律返回 false —— 上层必须**安全忽略并记录日志**，
      * 不允许把不支持的类型伪装成已同步。
      */
-    fun isSupported(payload: SyncClipboardPayload): Boolean =
-        payload.type == TYPE_TEXT && !payload.hasData
+    fun isSupported(payload: SyncClipboardPayload): Boolean = payload.type == TYPE_TEXT
 
-    /** Board → 协议 */
+    /**
+     * 超过这个字节数的文本不再内联进 `SyncClipboard.json`，改走 `/file/`。
+     *
+     * 取值考虑：JSON 里还要再转义一遍，几百 KB 的正文会让「读远端清单」这一步
+     * 就要分配好几份内存；256KB 之内内联仍然很快，普通短文本协议兼容性也不受影响。
+     */
+    const val INLINE_TEXT_MAX_BYTES = 256 * 1024
+
+    /** 超长文本在 `/file/` 下的名字 */
+    fun dataNameFor(hash: String): String = "${hash.ifEmpty { "board" }}.txt"
+
+    /** Board → 协议（保持内联，短文本用） */
     fun toPayload(item: ClipboardItem): SyncClipboardPayload {
         val type = when (item.contentType) {
             ClipboardContentType.TEXT, ClipboardContentType.LINK -> TYPE_TEXT
@@ -77,21 +90,39 @@ object SyncClipboardMapper {
         }
         val isData = item.contentType == ClipboardContentType.IMAGE ||
             item.contentType == ClipboardContentType.FILE
+        val hash = item.contentHash.ifEmpty { ClipboardHasher.hash(item.content) }
+        val bytes = ClipboardHasher.utf8Length(item.content)
         return SyncClipboardPayload(
             type = type,
-            hash = item.contentHash.ifEmpty { ClipboardHasher.hash(item.content) },
+            hash = hash,
             text = if (isData) null else item.content,
             hasData = isData,
             dataName = if (isData) item.preview else null,
-            size = item.content.toByteArray(Charsets.UTF_8).size.toLong(),
+            size = bytes,
+        )
+    }
+
+    /** Board → 协议（超长文本：正文走 `/file/`，清单里只有元信息） */
+    fun toFilePayload(item: ClipboardItem): SyncClipboardPayload {
+        val hash = item.contentHash.ifEmpty { ClipboardHasher.hash(item.content) }
+        return SyncClipboardPayload(
+            type = TYPE_TEXT,
+            hash = hash,
+            text = null,
+            hasData = true,
+            dataName = dataNameFor(hash),
+            size = ClipboardHasher.utf8Length(item.content),
         )
     }
 
     /** 协议 → Board（**不写库**，调用方自己决定是否入库） */
     fun fromPayload(payload: SyncClipboardPayload): ClipboardItem? {
         val text = payload.text
+            // 正文在 /file/ 里（hasData），这里没有内容可映射；
+            // 由 SyncEngine 下载文件后再调用 applyRemote
+            ?: return null
         val contentType = when (payload.type) {
-            TYPE_TEXT -> if (text != null && LINK_REGEX.matches(text.trim())) {
+            TYPE_TEXT -> if (LINK_REGEX.matches(text.trim())) {
                 ClipboardContentType.LINK
             } else {
                 ClipboardContentType.TEXT
@@ -101,12 +132,11 @@ object SyncClipboardMapper {
             TYPE_FILE -> ClipboardContentType.FILE
             else -> ClipboardContentType.UNKNOWN
         }
-        val content = text ?: payload.dataName ?: return null
-        if (content.isEmpty()) return null
+        if (text.isEmpty()) return null
         return ClipboardItem(
-            content = content,
+            content = text,
             contentType = contentType,
-            contentHash = payload.hash.ifEmpty { ClipboardHasher.hash(content) },
+            contentHash = payload.hash.ifEmpty { ClipboardHasher.hash(text) },
             // 从别的设备来的记录先按「本机之外的来源」标记，本轮不参与同步回写
             sourceDeviceId = SOURCE_REMOTE,
         )

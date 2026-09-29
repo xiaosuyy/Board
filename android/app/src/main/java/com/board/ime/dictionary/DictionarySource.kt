@@ -22,11 +22,22 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["type"]),
         Index(value = ["enabled"]),
+        // 必须与 MIGRATION_6_7 创建的索引一致：Room 会逐项比对索引，
+        // 迁移里建了但实体没声明 → "Migration didn't properly handle"（真机上踩过）
+        Index(value = ["sourceId"]),
     ],
 )
 data class DictionarySource(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,
+    /**
+     * 稳定 ID：由名字派生（`sha256(name)` 前 16 位），**两台设备对同一个词库得到同一个值**。
+     *
+     * 用它当 WebDAV 上的目录名（而不是本地自增主键），A 上传、B 下载后能对上同一个词库，
+     * 不会出现「同一份词库在云端有两个目录」。
+     */
+    @ColumnInfo(defaultValue = "")
+    val sourceId: String = "",
     /** 展示名，例如 `names.dict.txt` */
     val name: String,
     /** 来源类型，见 [DictionarySourceType] */
@@ -48,9 +59,26 @@ data class DictionarySource(
     /** 原始文件格式：TXT / CSV / JSON / RIME_DICT */
     @ColumnInfo(defaultValue = "RIME_DICT")
     val format: String = "RIME_DICT",
+    /** 内容版本号：内容变化时 +1，用于「云端更新 → 本地切换」的判断 */
+    @ColumnInfo(defaultValue = "1")
+    val version: Long = 1L,
+    /** 是否已经生成 Rime 词典配置并部署成功（只有 ready 才算真正可用） */
+    @ColumnInfo(defaultValue = "0")
+    val ready: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-)
+) {
+    /** 云端目录名：sourceId 为空（老数据）时退化用主键，保证不会写到空路径 */
+    val remoteId: String get() = sourceId.ifBlank { "source-$id" }
+
+    /** 显示用的大小 */
+    val sizeLabel: String
+        get() = when {
+            sizeBytes >= 1024L * 1024L -> "%.1f MB".format(sizeBytes / 1024.0 / 1024.0)
+            sizeBytes >= 1024L -> "%.1f KB".format(sizeBytes / 1024.0)
+            else -> "$sizeBytes B"
+        }
+}
 
 /** 数据源类型：目前只有「导入的大词库」和「系统词库」占位 */
 enum class DictionarySourceType {

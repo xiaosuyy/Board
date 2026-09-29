@@ -273,7 +273,10 @@ class DictionaryRepository(
                 code = parsed.code?.trim()?.takeIf { it.isNotEmpty() },
                 frequency = parsed.frequency,
                 type = parsed.type ?: defaultType,
-                source = SOURCE_IMPORTED,
+                // 小词表导入后就是「用户自己的词」：用 local，
+                // 不能再标成 legacy 的 'imported'（那个标记只属于历史 60 万行，
+                // 会被迁移逻辑搬走、也会被同步导出排除）
+                source = SOURCE_LOCAL,
             )
         }
 
@@ -335,6 +338,8 @@ class DictionaryRepository(
                 runCatching { vacuum() }.onFailure { Log.w(TAG, "VACUUM 失败：${it.message}") }
             }
             dropDuplicateSources(sources)
+            // 老数据（v7 之前）没有 sourceId，顺手补齐（幂等）
+            ensureSourceIds()
             return report
         } finally {
             migrationMutex.unlock()
@@ -370,6 +375,122 @@ class DictionaryRepository(
     /** 词库数据源数量（导入的大词库） */
     suspend fun sourceCount(): Int = sourceDao?.count() ?: 0
 
+    /** 导入词库数据源列表（用于设置页展示具体文件 / 大小 / 是否 ready） */
+    suspend fun importedSources(): List<DictionarySource> =
+        sourceDao?.allByType(DictionarySourceType.IMPORTED) ?: emptyList()
+
+    /**
+     * 给老数据补 `sourceId`（v6→v7 迁移时留空）。
+     *
+     * `sourceId` 由名字派生，两台设备对同一个词库得到同一个值，云端目录才对得上。
+     * 幂等，可以在每次启动 / 打开设置页时调用。
+     */
+    suspend fun ensureSourceIds(): Int {
+        val sources = sourceDao ?: return 0
+        var fixed = 0
+        runCatching {
+            sources.all().forEach { source ->
+                val expected = stableSourceId(source.name)
+                if (source.sourceId != expected) {
+                    sources.updateMeta(
+                        id = source.id,
+                        sourceId = expected,
+                        hash = source.hash,
+                        entryCount = source.entryCount,
+                        sizeBytes = source.sizeBytes,
+                        version = source.version,
+                        path = source.path,
+                        updatedAt = source.updatedAt,
+                    )
+                    fixed++
+                }
+            }
+        }.onFailure { Log.w(TAG, "补齐词库 sourceId 失败：${it.message}") }
+        return fixed
+    }
+
+    /**
+     * 把一个导入词库接入 Rime：
+     * 生成 `.dict.yaml` → （规模允许时）deploy → 成功才标记 ready。
+     *
+     * 失败时**不影响原有可用词库**（RimeDictionaryBridge 会回滚 / 保留）。
+     *
+     * @return 是否已经 ready
+     */
+    suspend fun installSourceIntoRime(source: DictionarySource): Boolean {
+        val dir = userDir() ?: return false
+        val written = withContext(Dispatchers.IO) {
+            RimeDictionaryBridge.writeRimeDict(dir, source)
+        } ?: return false
+
+        if (!RimeDictionaryBridge.isRimeReady()) {
+            // Rime 还没初始化（例如刚从其它设备下载完）：配置已生成，等下次部署
+            Log.i(TAG, "Rime 未初始化，词库配置已生成待部署：${written.name}")
+            return false
+        }
+        if (!RimeDictionaryBridge.canAutoDeploy(source)) {
+            // 60 万条这种规模不自动 deploy（原生侧内存/耗时不可控），交给用户手动触发
+            Log.i(TAG, "词库 ${source.name}（${source.entryCount} 条）超过自动部署上限，等待手动部署")
+            return false
+        }
+        val deployed = withContext(Dispatchers.IO) { RimeRuntime.deploy(fullCheck = false) }
+        return finishSourceDeploy(source, dir, deployed)
+    }
+
+    private suspend fun finishSourceDeploy(
+        source: DictionarySource,
+        dir: File,
+        deployed: Boolean,
+    ): Boolean {
+        val sources = sourceDao ?: return false
+        return if (deployed) {
+            RimeDictionaryBridge.commit(dir, source)
+            sources.setReady(source.id, true, source.version, System.currentTimeMillis())
+            Log.i(TAG, "词库已接入 Rime：${source.name}")
+            true
+        } else {
+            RimeDictionaryBridge.rollback(dir, source)
+            sources.setReady(source.id, false, source.version, System.currentTimeMillis())
+            Log.w(TAG, "词库接 Rime 失败，已回滚（旧词库仍可用）：${source.name}")
+            false
+        }
+    }
+
+    /**
+     * 手动部署全部导入词库（大词库不自动部署，用户点按钮走这里）。
+     * @return (ready 数量, 总数)
+     */
+    suspend fun deployImportedSources(): Pair<Int, Int> {
+        val sources = sourceDao ?: return 0 to 0
+        val dir = userDir() ?: return 0 to 0
+        if (!RimeDictionaryBridge.isRimeReady()) return 0 to 0
+        return withContext(Dispatchers.IO) {
+            val list = sources.allByType(DictionarySourceType.IMPORTED)
+            if (list.isEmpty()) return@withContext 0 to 0
+            var written = 0
+            list.forEach { source ->
+                if (RimeDictionaryBridge.writeRimeDict(dir, source) != null) written++
+            }
+            if (written == 0) return@withContext 0 to list.size
+
+            val deployed = RimeRuntime.deploy(fullCheck = false)
+            var ready = 0
+            list.forEach { source ->
+                if (deployed && RimeDictionaryBridge.hasRimeDict(dir, source)) {
+                    RimeDictionaryBridge.commit(dir, source)
+                    sources.setReady(source.id, true, source.version, System.currentTimeMillis())
+                    ready++
+                } else {
+                    sources.setReady(source.id, false, source.version, System.currentTimeMillis())
+                }
+            }
+            ready to list.size
+        }
+    }
+
+    /** 由名字派生稳定 sourceId（sha256 前 16 位） */
+    fun stableSourceId(name: String): String = ClipboardHasher.hash(name.trim()).take(16)
+
     fun observeSources(): Flow<List<DictionarySource>> =
         sourceDao?.observeAll() ?: kotlinx.coroutines.flow.flowOf(emptyList())
 
@@ -402,19 +523,34 @@ class DictionaryRepository(
         dir.mkdirs()
         val fileName = sourceName.ifBlank { "imported_${System.currentTimeMillis()}" } + ".dict.txt"
         val file = File(dir, fileName)
-        val text = buildString(parsed.entries.size * 24) {
-            parsed.entries.forEach { entry ->
-                if (entry.word.isEmpty()) return@forEach
-                append(entry.word).append('\t')
-                append(entry.code.orEmpty()).append('\t')
-                append(entry.frequency).append('\n')
+        // 流式写：60 万条如果在内存里拼字符串会直接 OOM（这个坑以前踩过）
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        var written = 0
+        try {
+            file.bufferedWriter().use { writer ->
+                parsed.entries.forEach { entry ->
+                    if (entry.word.isEmpty()) return@forEach
+                    val line = buildString {
+                        append(entry.word).append('\t')
+                        append(entry.code.orEmpty()).append('\t')
+                        append(entry.frequency).append('\n')
+                    }
+                    writer.write(line)
+                    digest.update(line.toByteArray(Charsets.UTF_8))
+                    written++
+                }
             }
+        } catch (throwable: Throwable) {
+            Log.e(TAG, "写入大词库失败（未入库）", throwable)
+            file.delete()
+            return ImportResult(0, 0, parsed.failed)
         }
-        file.writeText(text)
-        val written = text.count { it == '\n' }
-        val hash = ClipboardHasher.hash(text)
+        val hash = digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+        val existing = sources.findBySourceId(stableSourceId(fileName))
         sources.upsert(
             DictionarySource(
+                id = existing?.id ?: 0L,
+                sourceId = stableSourceId(fileName),
                 name = fileName,
                 type = DictionarySourceType.IMPORTED,
                 path = file.absolutePath,
@@ -423,6 +559,8 @@ class DictionaryRepository(
                 sizeBytes = file.length(),
                 enabled = true,
                 format = format.name,
+                version = (existing?.version ?: 0L) + 1L,
+                ready = existing?.ready ?: false,
             ),
         )
         Log.i(TAG, "大型词库导入为数据源：$fileName（$written 条, ${file.length()} B）")

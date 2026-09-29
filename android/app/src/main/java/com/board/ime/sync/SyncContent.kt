@@ -19,6 +19,14 @@ enum class SyncContent(val label: String, val defaultEnabled: Boolean) {
     /** 常用语 */
     PHRASE("常用语", true),
 
+    /**
+     * 导入的大型词库（DictionarySource 文件）。
+     *
+     * **单独控制**：它是一个 20~30MB 的文件，走独立的 `dictionary/sources/` 目录，
+     * 不塞进用户词同步列表，也不阻塞剪贴板同步。
+     */
+    IMPORTED_DICTIONARY("导入词库（大型文件）", true),
+
     /** 自定义词（用户词库里的一个子集，单独控制） */
     CUSTOM_WORD("自定义词", true),
 

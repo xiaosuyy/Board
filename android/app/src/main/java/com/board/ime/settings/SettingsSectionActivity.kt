@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -16,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.board.ime.BuildConfig
 import com.board.ime.R
 import com.board.ime.clipboard.ClipboardRepository
+import com.board.ime.clipboard.ClipboardStressTest
 import com.board.ime.database.BoardDatabase
 import com.board.ime.dictionary.DictionaryFormat
 import com.board.ime.dictionary.DictionaryFormatException
@@ -30,6 +32,8 @@ import com.board.ime.sync.SyncContent
 import com.board.ime.sync.SyncEngineHolder
 import com.board.ime.sync.SyncEvent
 import com.board.ime.sync.SyncLog
+import com.board.ime.sync.SyncPart
+import com.board.ime.sync.SyncPartState
 import com.board.ime.sync.SyncScheduler
 import com.board.ime.sync.SyncStatusKind
 import com.board.ime.sync.SyncTrigger
@@ -39,6 +43,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -54,6 +59,7 @@ class SettingsSectionActivity : AppCompatActivity() {
     private lateinit var preferences: BoardPreferences
     private lateinit var dictionaryRepository: DictionaryRepository
     private lateinit var clipboardRepository: ClipboardRepository
+    private lateinit var boardDatabase: BoardDatabase
 
     private var section: SettingsSection = SettingsSection.INPUT
     private var showLogs = false
@@ -64,6 +70,9 @@ class SettingsSectionActivity : AppCompatActivity() {
 
     /** 本次「立即同步」是否已经超时（UI 结束等待、后台继续） */
     private var syncTimedOut = false
+
+    /** 同步状态实时订阅（每次重建内容视图时先取消旧的，避免越积越多） */
+    private var statusJob: Job? = null
 
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.US)
 
@@ -93,6 +102,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         showLogs = intent.getBooleanExtra(EXTRA_SHOW_LOGS, false)
         preferences = BoardPreferences(this)
         val boardDatabase = BoardDatabase.get(this)
+        this.boardDatabase = boardDatabase
         dictionaryRepository = DictionaryRepository(
             boardDatabase.dictionaryDao(),
             this,
@@ -271,8 +281,50 @@ class SettingsSectionActivity : AppCompatActivity() {
             minLines = 2
             gravity = Gravity.TOP
         }
+        // 上屏测试按钮放在输入框**上面**：点输入框后键盘弹起也不会挡住它
+        val imeOut = SettingsUi.value(this, "上屏测试：点一下下面的输入框，再点这个按钮")
+        if (preferences.developerMode) {
+            tryCard.addView(imeOut)
+            tryCard.addView(
+                SettingsUi.button(this, "测试上屏（10KB~2MB，走 Board 自己的 IME）") {
+                    runImeCommitTest(field, imeOut)
+                },
+            )
+        }
         tryCard.addView(field)
         content.addView(SettingsUi.cardView(this, tryCard))
+    }
+
+    /**
+     * 上屏测试：**走 Board 自己真实的 InputConnection**（不是 adb 注入）。
+     *
+     * 目标就是上面这个输入框，所以测的是「Board → 目标 App」这一跳，
+     * 与「复制 → 入库」是两个不同的问题。
+     */
+    private fun runImeCommitTest(field: EditText, out: TextView) {
+        val service = BoardInputMethodService.active
+        if (service == null || !service.debugHasConnection()) {
+            out.text = "上屏测试：Board 输入法当前没有输入连接（先点一下下面的输入框）"
+            return
+        }
+        val sizes = listOf(10_000, 100_000, 500_000, 1_000_000, 2_000_000)
+        out.text = "正在测试上屏…"
+        lifecycleScope.launch(Dispatchers.Main) {
+            val lines = ArrayList<String>()
+            sizes.forEach { size ->
+                val text = ClipboardStressTest.generate(size, "ime")
+                field.setText("")
+                val ok = service.debugCommitText(text)
+                val actual = field.text?.length ?: -1
+                lines += when {
+                    !ok -> "${size / 1000}KB: ✗ 提交失败（IPC 异常）"
+                    actual == size -> "${size / 1000}KB: ✓ 目标输入框已收下"
+                    else -> "${size / 1000}KB: △ 提交返回 true，实际收下 $actual 字"
+                }
+                field.setText("")
+            }
+            out.text = "上屏测试结果：\n" + lines.joinToString("\n")
+        }
     }
 
     // ---------------------------------------------------------------- 剪贴板
@@ -303,9 +355,57 @@ class SettingsSectionActivity : AppCompatActivity() {
         sensitive.addView(SettingsUi.hint(this, "启发式判定，命中时会在键盘上提示并且不入库。"))
         content.addView(SettingsUi.cardView(this, sensitive))
 
+        if (preferences.developerMode) {
+            val stress = SettingsUi.card(this)
+            stress.addView(SettingsUi.heading(this, "大文本自测（开发者）"))
+            val out = SettingsUi.value(this, "10KB ~ 10MB 逐档：抓取 / 入库 / 全文 / 搜索 / 系统剪贴板")
+            stress.addView(out)
+            stress.addView(
+                SettingsUi.button(this, "运行大文本压力测试（10KB~10MB）") {
+                    runClipboardStress(out)
+                },
+            )
+            content.addView(SettingsUi.cardView(this, stress))
+        }
+
         lifecycleScope.launch {
             val total = withContext(Dispatchers.IO) { clipboardRepository.counts().total }
             counts.text = "共 $total 条"
+        }
+    }
+
+    /** 开发者模式：逐档自测剪贴板大文本（真抓取 / 真入库 / 真写系统剪贴板） */
+    private fun runClipboardStress(out: TextView) {
+        out.text = "正在运行（10MB 档会比较慢）…"
+        lifecycleScope.launch {
+            val rows = withContext(Dispatchers.IO) {
+                runCatching {
+                    ClipboardStressTest.run(
+                        boardDatabase,
+                        getSystemService(android.content.ClipboardManager::class.java),
+                    )
+                }.getOrElse { throwable ->
+                    Log.w("BoardClipboard", "压力测试失败：${throwable.message}")
+                    emptyList()
+                }
+            }
+            if (rows.isEmpty()) {
+                out.text = "压力测试失败（见日志）"
+                return@launch
+            }
+            out.text = rows.joinToString("\n") { row ->
+                val clip = when {
+                    row.clipboardOk -> "系统剪贴板 ✓"
+                    else -> "系统剪贴板 ✗ ${row.clipboardError.orEmpty()}"
+                }
+                val verdict = when {
+                    row.error != null -> "✗ ${row.error}"
+                    else -> "✓ 入库/全文/搜索通过"
+                }
+                "${row.label}（${row.bytes} B）: 哈希 ${row.hashMs}ms 抓取 ${row.captureMs}ms " +
+                    "存 ${row.storedChars} 字 摘要 ${row.previewChars} 字\n  $verdict\n  $clip"
+            }
+            Toast.makeText(this@SettingsSectionActivity, "压力测试完成，结果见上方", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -361,10 +461,28 @@ class SettingsSectionActivity : AppCompatActivity() {
         learned.addView(SettingsUi.hint(this, "会删除 librime 用户词典与本地镜像；自定义词不受影响。"))
         content.addView(SettingsUi.cardView(this, learned))
 
+        // 导入词库（大型文件）：条目 / 大小 / 是否已接入 Rime
+        val sourcesCard = SettingsUi.card(this)
+        sourcesCard.addView(SettingsUi.heading(this, "导入词库（大型文件）"))
+        val sourcesValue = SettingsUi.value(this, "读取中…")
+        sourcesCard.addView(sourcesValue)
+        val deployButton = SettingsUi.button(this, "部署到 Rime") {
+            deployImportedSources(sourcesValue)
+        }
+        sourcesCard.addView(deployButton)
+        sourcesCard.addView(
+            SettingsUi.hint(
+                this,
+                "大型词库以文件形式保存，不占用户词表；「已接入 Rime」表示已生成词典配置并部署成功。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, sourcesCard))
+
         lifecycleScope.launch {
             val data = withContext(Dispatchers.IO) {
                 // 首次打开设置也顺手完成「历史大词库 → 数据源」迁移（幂等、不丢数据）
                 runCatching { dictionaryRepository.migrateLegacyImportedEntries() }
+                runCatching { dictionaryRepository.ensureSourceIds() }
                 runCatching { dictionaryRepository.refreshLearnedFromRime() }
                 listOf(
                     dictionaryRepository.countAll(),
@@ -382,6 +500,40 @@ class SettingsSectionActivity : AppCompatActivity() {
                 append("我的词：自定义 ${data[2]} · 固定 ${data[4]}\n")
                 append("学习词：${data[1]} · 屏蔽词：${data[5]} · 常用语：${data[3]}")
             }
+            renderSources(sourcesValue, deployButton)
+        }
+    }
+
+    /** 列出导入词库数据源：名字 / 条数 / 大小 / Rime 是否可用 */
+    private fun renderSources(value: TextView, deployButton: android.widget.Button) {
+        lifecycleScope.launch {
+            val sources = withContext(Dispatchers.IO) { dictionaryRepository.importedSources() }
+            if (sources.isEmpty()) {
+                value.text = "暂无导入的大型词库。"
+                deployButton.isEnabled = false
+                return@launch
+            }
+            deployButton.isEnabled = true
+            value.text = sources.joinToString("\n") { source ->
+                val rime = if (source.ready) "已接入 Rime" else "未接入 Rime"
+                "${source.name}\n  ${source.entryCount} 条 · ${source.sizeLabel} · v${source.version} · $rime"
+            }
+        }
+    }
+
+    /** 手动把导入词库部署到 Rime（大词库不自动部署，避免原生侧内存不可控） */
+    private fun deployImportedSources(value: TextView) {
+        value.text = "正在生成词典配置并部署…（大词库可能需要一会儿）"
+        lifecycleScope.launch {
+            val (ready, total) = withContext(Dispatchers.IO) {
+                runCatching { dictionaryRepository.deployImportedSources() }.getOrDefault(0 to 0)
+            }
+            Toast.makeText(
+                this@SettingsSectionActivity,
+                if (total == 0) "没有可部署的导入词库" else "已接入 Rime：$ready / $total",
+                Toast.LENGTH_LONG,
+            ).show()
+            render()
         }
     }
 
@@ -496,22 +648,54 @@ class SettingsSectionActivity : AppCompatActivity() {
         // 状态：已连接就**不显示**账号 / 服务器 / 路径
         val statusCard = SettingsUi.card(this)
         statusCard.addView(SettingsUi.heading(this, "同步状态"))
-        statusCard.addView(
-            SettingsUi.statusRow(
-                this,
-                "WebDAV",
-                when (status.kind) {
+        val overallRow = SettingsUi.statusRow(
+            this,
+            "WebDAV",
+            when (status.kind) {
+                SyncStatusKind.NOT_CONFIGURED -> "未配置"
+                SyncStatusKind.CONNECTED -> "已连接"
+                SyncStatusKind.SYNCING ->
+                    if (syncTimedOut) "同步超时（后台继续）" else "同步中…"
+
+                SyncStatusKind.SUCCESS -> "刚刚同步"
+                SyncStatusKind.FAILED -> "同步失败"
+            },
+            status.kind == SyncStatusKind.CONNECTED || status.kind == SyncStatusKind.SUCCESS,
+        )
+        // 「剪贴板」和「词库」各自独立显示：大型词库下载不会再让整页只显示「同步中」
+        val clipboardRow = SettingsUi.statusRow(
+            this,
+            "剪贴板",
+            status.clipboard.label,
+            status.clipboard.ok,
+        )
+        val dictionaryRow = SettingsUi.statusRow(
+            this,
+            "词库",
+            status.dictionary.label,
+            status.dictionary.ok,
+        )
+        statusCard.addView(overallRow)
+        statusCard.addView(clipboardRow)
+        statusCard.addView(dictionaryRow)
+
+        val overallValue = overallRow.getChildAt(2) as TextView
+        val clipboardValue = clipboardRow.getChildAt(2) as TextView
+        val dictionaryValue = dictionaryRow.getChildAt(2) as TextView
+        statusJob?.cancel()
+        statusJob = lifecycleScope.launch {
+            SyncEngineHolder.get(this@SettingsSectionActivity).status.collect { live ->
+                overallValue.text = when (live.kind) {
                     SyncStatusKind.NOT_CONFIGURED -> "未配置"
                     SyncStatusKind.CONNECTED -> "已连接"
-                    SyncStatusKind.SYNCING ->
-                        if (syncTimedOut) "同步超时（后台继续）" else "同步中…"
-
+                    SyncStatusKind.SYNCING -> if (syncTimedOut) "同步超时（后台继续）" else "同步中…"
                     SyncStatusKind.SUCCESS -> "刚刚同步"
                     SyncStatusKind.FAILED -> "同步失败"
-                },
-                status.kind == SyncStatusKind.CONNECTED || status.kind == SyncStatusKind.SUCCESS,
-            ),
-        )
+                }
+                clipboardValue.text = partText(live.clipboard)
+                dictionaryValue.text = partText(live.dictionary)
+            }
+        }
         val last = status.lastSyncAt?.let { timeFormat.format(Date(it)) } ?: "—"
         statusCard.addView(SettingsUi.value(this, "最近同步：$last"))
         status.lastSummary?.takeIf { it.isNotBlank() }?.let { statusCard.addView(SettingsUi.value(this, it)) }
@@ -596,6 +780,10 @@ class SettingsSectionActivity : AppCompatActivity() {
         val config = readConfig(url, user, pass, dir, autoSync)
         if (!config.isConfigured) {
             Toast.makeText(this, "请先填写 WebDAV 地址", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!config.hasValidScheme) {
+            Toast.makeText(this, "地址要以 http:// 或 https:// 开头", Toast.LENGTH_LONG).show()
             return
         }
         val engine = SyncEngineHolder.get(this)
@@ -737,7 +925,12 @@ class SettingsSectionActivity : AppCompatActivity() {
         card.addView(SettingsUi.heading(this, "最近同步日志"))
         val lines = SyncLog.recent()
         val body = TextView(this).apply {
-            text = if (lines.isEmpty()) "（暂无）" else lines.joinToString("\n")
+            // 单条日志截断：异常栈 / 表结构 dump 可能几千字，原样渲染会把日志页撑爆
+            text = if (lines.isEmpty()) "（暂无）" else {
+                lines.joinToString("\n") { line ->
+                    if (line.length <= 300) line else line.take(300) + "…（已截断）"
+                }
+            }
             textSize = 11f
             typeface = android.graphics.Typeface.MONOSPACE
             setTextColor(secondaryColor())
@@ -774,6 +967,15 @@ class SettingsSectionActivity : AppCompatActivity() {
     }
 
     // ---------------------------------------------------------------- 工具
+
+    /** 一条通道的显示文案：进行中 / 失败时才补细节（例如「同步中 37% · names.dict」） */
+    private fun partText(part: SyncPart): String {
+        val detail = part.detail?.takeIf { it.isNotBlank() } ?: return part.label
+        return when (part.state) {
+            SyncPartState.SYNCING, SyncPartState.FAILED -> "${part.label} · $detail"
+            else -> part.label
+        }
+    }
 
     private fun isImeEnabled(): Boolean = ImeStatus.isBoardEnabled(this)
 

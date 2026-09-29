@@ -19,3 +19,10 @@ third_party/rime/
 # releases é‡Œçš„å¤§äºŒè¿›åˆ¶ï¼ˆAPK / zipï¼‰ç•™åœ¨ç£ç›˜ä¸Šï¼Œä¸è¿›ä»“åº“ï¼›ç‰ˆæœ¬ä¿¡æ¯ txt è¿›ä»“åº“
 releases/*.apk
 releases/*.zip
+
+# ±¾ÂÖÕæ»ú/Ä£ÄâÆ÷Áªµ÷²úÎï£¨²»Èë¿â£©
+_webdav_remote/
+backup-before-dictionary-fix/
+_*.log
+_webdav/
+

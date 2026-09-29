@@ -108,7 +108,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     override fun onCreate() {
         super.onCreate()
-
+        active = this
         preferences = BoardPreferences(this)
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
         buildController(preferences.engineKind, preferences.mode)
@@ -204,6 +204,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     }
 
     override fun onDestroy() {
+        if (active === this) active = null
         preferences.unregisterListener(preferenceListener)
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         stopClipboardObservation()
@@ -686,10 +687,30 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }
     }
 
-    private companion object {
+    /**
+     * 调试 / 自测入口（只给开发者模式用）。
+     *
+     * 剪贴板与「上屏」的容量测试必须走 Board 自己真实的
+     * `InputConnection`，而 adb 没有办法触发这条路径，所以留一个进程内的钩子：
+     * 设置页在开发者模式下调用 [debugCommitText]。
+     */
+    fun debugCommitText(text: String): Boolean = controller.commitText(text)
+
+    fun debugHasConnection(): Boolean = controller.inputConnection != null
+
+    companion object {
         const val TAG = "BoardIME"
         const val CLIPBOARD_LIMIT = 60
         /** 写系统剪贴板时的标签（只在系统的剪贴板浮层里显示） */
         const val CLIPBOARD_LABEL = "Board"
+
+        /**
+         * 当前活着的输入法服务。
+         *
+         * 只给**开发者模式的自测**用（adb 无法触发 Board 自己的上屏路径），
+         * 业务代码不应依赖它。
+         */
+        @Volatile
+        var active: BoardInputMethodService? = null
     }
 }

@@ -63,6 +63,8 @@ class SyncEngine(
     private val syncOperationDao: SyncOperationDao,
     private val dictionaryRepository: DictionaryRepository? = null,
     private val contentGate: SyncContentGate = MemorySyncContentGate(),
+    /** 大型词库文件同步（可选：老调用点不传也能工作） */
+    private val dictionarySyncProvider: ((WebDavClient) -> DictionarySyncBinding?)? = null,
     private val clientFactory: (WebDavConfig) -> WebDavClient = { OkHttpWebDavClientFactory.create(it) },
 ) {
 
@@ -79,19 +81,32 @@ class SyncEngine(
     private var lastTriggeredAt = 0L
 
     init {
-        // 恢复「最近同步时间 / 摘要 / 错误」，重启设置页不会变成空白
+        // 恢复「最近同步时间 / 摘要 / 错误 / 各通道结束状态」，重启设置页不会变成空白
         val (at, summary, error) = configStore.loadLastSync()
+        val (clipboardPart, dictionaryPart) = configStore.loadLastParts()
         _status.value = SyncStatus(
             kind = if (configStore.load().isConfigured) SyncStatusKind.CONNECTED else SyncStatusKind.NOT_CONFIGURED,
             lastSyncAt = at,
             lastSummary = summary,
             lastError = error,
+            clipboard = clipboardPart,
+            dictionary = dictionaryPart,
         )
     }
 
     private fun publish(status: SyncStatus) {
         _status.value = status
         configStore.saveLastSync(status)
+    }
+
+    /**
+     * 只更新内存里的状态，**不写持久化**。
+     *
+     * 词库下载进度可能每秒回调好几次，每次都写 SharedPreferences 太重，
+     * 所以进度用这个；阶段结束态才走 [publish]。
+     */
+    private fun publishTransient(status: SyncStatus) {
+        _status.value = status
     }
 
     // ---------------------------------------------------------------- 配置
@@ -119,6 +134,12 @@ class SyncEngine(
     suspend fun testConnection(config: WebDavConfig = loadConfig()): WebDavResponse<Unit> {
         if (!config.isConfigured) {
             return WebDavResponse.fail(WebDavError.NOT_CONFIGURED, message = "未填写 WebDAV 地址")
+        }
+        if (!config.hasValidScheme) {
+            val message = "WebDAV 地址必须以 http:// 或 https:// 开头"
+            _status.value = _status.value.copy(kind = SyncStatusKind.FAILED, lastError = message)
+            SyncLog.warn(SyncEvent.NETWORK_ERROR, "测试连接被拒绝：$message")
+            return WebDavResponse.fail(WebDavError.PROTOCOL, message = message)
         }
         val response = clientFactory(config).testConnection()
         recordConnectionResult(response)
@@ -170,10 +191,34 @@ class SyncEngine(
             return SyncResult(SyncOutcome.SKIPPED, _status.value)
         }
 
+        // 地址 scheme 拼错（例如 htpps://）时不要走到 OkHttp —— 它会抛
+        // IllegalArgumentException，用户只会看到看不懂的异常名。这里提前给出人话。
+        if (!config.hasValidScheme) {
+            val message = "WebDAV 地址必须以 http:// 或 https:// 开头"
+            SyncLog.warn(SyncEvent.NETWORK_ERROR, "同步被拒绝：$message（地址非法）")
+            val failed = _status.value.copy(
+                kind = SyncStatusKind.FAILED,
+                lastError = message,
+                clipboard = SyncPart(SyncPartState.FAILED, "地址非法"),
+                dictionary = SyncPart(SyncPartState.SKIPPED, "地址非法"),
+            )
+            publish(failed)
+            return SyncResult(outcome = SyncOutcome.CONFIG_ERROR, status = failed)
+        }
+
         // 同一时刻只允许一个同步在跑（手动 / 输入法 / Worker 可能同时触发）
         return syncMutex.withLock {
             lastTriggeredAt = System.currentTimeMillis()
-            _status.value = _status.value.copy(kind = SyncStatusKind.SYNCING, lastError = null)
+            _status.value = _status.value.copy(
+                kind = SyncStatusKind.SYNCING,
+                lastError = null,
+                clipboard = SyncPart(SyncPartState.SYNCING),
+                dictionary = if (contentGate.isEnabled(SyncContent.IMPORTED_DICTIONARY)) {
+                    SyncPart(SyncPartState.IDLE, "等待剪贴板同步")
+                } else {
+                    SyncPart(SyncPartState.SKIPPED, "未勾选")
+                },
+            )
             SyncLog.event(SyncEvent.DONE, "开始同步 触发=$trigger dir=${config.normalizedDir}")
 
             // 从这里开始整段兜底：任何异常都必须把状态推进到终态（FAILED），
@@ -187,22 +232,42 @@ class SyncEngine(
                 return@withLock fail(ensure, trigger)
             }
 
+            // ---------- 阶段 1：剪贴板（永远优先，先结束自己的状态） ----------
             val push = pushLocal(client)
             val tPush = System.currentTimeMillis()
-            if (push != null) return@withLock push
+            if (push != null) {
+                publishTransient(_status.value.copy(clipboard = SyncPart(SyncPartState.FAILED, push.status.lastError)))
+                return@withLock push
+            }
 
             val pull = pullRemote(client)
             val tPull = System.currentTimeMillis()
-            if (pull is PullOutcome.Failed) return@withLock pull.result
+            if (pull is PullOutcome.Failed) {
+                publishTransient(_status.value.copy(clipboard = SyncPart(SyncPartState.FAILED, pull.result.status.lastError)))
+                return@withLock pull.result
+            }
 
             val downloaded = (pull as? PullOutcome.Applied)?.applied ?: 0
             val conflicts = (pull as? PullOutcome.Applied)?.conflicts ?: 0
             val skipped = (pull as? PullOutcome.Applied)?.skipped ?: 0
+            // 剪贴板阶段到此结束：大型词库再慢也不会让这一行显示「同步中」
+            publish(_status.value.copy(clipboard = SyncPart(SyncPartState.SUCCESS, "上传 $pushCount · 下载 $downloaded")))
+            SyncLog.event(
+                SyncEvent.DONE,
+                "剪贴板阶段完成 上传=$pushCount 下载=$downloaded 冲突=$conflicts 跳过=$skipped " +
+                    "耗时=${tPull - tPush}ms",
+            )
 
-            // 词库 / 学习词 / 常用语：一个实体一个文件，合并而不是互相覆盖
+            // ---------- 阶段 2：导入词库（大型文件，独立状态 + 进度） ----------
+            val dictionaryPart = syncDictionarySources(client)
+            val tDict = System.currentTimeMillis()
+
+            // ---------- 阶段 3：词库 / 学习词 / 常用语：一个实体一个文件，合并而不是互相覆盖 ----------
             val words = syncWordEntities(client, config)
             val tWords = System.currentTimeMillis()
-            if (words is WordOutcome.Failed) return@withLock words.result
+            if (words is WordOutcome.Failed) {
+                return@withLock words.result
+            }
 
             val wordResult = words as? WordOutcome.Applied ?: WordOutcome.Applied(0, 0, 0)
 
@@ -216,14 +281,19 @@ class SyncEngine(
                     conflicts,
                     skipped,
                     wordResult,
+                    dictionaryPart.detail,
                 ),
+                clipboard = SyncPart(SyncPartState.SUCCESS, "上传 $pushCount · 下载 $downloaded"),
+                dictionary = dictionaryPart,
             )
             publish(status)
             SyncLog.event(
                 SyncEvent.DONE,
                 "同步完成 上传=$pushCount 下载=$downloaded 冲突=$conflicts 跳过=$skipped " +
                     "词库=${wordResult.words} 学习词=${wordResult.learned} 常用语=${wordResult.phrases} " +
-                    "耗时[目录=${tEnsure - tStart} 上传=${tPush - tEnsure} 剪贴板=${tPull - tPush} 词库学习词=${tWords - tPull} 合计=${tWords - tStart}]ms",
+                    "导入词库=${dictionaryPart.label} " +
+                    "耗时[目录=${tEnsure - tStart} 剪贴板=${tPull - tEnsure} 导入词库=${tDict - tPull} " +
+                    "词库学习词=${tWords - tDict} 合计=${tWords - tStart}]ms",
             )
             return@withLock SyncResult(
                 outcome = SyncOutcome.SUCCESS,
@@ -239,10 +309,13 @@ class SyncEngine(
                     SyncEvent.NETWORK_ERROR,
                     "同步异常：${throwable.javaClass.simpleName}: ${throwable.message}（本地数据与任务都保留）",
                 )
+                val previous = _status.value
                 val status = SyncStatus(
                     kind = SyncStatusKind.FAILED,
-                    lastSyncAt = _status.value.lastSyncAt,
-                    lastError = throwable.message ?: throwable.javaClass.simpleName,
+                    lastSyncAt = previous.lastSyncAt,
+                    lastError = "${throwable.javaClass.simpleName}: ${shorten(throwable.message.orEmpty())}",
+                    clipboard = previous.clipboard.settledIfRunning(throwable.javaClass.simpleName),
+                    dictionary = previous.dictionary.settledIfRunning(throwable.javaClass.simpleName),
                 )
                 publish(status)
                 SyncResult(outcome = SyncOutcome.RETRYABLE_ERROR, status = status)
@@ -281,9 +354,24 @@ class SyncEngine(
         }
 
         val payload = SyncClipboardMapper.toPayload(item)
+        // 超长文本不内联进 JSON：正文先上传到 /file/{dataName}，清单里只留元信息。
+        // 否则一个 5MB 的剪贴板会在「拼 JSON / 序列化 / 解析」环节反复分配好几份内存。
+        val inline = if (payload.size > SyncClipboardMapper.INLINE_TEXT_MAX_BYTES) {
+            val dataName = payload.dataName ?: SyncClipboardMapper.dataNameFor(payload.hash)
+            val filePut = client.putText(
+                SyncClipboardPaths.file(dataName),
+                item.content,
+                CONTENT_TYPE_TEXT,
+            )
+            if (!filePut.isOk) return failPush(operation, filePut)
+            SyncClipboardMapper.toFilePayload(item)
+        } else {
+            payload
+        }
+
         val response = client.putText(
             SyncClipboardPaths.MANIFEST,
-            SyncClipboardMapper.payloadToJson(payload),
+            SyncClipboardMapper.payloadToJson(inline),
             CONTENT_TYPE_JSON,
         )
         return when {
@@ -292,7 +380,8 @@ class SyncEngine(
                 pushCount = 1
                 SyncLog.event(
                     SyncEvent.UPLOAD,
-                    "hash=${SyncLog.shortHash(payload.hash)} bytes=${payload.size}",
+                    "hash=${SyncLog.shortHash(payload.hash)} bytes=${payload.size} " +
+                        "inline=${inline.text != null}",
                 )
                 null
             }
@@ -344,7 +433,24 @@ class SyncEngine(
             return PullOutcome.Applied(0, 0, 0)
         }
 
-        val text = payload.text.orEmpty()
+        // 超长文本：清单里只有元信息，正文要从 /file/{dataName} 单独拉
+        val text = if (payload.type == SyncClipboardMapper.TYPE_TEXT && payload.hasData) {
+            val name = payload.dataName
+            if (name.isNullOrBlank()) {
+                SyncLog.warn(SyncEvent.IGNORED_TYPE, "远端标记 hasData 但缺少 dataName，已安全忽略")
+                return PullOutcome.Applied(0, 0, 0)
+            }
+            val file = client.getText(SyncClipboardPaths.file(name))
+            if (!file.isOk) return PullOutcome.Failed(fail(file, SyncTrigger.MANUAL))
+            SyncLog.event(
+                SyncEvent.DOWNLOAD,
+                "远端超长文本已下载 chars=${file.value?.length ?: 0}",
+            )
+            file.value.orEmpty()
+        } else {
+            payload.text.orEmpty()
+        }
+
         if (text.isEmpty()) {
             SyncLog.warn(SyncEvent.IGNORED_TYPE, "远端文本为空，已忽略")
             return PullOutcome.Applied(0, 0, 0)
@@ -421,6 +527,71 @@ class SyncEngine(
             _applied.tryEmit(applied.content)
         }
         return PullOutcome.Applied(if (applied != null) 1 else 0, 0, 0)
+    }
+
+    // ---------------------------------------------------------------- 导入词库（大型文件）
+
+    /**
+     * 阶段 2：大型导入词库的文件同步。
+     *
+     * 与剪贴板阶段**完全独立**：剪贴板早在这一步之前就已经显示「已同步」，
+     * 这里只更新「词库」那一行的状态和进度百分比。
+     */
+    private suspend fun syncDictionarySources(client: WebDavClient): SyncPart {
+        if (!contentGate.isEnabled(SyncContent.IMPORTED_DICTIONARY)) {
+            SyncLog.event(SyncEvent.IGNORED_TYPE, "用户未勾选「导入词库」，本次跳过大型词库同步")
+            return SyncPart(SyncPartState.SKIPPED, "未勾选")
+        }
+        val binding = dictionarySyncProvider?.invoke(client) ?: run {
+            SyncLog.event(SyncEvent.IGNORED_TYPE, "本次运行没有接入词库数据源，跳过")
+            return SyncPart(SyncPartState.SKIPPED, "未接入数据源")
+        }
+        val dir = binding.dir
+
+        publishTransient(_status.value.copy(dictionary = SyncPart(SyncPartState.SYNCING)))
+        val started = System.currentTimeMillis()
+        var lastProgressAt = 0L
+        val report = try {
+            binding.sync.sync(dir) { name, fraction ->
+                // 节流：最多每 400ms 刷一次 UI（进度条不需要更细）
+                val now = System.currentTimeMillis()
+                if (now - lastProgressAt >= PROGRESS_THROTTLE_MS) {
+                    lastProgressAt = now
+                    publishTransient(
+                        _status.value.copy(
+                            dictionary = SyncPart(SyncPartState.SYNCING, name, fraction),
+                        ),
+                    )
+                }
+            }
+        } catch (throwable: Throwable) {
+            SyncLog.warn(
+                SyncEvent.NETWORK_ERROR,
+                "词库同步异常：${throwable.javaClass.simpleName}: ${throwable.message}（本地词库保留）",
+            )
+            val failed = SyncPart(SyncPartState.FAILED, throwable.javaClass.simpleName)
+            publish(_status.value.copy(dictionary = failed))
+            return failed
+        }
+
+        val detail = buildString {
+            append("上传 ${report.uploaded} · 下载 ${report.downloaded}")
+            if (report.skipped > 0) append(" · 跳过 ${report.skipped}")
+            if (report.installed > 0) append(" · Rime ${report.installed}")
+            if (report.failed > 0) append(" · 失败 ${report.failed}")
+        }
+        val part = if (report.failed > 0) {
+            SyncPart(SyncPartState.FAILED, report.firstError ?: detail)
+        } else {
+            SyncPart(SyncPartState.SUCCESS, detail)
+        }
+        publish(_status.value.copy(dictionary = part))
+        SyncLog.event(
+            SyncEvent.DONE,
+            "词库阶段完成 $detail 上传字节=${report.uploadedBytes} 下载字节=${report.downloadedBytes} " +
+                "耗时=${System.currentTimeMillis() - started}ms",
+        )
+        return part
     }
 
     // ---------------------------------------------------------------- 词库 / 学习词 / 常用语
@@ -648,6 +819,10 @@ class SyncEngine(
             lastSyncAt = _status.value.lastSyncAt,
             lastError = detail,
             lastSummary = null,
+            // 关键：失败时不能把「还在同步中」的通道原样留下，
+            // 否则 UI 上会永远显示「剪贴板 同步中」。
+            clipboard = _status.value.clipboard.settledIfRunning("未完成"),
+            dictionary = _status.value.dictionary.settledIfRunning("未完成"),
         )
         publish(status)
 
@@ -672,7 +847,20 @@ class SyncEngine(
             WebDavError.PROTOCOL -> "响应格式错误"
             WebDavError.UNEXPECTED -> "未预期的错误"
         }
-        return if (message.isNullOrBlank()) base else "$base · $message"
+        return if (message.isNullOrBlank()) base else "$base · ${shorten(message)}"
+    }
+
+    /**
+     * 把异常信息压成一行短文本。
+     *
+     * Room 的迁移校验异常会带一整张表结构 dump（几千字），
+     * 原样存进 `lastError` 再显示出来会把设置页整页撑爆（真机上见过）。
+     * 详细信息看日志，UI 只需要一句人能读的。
+     */
+    private fun shorten(message: String): String {
+        val singleLine = message.lineSequence().firstOrNull().orEmpty().trim()
+        val clean = if (singleLine.isNotEmpty()) singleLine else message.trim()
+        return if (clean.length <= MAX_ERROR_CHARS) clean else clean.take(MAX_ERROR_CHARS) + "…"
     }
 
     private fun buildSummary(
@@ -681,11 +869,13 @@ class SyncEngine(
         conflicts: Int,
         skipped: Int,
         words: WordOutcome.Applied = WordOutcome.Applied(0, 0, 0),
+        dictionaryDetail: String? = null,
     ): String = buildString {
         append("上传 $uploaded · 下载 $downloaded")
         if (words.words > 0) append(" · 词库 ${words.words}")
         if (words.learned > 0) append(" · 学习词 ${words.learned}")
         if (words.phrases > 0) append(" · 常用语 ${words.phrases}")
+        if (!dictionaryDetail.isNullOrBlank()) append(" · 导入词库（$dictionaryDetail）")
         if (conflicts > 0) append(" · 冲突 $conflicts")
         if (skipped > 0) append(" · 跳过 $skipped")
     }
@@ -701,8 +891,15 @@ class SyncEngine(
 
     private companion object {
         const val CONTENT_TYPE_JSON = "application/json"
+        const val CONTENT_TYPE_TEXT = "text/plain; charset=utf-8"
         const val QUEUE_LIMIT = 20
         const val DEBOUNCE_MS = 3_000L
+
+        /** 进度刷新节流：最多每 400ms 刷一次词库进度 */
+        const val PROGRESS_THROTTLE_MS = 400L
+
+        /** 存进 SharedPreferences / 显示在设置页的错误信息上限（防止一整张表结构 dump 撑爆 UI） */
+        const val MAX_ERROR_CHARS = 160
 
         /** 每种实体一个文件，不塞进一个巨大 JSON */
         const val FILE_DICTIONARY = "board_dictionary.json"
@@ -714,6 +911,12 @@ class SyncEngine(
         const val INPUT_QUIET_WINDOW_MS = 5_000L
     }
 }
+
+/** 一次词库同步所需的绑定：同步器 + 本地词库目录 */
+data class DictionarySyncBinding(
+    val sync: DictionarySourceSync,
+    val dir: File,
+)
 
 /** 让默认参数不用直接依赖 OkHttp 的具体类 */
 object OkHttpWebDavClientFactory {

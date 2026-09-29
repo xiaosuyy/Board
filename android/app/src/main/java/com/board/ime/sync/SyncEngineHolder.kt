@@ -31,16 +31,33 @@ object SyncEngineHolder {
                 preferences.skipSensitiveClipboard
             },
         )
+        val dictionaryRepository = com.board.ime.dictionary.DictionaryRepository(
+            database.dictionaryDao(),
+            context,
+            database.dictionarySourceDao(),
+            database,
+        )
+        // 导入的大词库文件目录（与本地导入共用同一个目录）
+        val importedDir = java.io.File(
+            com.board.ime.engine.rime.RimeDataInstaller(context).userDir(),
+            "imported",
+        )
         return SyncEngine(
             configStore = WebDavConfigStore(context),
             clipboardDao = database.clipboardDao(),
             clipboardRepository = clipboardRepository,
             syncOperationDao = database.syncOperationDao(),
-            dictionaryRepository = com.board.ime.dictionary.DictionaryRepository(
-                database.dictionaryDao(),
-                context,
-                database.dictionarySourceDao(),
-            ),
+            dictionaryRepository = dictionaryRepository,
+            dictionarySyncProvider = { client ->
+                DictionarySyncBinding(
+                    sync = DictionarySourceSync(
+                        client = client,
+                        sources = database.dictionarySourceDao(),
+                        install = { source -> dictionaryRepository.installSourceIntoRime(source) },
+                    ),
+                    dir = importedDir,
+                )
+            },
             contentGate = preferences,
         )
     }

@@ -324,8 +324,58 @@ class InputController(
 
     // ------------------------------------------------------------ InputConnection 操作
 
-    fun commitText(text: CharSequence) {
-        inputConnection?.commitText(text, CURSOR_AT_END)
+    /**
+     * 上屏。
+     *
+     * 短文本直接 `commitText`；**超长文本分块提交**。
+     *
+     * 原因：`commitText` 是进程间调用，Binder 事务缓冲是**进程级共享**的（约 1MB），
+     * 一次塞进去几 MB 会抛 `TransactionTooLargeException`。分块之后每一笔事务都远小于上限，
+     * Board 自己不再设置「人为的低字数上限」——真正能不能收下由目标 App 决定。
+     *
+     * @return 是否全部成功上屏（失败时会记日志，不抛异常）
+     */
+    fun commitText(text: CharSequence): Boolean {
+        val connection = inputConnection ?: return false
+        val value = text.toString()
+        if (value.isEmpty()) return true
+
+        if (value.length <= COMMIT_CHUNK_CHARS) {
+            return commitChunk(connection, value)
+        }
+
+        // 超长：按固定长度切块，逐块提交
+        var index = 0
+        var chunks = 0
+        while (index < value.length) {
+            val end = minOf(index + COMMIT_CHUNK_CHARS, value.length)
+            if (!commitChunk(connection, value.substring(index, end))) {
+                android.util.Log.w(
+                    TAG,
+                    "超长文本上屏中断：chars=${value.length} 已提交块=$chunks 位置=$index",
+                )
+                return false
+            }
+            chunks++
+            index = end
+        }
+        android.util.Log.i(TAG, "超长文本已分块上屏：chars=${value.length} 块数=$chunks")
+        return true
+    }
+
+    /** 提交一块；捕获 TransactionTooLargeException 等 IPC 异常并记录真实失败类型 */
+    private fun commitChunk(connection: InputConnection, chunk: String): Boolean = try {
+        connection.commitText(chunk, CURSOR_AT_END)
+        true
+    } catch (tooLarge: android.os.TransactionTooLargeException) {
+        android.util.Log.w(TAG, "上屏失败：TransactionTooLargeException（chars=${chunk.length}）")
+        false
+    } catch (throwable: Throwable) {
+        android.util.Log.w(
+            TAG,
+            "上屏失败：${throwable.javaClass.simpleName}: ${throwable.message}（chars=${chunk.length}）",
+        )
+        false
     }
 
     fun deleteBackward() {
@@ -370,5 +420,14 @@ class InputController(
     private companion object {
         const val CURSOR_AT_END = 1
         const val DOUBLE_TAP_TIMEOUT_MS = 300L
+        const val TAG = "BoardIme"
+
+        /**
+         * 单次 `commitText` 的最大字符数。
+         *
+         * 50,000 个字符（中文最多约 150KB UTF-8）加上 Parcel 开销后仍明显小于
+         * Binder 约 1MB 的事务上限，所以一次提交是安全的；超过这个长度才切块。
+         */
+        const val COMMIT_CHUNK_CHARS = 50_000
     }
 }
