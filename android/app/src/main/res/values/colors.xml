@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Board 颜色集中管理入口。
+
+  规则（对应视觉要求）：
+  - 主体只有 白 / 黑 / 灰；
+  - 蓝色（board_blue*）只用于少量强调：当前选中候选、按键激活状态、同步状态、搜索；
+  - 不使用渐变、发光、大面积蓝。
+  键盘同时提供浅色（kb_light_*）与深色（kb_dark_*）两套调色板，
+  由 ui/KeyboardTheme.kt 按用户设置在运行时选择。
+-->
+<resources>
+
+    <!-- ==================== 基础中性色 ==================== -->
+    <color name="board_white">#FFFFFFFF</color>
+    <color name="board_black">#FF101214</color>
+
+    <color name="board_grey_050">#FFF7F8F9</color>
+    <color name="board_grey_100">#FFEDEFF1</color>
+    <color name="board_grey_200">#FFE2E5E8</color>
+    <color name="board_grey_300">#FFD2D6DA</color>
+    <color name="board_grey_400">#FFB4B9BE</color>
+    <color name="board_grey_500">#FF8A9199</color>
+    <color name="board_grey_600">#FF6B7075</color>
+    <color name="board_grey_700">#FF4A5056</color>
+    <color name="board_grey_800">#FF2A2D31</color>
+    <color name="board_grey_850">#FF1E2124</color>
+    <color name="board_grey_900">#FF16181A</color>
+    <color name="board_grey_950">#FF0E1012</color>
+
+    <!-- ==================== 强调色（少量使用） ==================== -->
+    <color name="board_blue">#FF2F6BFF</color>
+    <color name="board_blue_soft">#FFE8EFFF</color>
+    <color name="board_blue_dark">#FF5B8CFF</color>
+    <color name="board_blue_soft_dark">#FF1D2735</color>
+
+    <!-- ==================== 键盘调色板 · 浅色 ==================== -->
+    <color name="kb_light_background">#FFE9EBEE</color>
+    <color name="kb_light_key">@color/board_white</color>
+    <color name="kb_light_key_pressed">#FFD8DBDF</color>
+    <color name="kb_light_key_functional">#FFD3D7DC</color>
+    <color name="kb_light_key_functional_pressed">#FFBFC4CA</color>
+    <color name="kb_light_key_text">#FF111418</color>
+    <color name="kb_light_key_text_functional">#FF3C4248</color>
+    <color name="kb_light_accent">@color/board_blue</color>
+    <color name="kb_light_accent_text">@color/board_white</color>
+    <color name="kb_light_divider">#FFC9CDD2</color>
+    <color name="kb_light_candidate_bar">@color/board_grey_050</color>
+    <color name="kb_light_candidate_text">#FF111418</color>
+    <color name="kb_light_candidate_text_muted">#FF9AA0A6</color>
+    <color name="kb_light_candidate_selected_bg">@color/board_blue_soft</color>
+    <color name="kb_light_candidate_selected_text">@color/board_blue</color>
+    <color name="kb_light_mode_chip_bg">@color/board_grey_200</color>
+    <color name="kb_light_mode_chip_text">#FF4A5056</color>
+    <color name="kb_light_panel_surface">@color/board_white</color>
+    <color name="kb_light_panel_surface_pressed">#FFE6E9EC</color>
+    <color name="kb_light_pinyin_bg">#FFE7EAEE</color>
+    <color name="kb_light_icon">#FF3C4248</color>
+
+    <!-- ==================== 键盘调色板 · 深色 ==================== -->
+    <color name="kb_dark_background">#FF0E1012</color>
+    <color name="kb_dark_key">#FF2A2D31</color>
+    <color name="kb_dark_key_pressed">#FF3C4046</color>
+    <color name="kb_dark_key_functional">@color/board_grey_850</color>
+    <color name="kb_dark_key_functional_pressed">#FF34383D</color>
+    <color name="kb_dark_key_text">#FFF2F4F6</color>
+    <color name="kb_dark_key_text_functional">#FFC3C9CF</color>
+    <color name="kb_dark_accent">@color/board_blue_dark</color>
+    <color name="kb_dark_accent_text">#FF0E1012</color>
+    <color name="kb_dark_divider">#FF24272A</color>
+    <color name="kb_dark_candidate_bar">@color/board_grey_900</color>
+    <color name="kb_dark_candidate_text">#FFF2F4F6</color>
+    <color name="kb_dark_candidate_text_muted">#FF7C838A</color>
+    <color name="kb_dark_candidate_selected_bg">@color/board_blue_soft_dark</color>
+    <color name="kb_dark_candidate_selected_text">#FF7FA6FF</color>
+    <color name="kb_dark_mode_chip_bg">@color/board_grey_800</color>
+    <color name="kb_dark_mode_chip_text">#FFC3C9CF</color>
+    <color name="kb_dark_panel_surface">@color/board_grey_800</color>
+    <color name="kb_dark_panel_surface_pressed">#FF3C4046</color>
+    <color name="kb_dark_pinyin_bg">#FF2F3338</color>
+    <color name="kb_dark_icon">#FFD7DCE1</color>
+
+    <!-- ==================== App（设置页）· 浅色（深色见 values-night） ==================== -->
+    <color name="app_background">@color/board_grey_050</color>
+    <color name="app_surface">@color/board_white</color>
+    <color name="app_surface_variant">@color/board_grey_100</color>
+    <color name="app_on_surface">#FF111418</color>
+    <color name="app_on_surface_variant">#FF6B7075</color>
+    <color name="app_outline">@color/board_grey_300</color>
+    <color name="app_accent">@color/board_blue</color>
+    <color name="app_on_accent">@color/board_white</color>
+    <color name="app_accent_container">@color/board_blue_soft</color>
+
+    <!-- 图标 -->
+    <color name="ic_launcher_background">#FF101214</color>
+</resources>

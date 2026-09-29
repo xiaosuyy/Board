@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Board 图标：白色键盘底板 + 深色按键，与键盘配色一致 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,36 h44 a8,8 0 0 1 8,8 v20 a8,8 0 0 1 -8,8 h-44 a8,8 0 0 1 -8,-8 v-20 a8,8 0 0 1 8,-8 z" />
+
+    <path
+        android:fillColor="#2F6BFF"
+        android:pathData="M32,43 h12 v6 h-12 z M48,43 h12 v6 h-12 z M64,43 h12 v6 h-12 z" />
+
+    <path
+        android:fillColor="#101214"
+        android:pathData="M32,52 h12 v6 h-12 z M48,52 h12 v6 h-12 z M64,52 h12 v6 h-12 z M32,61 h44 v6 h-44 z" />
+</vector>

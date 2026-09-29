@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ==================== 统一设计令牌 ====================
+         全项目只有三档圆角 / 一档间距梯度 / 三档图标尺寸，避免「每个地方一个圆角」。
+         键帽、候选 chip、剪贴板卡片、更多入口、搜索框、按下反馈都从下面取值。 -->
+    <dimen name="kb_radius_small">6dp</dimen>
+    <dimen name="kb_radius_medium">10dp</dimen>
+    <dimen name="kb_radius_large">14dp</dimen>
+
+    <dimen name="kb_space_xs">2dp</dimen>
+    <dimen name="kb_space_s">4dp</dimen>
+    <dimen name="kb_space_m">8dp</dimen>
+    <dimen name="kb_space_l">12dp</dimen>
+    <dimen name="kb_space_xl">16dp</dimen>
+
+    <dimen name="kb_icon_small">14dp</dimen>
+    <dimen name="kb_icon_medium">18dp</dimen>
+    <dimen name="kb_icon_large">20dp</dimen>
+
+    <dimen name="kb_text_xs">10sp</dimen>
+    <dimen name="kb_text_s">12sp</dimen>
+    <dimen name="kb_text_m">13sp</dimen>
+    <dimen name="kb_text_l">15sp</dimen>
+
+    <!-- ==================== 键盘本体 ==================== -->
+    <dimen name="kb_key_corner_radius">@dimen/kb_radius_medium</dimen>
+    <dimen name="kb_key_gap_horizontal">6dp</dimen>
+    <dimen name="kb_key_gap_vertical">8dp</dimen>
+    <dimen name="kb_key_height">50dp</dimen>
+    <dimen name="kb_keyboard_padding_horizontal">4dp</dimen>
+    <dimen name="kb_keyboard_padding_vertical">8dp</dimen>
+    <dimen name="kb_key_text_size">20sp</dimen>
+    <dimen name="kb_key_text_size_function">15sp</dimen>
+
+    <!-- ==================== 顶部动态面板 ====================
+         很薄的一条功能区域：TOOLBAR / CANDIDATES / MORE / CLIPBOARD 四种状态共用这个高度，
+         内部内容变化，外部高度不变 —— 切换状态时整个输入法不会上下跳动。 -->
+    <dimen name="kb_top_panel_height">56dp</dimen>
+    <dimen name="kb_panel_horizontal_padding">10dp</dimen>
+    <dimen name="kb_panel_corner_radius">@dimen/kb_radius_large</dimen>
+    <dimen name="kb_panel_pill_corner_radius">@dimen/kb_radius_small</dimen>
+    <dimen name="kb_divider_height">1dp</dimen>
+
+    <!-- 工具栏：一行 44dp 高的图标行，在 56dp 面板内垂直居中；图标 20dp（行高的 45%） -->
+    <dimen name="kb_tool_row_height">44dp</dimen>
+    <dimen name="kb_tool_icon_size">@dimen/kb_icon_large</dimen>
+    <dimen name="kb_tool_hit_size">44dp</dimen>
+    <dimen name="kb_tool_side_padding">10dp</dimen>
+
+    <!-- 候选栏：只有一行，拼音 pill + 候选 chip 都塞在固定面板里 -->
+    <dimen name="kb_candidate_chip_height">32dp</dimen>
+    <dimen name="kb_candidate_min_width">40dp</dimen>
+
+    <!-- 候选词字号档位见 settings/CandidateTextSize.kt（只有一处来源，便于立即生效） -->
+
+    <!-- 更多：一行紧凑功能入口（横向可滑动） -->
+    <dimen name="kb_more_item_width">64dp</dimen>
+    <dimen name="kb_more_icon_size">@dimen/kb_icon_medium</dimen>
+    <dimen name="kb_more_label_size">@dimen/kb_text_xs</dimen>
+
+    <!-- 剪贴板内容区（与键盘等高、可滚动；标题仍占用 TopPanel 固定高度） -->
+    <dimen name="kb_clipboard_card_min_height">48dp</dimen>
+    <dimen name="kb_clipboard_card_radius">@dimen/kb_radius_medium</dimen>
+    <dimen name="kb_clipboard_grid_gap">6dp</dimen>
+    <dimen name="kb_clipboard_padding">10dp</dimen>
+    <dimen name="kb_clipboard_text_size">@dimen/kb_text_s</dimen>
+    <dimen name="kb_clipboard_title_size">@dimen/kb_text_l</dimen>
+    <dimen name="kb_clipboard_section_size">@dimen/kb_text_s</dimen>
+    <!-- 搜索：结果区高度上限（含顶部「搜索结果」小标题），只在搜索状态使用 -->
+    <dimen name="kb_clipboard_search_max_height">146dp</dimen>
+    <!-- 卡片底部动作条 -->
+    <dimen name="kb_clipboard_action_height">34dp</dimen>
+    <dimen name="kb_clipboard_action_text_size">@dimen/kb_text_m</dimen>
+    <!-- 卡片上的来源 / 固定 / 收藏小标记 -->
+    <dimen name="kb_clipboard_badge_size">@dimen/kb_icon_small</dimen>
+    <dimen name="kb_clipboard_caret_width">2dp</dimen>
+
+    <!-- 横屏悬浮键盘（由 KeyboardLayoutCalculator 使用，不直接写进布局） -->
+    <dimen name="kb_floating_key_height">46dp</dimen>
+    <dimen name="kb_floating_key_gap_horizontal">6dp</dimen>
+    <dimen name="kb_floating_key_gap_vertical">8dp</dimen>
+    <dimen name="kb_floating_padding_horizontal">6dp</dimen>
+    <dimen name="kb_floating_padding_vertical">8dp</dimen>
+    <dimen name="kb_floating_corner_radius">@dimen/kb_radius_large</dimen>
+    <dimen name="kb_floating_edge_margin">12dp</dimen>
+
+    <!-- ==================== 设置页 ==================== -->
+    <dimen name="app_screen_padding">20dp</dimen>
+    <dimen name="app_card_corner_radius">@dimen/kb_radius_large</dimen>
+    <dimen name="app_card_padding">16dp</dimen>
+    <dimen name="app_section_gap">16dp</dimen>
+</resources>

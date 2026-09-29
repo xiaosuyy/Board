@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 深色模式下 App（设置页）的颜色覆盖；键盘颜色由 KeyboardTheme 自行选择 -->
+<resources>
+    <color name="app_background">@color/board_grey_950</color>
+    <color name="app_surface">@color/board_grey_900</color>
+    <color name="app_surface_variant">@color/board_grey_850</color>
+    <color name="app_on_surface">#FFF2F4F6</color>
+    <color name="app_on_surface_variant">#FFA8AEB4</color>
+    <color name="app_outline">@color/board_grey_800</color>
+    <color name="app_accent">@color/board_blue_dark</color>
+    <color name="app_on_accent">@color/board_grey_950</color>
+    <color name="app_accent_container">@color/board_blue_soft_dark</color>
+</resources>

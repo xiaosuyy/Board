@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- WebDAV / SyncClipboard 同步需要网络 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".BoardApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Board"
+        android:usesCleartextTraffic="true">
+        <!--
+          usesCleartextTraffic：用户可能自建 http:// 的 WebDAV（例如同机 NAS）；
+          是否用 https 由用户填写的地址决定，这里不替用户做限制。
+        -->
+
+        <!-- 设置页：用于启用输入法、切换输入法、试用键盘 -->
+        <activity
+            android:name=".settings.BoardSettingsActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".settings.DictionaryActivity"
+            android:exported="false"
+            android:label="@string/dictionary_title" />
+
+        <activity
+            android:name=".settings.SettingsSectionActivity"
+            android:exported="false"
+            android:label="@string/app_name" />
+
+        <!-- 输入法服务：声明 android.view.InputMethod 后才会出现在系统输入法列表中 -->
+        <service
+            android:name=".ime.BoardInputMethodService"
+            android:exported="true"
+            android:label="@string/ime_name"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:theme="@style/Theme.Board.Ime">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/board_ime_method" />
+        </service>
+    </application>
+
+</manifest>

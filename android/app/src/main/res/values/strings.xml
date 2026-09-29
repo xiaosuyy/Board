@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Board</string>
+    <string name="ime_name">Board 输入法</string>
+    <string name="ime_subtype_en">English (US)</string>
+    <string name="ime_subtype_zh">中文</string>
+    <string name="ime_description">简约、可高度自定义的跨设备输入法</string>
+
+    <!-- 设置页 -->
+    <string name="settings_subtitle">跨设备输入法 · 阶段一</string>
+    <string name="settings_section_status">输入法状态</string>
+    <string name="settings_status_enabled">已启用，可以在系统中切换使用</string>
+    <string name="settings_status_disabled">尚未启用，请先在系统设置中勾选 Board</string>
+    <string name="settings_open_ime_settings">启用 / 管理输入法</string>
+    <string name="settings_switch_ime">切换输入法</string>
+    <string name="settings_section_keyboard">键盘</string>
+    <string name="settings_mode_label">输入模式</string>
+    <string name="settings_mode_english">English</string>
+    <string name="settings_mode_chinese">中文</string>
+    <string name="settings_theme_label">外观</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_theme_hint">仅影响键盘显示，设置页始终跟随系统</string>
+    <string name="settings_engine_label">中文输入引擎</string>
+    <string name="settings_engine_rime">Rime 朙月拼音</string>
+    <string name="settings_engine_basic">占位引擎（仅测试）</string>
+    <string name="settings_engine_hint">中文由 librime 提供，首次使用会自动部署词库</string>
+    <string name="settings_candidate_size_label">候选词字号</string>
+    <string name="settings_candidate_size_small">小</string>
+    <string name="settings_candidate_size_standard">标准</string>
+    <string name="settings_candidate_size_large">大</string>
+    <string name="settings_candidate_size_xlarge">特大</string>
+    <string name="settings_candidate_size_hint">修改后立即生效，不需要重启输入法</string>
+    <string name="settings_layout_label">键盘布局</string>
+    <string name="settings_layout_auto">自动</string>
+    <string name="settings_layout_fill">铺满</string>
+    <string name="settings_layout_floating">悬浮</string>
+    <string name="settings_layout_hint">「自动」在横屏 / 大屏使用悬浮键盘；悬浮键盘不铺满宽度、保持键帽比例</string>
+    <string name="settings_sound">按键音效</string>
+    <string name="settings_vibrate">按键震动</string>
+    <string name="settings_section_try">试用</string>
+    <string name="settings_try_hint">点击下面的输入框，然后切换到 Board 键盘</string>
+    <string name="settings_try_search_hint">搜索框（回车触发搜索）</string>
+    <string name="settings_try_password_hint">密码框</string>
+    <string name="settings_try_placeholder">在这里试打一段文字…</string>
+    <!-- 试用 -->
+    <string name="settings_footer">当前版本：Android 端核心 + librime 中文输入（朙月拼音 · 简体）+ 剪贴板面板 + SyncClipboard / WebDAV 文本同步。Windows 端、LAN 实时同步、AI、语音等按计划放到后续阶段。第三方组件与许可证见仓库 THIRD_PARTY.md。</string>
+
+    <!-- 同步（WebDAV / SyncClipboard） -->
+    <string name="settings_section_sync">同步（WebDAV / SyncClipboard）</string>
+    <string name="settings_sync_last_none">最近同步：—</string>
+    <string name="settings_sync_last">最近同步：%1$s</string>
+    <string name="settings_sync_url">WebDAV 地址（如 https://dav.example.com/dav）</string>
+    <string name="settings_sync_username">用户名</string>
+    <string name="settings_sync_password">密码</string>
+    <string name="settings_sync_dir">同步目录（相对地址，默认 board）</string>
+    <string name="settings_sync_test">测试连接</string>
+    <string name="settings_sync_save">保存配置</string>
+    <string name="settings_sync_now">立即同步</string>
+    <string name="settings_sync_auto">自动同步（周期检查，非实时推送）</string>
+    <string name="settings_sync_hint">本轮只同步纯文本；远端是 Image / File / Group 时会安全忽略并写日志。密码保存在 Android 加密存储中。</string>
+    <string name="settings_sync_insecure">安全存储不可用，密码只保留在本次会话内存中</string>
+    <string name="settings_sync_log">最近同步日志</string>
+    <string name="settings_sync_need_url">请先填写 WebDAV 地址</string>
+    <string name="settings_sync_saved">配置已保存</string>
+    <string name="settings_sync_testing">正在测试连接…</string>
+    <string name="settings_sync_running">正在同步…</string>
+    <string name="settings_sync_test_ok">连接成功</string>
+    <string name="settings_sync_test_failed">连接失败：%1$s</string>
+
+    <!-- 词库 -->
+    <string name="settings_section_dictionary">词库</string>
+    <string name="settings_dict_counts">词条 %1$d · 学习词 %2$d · 自定义词 %3$d</string>
+    <string name="settings_dict_counts_hint">学习记录由 librime 在本地维护，不上传、不依赖网络</string>
+    <string name="settings_dict_manage">管理我的词库</string>
+    <string name="settings_dict_import">导入</string>
+    <string name="settings_dict_export">导出</string>
+    <string name="settings_dict_clear_learned">清空学习记录</string>
+    <string name="settings_dict_clear_title">清空学习记录？</string>
+    <string name="settings_dict_clear_message">将删除 librime 的用户词典（学习到的选词与词频）以及本地镜像。自定义词、固定词、屏蔽词不受影响。此操作无法撤销。</string>
+    <string name="dictionary_title">我的词库</string>
+    <string name="dictionary_add_title">新增词条</string>
+    <string name="dictionary_edit_title">编辑词条</string>
+    <string name="dictionary_word">词条</string>
+    <string name="dictionary_code">编码（拼音，音节用空格分隔）</string>
+    <string name="dictionary_frequency">词频</string>
+    <string name="dictionary_type">类型</string>
+    <string name="dictionary_type_learned">学习词</string>
+    <string name="dictionary_type_custom">自定义词</string>
+    <string name="dictionary_type_pinned">固定词</string>
+    <string name="dictionary_type_blocked">屏蔽词</string>
+    <string name="dictionary_enabled">启用</string>
+    <string name="dictionary_empty">还没有词条。点右上角「+」添加，或从设置里导入。</string>
+    <string name="dictionary_filter_all">全部</string>
+    <string name="dictionary_filter_learned">学习</string>
+    <string name="dictionary_filter_custom">自定义</string>
+    <string name="dictionary_filter_pinned">固定</string>
+    <string name="dictionary_filter_blocked">屏蔽</string>
+    <string name="dictionary_delete_title">删除「%1$s」？</string>
+    <string name="dictionary_saved">已保存</string>
+    <string name="dictionary_word_exists">已存在同名词条</string>
+    <string name="dictionary_word_required">词条不能为空</string>
+    <string name="dictionary_type_locked_hint">学习词由 librime 维护，只读</string>
+    <string name="dict_import_pick">选择要导入的文件</string>
+    <string name="dict_import_format">按哪种格式解析？</string>
+    <string name="dict_import_done">导入结果</string>
+    <string name="dict_import_failed">导入失败：%1$s</string>
+    <string name="dict_export_scope">导出范围</string>
+    <string name="dict_export_format">导出格式</string>
+    <string name="dict_export_name">board_dictionary</string>
+    <string name="dict_export_done">已导出 %1$d 条到所选文件</string>
+    <string name="dict_export_empty">没有可导出的词条</string>
+    <string name="dict_clear_done">学习记录已清空</string>
+    <string name="dict_sync_done">已同步 %1$d 条学习词</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_confirm">确定</string>
+    <string name="common_save">保存</string>
+
+</resources>

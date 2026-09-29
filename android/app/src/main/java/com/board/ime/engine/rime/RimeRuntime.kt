@@ -1,0 +1,289 @@
+package com.board.ime.engine.rime
+
+import android.content.Context
+import android.util.Log
+import java.io.File
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
+/**
+ * librime 运行时。
+ *
+ * 负责「一次性」的全局流程：释放数据 → RimeSetup / RimeInitialize → 部署 → 创建会话。
+ * 部署很慢（要构建词库索引），必须在后台线程调用，因此这里只提供阻塞式步骤，
+ * 由调用方（输入法服务）放到 IO 协程里执行。
+ *
+ * 会话数量：本阶段一个输入法实例只用一个会话，切换输入框时复用。
+ */
+object RimeRuntime {
+
+    private const val TAG = "BoardRime"
+
+    /** 第一版默认方案：朙月拼音 · 简化字（简体输出） */
+    const val DEFAULT_SCHEMA = "luna_pinyin_simp"
+
+    /**
+     * 用户词典名（学习记录写在这里）。
+     * 由 schema 的 `translator/dictionary` 决定：luna_pinyin(_simp) 都是 `luna_pinyin`，
+     * 因此两种方案共享同一份学习记录。数据落在 `<user_data_dir>/luna_pinyin.userdb/`。
+     */
+    const val USER_DICT_NAME = "luna_pinyin"
+
+    /**
+     * 自定义短语词典（schema 里的 `table_translator@custom_phrase`，`user_dict: custom_phrase`）。
+     * 文件是 `<user_data_dir>/custom_phrase.txt`，每行 `词条<TAB>编码`，优先级高于普通词库。
+     */
+    const val CUSTOM_PHRASE_DICT = "custom_phrase"
+
+    private val lock = ReentrantLock()
+
+    @Volatile
+    private var initialized = false
+
+    @Volatile
+    private var sessionId = 0L
+
+    @Volatile
+    var librimeVersion: String = ""
+        private set
+
+    @Volatile
+    var lastError: String? = null
+        private set
+
+    @Volatile
+    var isDeploying: Boolean = false
+        private set
+
+    /** 上一次 [initialize] 是否重新释放了 assets 数据 */
+    @Volatile
+    var dataWasReinstalled: Boolean = false
+        private set
+
+    /** 用户数据目录（学习记录 / 自定义短语） */
+    @Volatile
+    private var userDirPath: String? = null
+
+    val isNativeAvailable: Boolean
+        get() = RimeNative.isAvailable
+
+    /** 会话是否可用（部署完成之后才为 true） */
+    val isReady: Boolean
+        get() = sessionId != 0L
+
+    /** 当前会话 id，0 表示不可用 */
+    val session: Long
+        get() = sessionId
+
+    /** 初始化 RimeSetup + RimeInitialize；可重复调用 */
+    fun initialize(context: Context, appVersion: String): Boolean {
+        lock.withLock {
+            if (initialized) return true
+            lastError = null
+
+            if (!RimeNative.isAvailable) {
+                lastError = "board_rime.so 未加载"
+                Log.e(TAG, lastError!!)
+                return false
+            }
+
+            val installer = RimeDataInstaller(context)
+            val reCopied = try {
+                installer.install()
+            } catch (throwable: Throwable) {
+                lastError = "释放 Rime 数据失败：${throwable.message}"
+                Log.e(TAG, "释放 Rime 数据失败", throwable)
+                return false
+            }
+            dataWasReinstalled = reCopied
+            userDirPath = installer.userDir().absolutePath
+
+            val ok = try {
+                RimeNative.nativeSetup(
+                    installer.sharedDir().absolutePath,
+                    installer.userDir().absolutePath,
+                    APP_NAME,
+                    appVersion,
+                    installer.logDir().absolutePath,
+                )
+            } catch (throwable: Throwable) {
+                Log.e(TAG, "RimeSetup 失败", throwable)
+                false
+            }
+
+            if (!ok) {
+                lastError = "RimeSetup 失败"
+                return false
+            }
+
+            librimeVersion = RimeNative.nativeVersion().orEmpty()
+            initialized = true
+            Log.i(TAG, "librime $librimeVersion 初始化完成，assets 重新释放=$reCopied")
+            return true
+        }
+    }
+
+    /** 阻塞式部署（构建词库索引），必须放在后台线程 */
+    fun deploy(fullCheck: Boolean): Boolean {
+        if (!initialized) {
+            lastError = "尚未初始化"
+            return false
+        }
+        lock.withLock {
+            isDeploying = true
+            try {
+                val started = RimeNative.nativeStartMaintenance(fullCheck)
+                Log.i(TAG, "开始部署 Rime 数据，fullCheck=$fullCheck started=$started")
+                // start_maintenance 返回 false 有两种情况：没有需要处理的任务，
+                // 或者已经处于维护状态。后者需要 join 等待，否则会在部署中途开会话。
+                if (started || RimeNative.nativeIsMaintenanceMode()) {
+                    RimeNative.nativeJoinMaintenance()
+                }
+                Log.i(TAG, "Rime 部署结束")
+                return true
+            } catch (throwable: Throwable) {
+                lastError = "部署失败：${throwable.message}"
+                Log.e(TAG, "Rime 部署失败", throwable)
+                return false
+            } finally {
+                isDeploying = false
+            }
+        }
+    }
+
+    /** 部署完成后创建会话并选中默认方案 */
+    fun openSession(): Boolean {
+        if (!initialized) {
+            lastError = "尚未初始化"
+            return false
+        }
+        lock.withLock { return openSessionLocked() }
+    }
+
+    private fun openSessionLocked(): Boolean {
+        if (sessionId != 0L) return true
+        val id = try {
+            RimeNative.nativeCreateSession()
+        } catch (throwable: Throwable) {
+            Log.e(TAG, "创建会话失败", throwable)
+            0L
+        }
+        if (id == 0L) {
+            lastError = "创建 Rime 会话失败"
+            return false
+        }
+        val selected = RimeNative.nativeSelectSchema(id, DEFAULT_SCHEMA)
+        Log.i(TAG, "创建 Rime 会话 $id，选中方案 $DEFAULT_SCHEMA = $selected")
+        sessionId = id
+        return true
+    }
+
+    /** 关闭会话：leveldb 的用户词典只允许一个句柄，操作 userdb 前必须先释放 */
+    private fun closeSessionLocked() {
+        if (sessionId != 0L) {
+            RimeNative.nativeDestroySession(sessionId)
+            sessionId = 0L
+        }
+    }
+
+    fun currentSchema(): String {
+        val id = sessionId
+        if (id == 0L) return ""
+        return RimeNative.nativeGetCurrentSchema(id).orEmpty()
+    }
+
+    /** 重启会话（写了自定义短语、清空学习记录之后调用） */
+    fun restartSession(): Boolean {
+        lock.withLock {
+            closeSessionLocked()
+            return if (initialized) openSessionLocked() else false
+        }
+    }
+
+    /** 用户数据目录：学习记录（userdb）与自定义短语都在这里 */
+    fun userDataDir(): File? = userDirPath?.let { File(it) }
+
+    /** 自定义短语文件（Rime 标准格式：每行 `词条<TAB>编码`） */
+    fun customPhraseFile(): File? = userDataDir()?.let { File(it, "$CUSTOM_PHRASE_DICT.txt") }
+
+    /**
+     * 导出学习记录（用户词典）到文本文件。
+     * @return 条目数；失败返回 -1
+     */
+    fun exportUserDict(destination: File): Int = withSessionReleased {
+        RimeNative.nativeExportUserDict(USER_DICT_NAME, destination.absolutePath)
+    }
+
+    /**
+     * 从文本文件导入学习记录。
+     * @return 条目数；失败返回 -1
+     */
+    fun importUserDict(source: File): Int = withSessionReleased {
+        RimeNative.nativeImportUserDict(USER_DICT_NAME, source.absolutePath)
+    }
+
+    /** 清空学习记录：删除 userdb 目录后重开会话（本地操作，不涉及网络） */
+    fun clearUserLearning(): Boolean {
+        lock.withLock {
+            closeSessionLocked()
+            val dir = userDataDir()
+            var removed = false
+            dir?.listFiles()?.forEach { file ->
+                if (file.name.startsWith(USER_DICT_NAME)) {
+                    if (file.deleteRecursively()) removed = true
+                }
+            }
+            Log.i(TAG, "清空学习记录：removed=$removed dir=${dir?.absolutePath}")
+            if (initialized) openSessionLocked()
+            return removed
+        }
+    }
+
+    /**
+     * 操作 userdb 期间先销毁会话，结束后恢复。
+     * 因为同一个 leveldb 用户词典不能被两个句柄同时打开。
+     */
+    private inline fun <T> withSessionReleased(block: () -> T): T {
+        if (!initialized) return -1 as T
+        lock.withLock {
+            val hadSession = sessionId
+            closeSessionLocked()
+            try {
+                return block()
+            } catch (throwable: Throwable) {
+                Log.e(TAG, "用户词典操作失败", throwable)
+                return -1 as T
+            } finally {
+                if (hadSession != 0L) openSessionLocked()
+            }
+        }
+    }
+
+    fun close() {
+        lock.withLock {
+            if (sessionId != 0L) {
+                RimeNative.nativeDestroySession(sessionId)
+                sessionId = 0L
+            }
+            if (initialized) {
+                RimeNative.nativeFinalize()
+                initialized = false
+            }
+        }
+    }
+
+    /**
+     * 供候选栏展示的状态文案；返回 null 表示一切正常。
+     * 只在与中文输入相关时才有意义。
+     */
+    fun statusText(): String? = when {
+        !RimeNative.isAvailable -> "原生库缺失，中文输入不可用"
+        lastError != null -> lastError
+        !initialized -> "正在初始化中文引擎…"
+        isDeploying -> "正在部署中文词库…"
+        sessionId == 0L -> "正在启动中文引擎…"
+        else -> null
+    }
+
+    private const val APP_NAME = "board"
+}

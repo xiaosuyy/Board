@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 键盘本身不依赖主题（颜色由 KeyboardTheme 在运行时注入），
+         这里只服务于设置页外观。 -->
+    <style name="Theme.Board" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/app_accent</item>
+        <item name="colorOnPrimary">@color/app_on_accent</item>
+        <item name="colorPrimaryContainer">@color/app_accent_container</item>
+        <item name="colorSurface">@color/app_surface</item>
+        <item name="colorOnSurface">@color/app_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/app_on_surface_variant</item>
+        <item name="colorOutline">@color/app_outline</item>
+        <item name="android:colorBackground">@color/app_background</item>
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+    </style>
+
+    <!--
+      输入法窗口专用主题。
+      横屏悬浮键盘需要窗口本身可透明，才能让键盘卡片之外的区域露出应用内容。
+    -->
+    <style name="Theme.Board.Ime" parent="Theme.Board">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  键盘输入视图。
+
+  顶部 TopPanel 是**固定高度**的动态面板：TOOLBAR / CANDIDATES / MORE / CLIPBOARD
+  四种状态共用同一个高度，内部内容变化，外部高度不变 —— 所以切换状态时
+  整个输入法（键盘）不会上下跳动。
+
+  剪贴板的内容区与键盘等高、互斥显示，因此总高度在所有状态下完全一致。
+  这里不写任何颜色；尺寸只引用 dimens.xml。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/keyboard_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:id="@+id/keyboard_float"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- 固定高度的顶部动态面板：四种状态互斥 -->
+        <FrameLayout
+            android:id="@+id/panel_host"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/kb_top_panel_height">
+
+            <com.board.ime.ui.panel.ToolbarView
+                android:id="@+id/toolbar_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <com.board.ime.ui.panel.CandidateBar
+                android:id="@+id/candidate_bar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <com.board.ime.ui.panel.MorePanel
+                android:id="@+id/more_panel"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <com.board.ime.ui.panel.ClipboardHeader
+                android:id="@+id/clipboard_header"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </FrameLayout>
+
+        <View
+            android:id="@+id/panel_divider"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/kb_divider_height" />
+
+        <!--
+          剪贴板内容区（放在键盘上面）：
+          - 普通剪贴板：高度 = 键盘高度，键盘隐藏 → 总高度不变
+          - 搜索剪贴板：高度 = 搜索结果上限，键盘显示在下方 → 结果区有上限，不会顶太高
+        -->
+        <com.board.ime.ui.panel.ClipboardPanel
+            android:id="@+id/clipboard_panel"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:visibility="gone" />
+
+        <com.board.ime.ui.KeyboardView
+            android:id="@+id/keyboard_view"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+    </LinearLayout>
+</FrameLayout>

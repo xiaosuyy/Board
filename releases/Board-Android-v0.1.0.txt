@@ -1,0 +1,94 @@
+Board Android 版本信息
+========================
+
+版本
+----
+versionName : 0.1.0
+versionCode : 2
+基线名称   : v0.1.0-mobile
+
+Git
+---
+Git commit : 见下方「Git 状态」（本机未预装 git，见说明）
+Git tag    : v0.1.0-mobile（目标标签名）
+
+APK
+---
+路径       : releases/Board-Android-v0.1.0-debug.apk
+原始产物   : android/app/build/outputs/apk/debug/app-debug.apk
+大小       : 22,707,258 字节（约 21.7 MB）
+SHA-256    : B799C0062279B2EDEA43BDF03A3136F45513C9727515580C9B36758AF63FD480
+构建时间   : 2026-09-29（本机时区）
+
+构建环境
+--------
+Gradle / AGP   : 9.4.1 / 9.2.1
+Kotlin / KSP   : 2.4.10 / 2.3.10
+JDK            : 17
+NDK / CMake    : 27.0.12077973 / 3.22.1
+ABI            : arm64-v8a / armeabi-v7a / x86_64
+minSdk         : 26
+targetSdk      : 36
+compileSdk     : 37
+
+Rime
+----
+librime        : 1.17.0（fcitx5-android 预编译静态库，tools/fetch_rime.ps1 下载）
+默认方案       : luna_pinyin_simp（朙月拼音 · 简体）
+用户数据目录   : files/rime/user（学习记录 userdb / custom_phrase.txt，升级不覆盖）
+
+当前主要功能
+------------
+1. 顶部动态面板：TOOLBAR / CANDIDATES / MORE / CLIPBOARD 四状态共用 56dp 高度
+   （收起键盘键在剪贴板图标左侧，调用 requestHideSelf，不模拟返回键）
+2. 中文输入：librime 朙月拼音 · 简体；单行候选 + 拼音 pill；横向滑动
+3. 用户学习：librime userdb 本地学习，选词后候选排序会变化，重启/重装仍在
+4. 词库：学习词 / 自定义词 / 固定词 / 屏蔽词 / 常用语；新增、编辑、删除、筛选
+5. 词库导入导出：TXT / CSV / JSON / Rime 词库；去重、不覆盖、报告条数
+6. 剪贴板面板：最近 / 收藏 / 固定 / 删除 / 搜索 / 清空（二次确认）/ 云端筛选
+7. 同步：SyncClipboard 协议（SyncClipboard.json）+ 用户自己的 WebDAV
+   - 词库 / 学习词 / 常用语各一个实体文件，**合并而不是互相覆盖**
+   - 学习词会写回 librime 用户词典 → 真正参与候选排序
+   - 删除用 tombstone，另一端不会把删除的条目恢复
+   - 同步内容逐项开关；账号密码只在配置阶段展示
+8. 设置：首页只放状态 + 8 个一级分类；日志默认隐藏（连点版本号 5 次开启开发者模式）
+9. 深色模式、横屏悬浮键盘、按键音效 / 震动
+
+已知限制
+--------
+- 主题（THEME）/ 键盘设置（KEYBOARD_SETTINGS）只有开关与 SyncEntityType，**尚未实现真正同步**
+- 词库类同步采用「一个实体一个文件 + 拉取合并写回」，没有逐条 SyncOperation 任务记录
+  （sync_operation 表的 deviceId / deleted / timestamp 字段已就位，目前只有剪贴板推送走队列）
+- 学习词同步要求本进程内 Rime 已初始化（打开过一次键盘），否则本次跳过并写日志
+- 剪贴板条目的删除还不同步；只有词库类有 tombstone
+- 图片 / 文件（Image / File / Group）只识别不传输
+- SyncClipboard 协议没有设备字段，设备名来自可选的 device 扩展 / Build.MODEL
+- 性能只在模拟器上量过帧率（四组场景 0 janky），真机只做了功能验证
+- 未在商业 WebDAV（Nextcloud 等）上验证，测试用的是 tools/test_webdav.ps1（本机最小实现）
+
+源码包
+------
+路径       : releases/Board-Android-v0.1.0-source.zip
+内容       : android/（含 assets/rime 全部配置与数据）、gradle/、tools/、
+             README.md、THIRD_PARTY.md、Gradle 配置（settings/build/gradle.properties/gradlew）
+已排除     : build/、.gradle/、.kotlin/、.cxx/、local.properties、*.log、APK / zip、Git 目录
+Rime 预编译库
+  third_party/rime/（59.6 MB 静态库）**没有打进压缩包**，用可重复下载脚本还原：
+      powershell -ExecutionPolicy Bypass -File tools/fetch_rime.ps1
+  脚本会从 fcitx5-android/prebuilt 按月下载 librime 1.17.0 + opencc/leveldb/marisa/yaml-cpp/glog，
+  校验后解到 third_party/rime/<abi>/，因此源码包不依赖二进制也能复现构建。
+
+Git 状态
+--------
+本机（Windows 开发机）**没有安装 git**（PATH、Program Files、ProgramData、scoop 等常见位置
+都找不到 git.exe，`where git` 也查不到）。我尝试下载便携版 MinGit 来初始化仓库，
+但当前网络对 GitHub 大文件不稳定（两次都只下到 18MB / 28.9MB，压缩包不完整）。
+
+因此：
+- `.gitignore` 已经准备好（排除 build/.gradle/.kotlin/local.properties/third_party/rime/releases 二进制）
+- 源码、APK、版本信息都已按 release 要求落盘
+- 只要本机装上 git，在该目录执行即可得到与本文件一致的基线：
+      git init
+      git add -A
+      git commit -m "Board Android mobile stable baseline"
+      git tag -a v0.1.0-mobile -m "Board Android mobile stable baseline"

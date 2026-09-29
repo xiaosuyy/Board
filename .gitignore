@@ -1,0 +1,21 @@
+*.iml
+.gradle/
+.kotlin/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# 预编译的 librime 静态库由 tools/fetch_rime.ps1 下载，不提交
+third_party/rime/
+
+# releases 里的大二进制（APK / zip）留在磁盘上，不进仓库；版本信息 txt 进仓库
+releases/*.apk
+releases/*.zip

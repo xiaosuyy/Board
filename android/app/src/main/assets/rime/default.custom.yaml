@@ -1,0 +1,10 @@
+# default.custom.yaml —— 标准 Rime 的「用户自定义」层
+#
+# 只声明本项目实际打包的方案，避免 default.yaml 里引用了未随包发布的方案
+# （bopomofo / cangjie5 / quick5 / terra_pinyin）导致部署时报缺少方案。
+#
+# 优先级：luna_pinyin_simp（朙月拼音·简化字，简体输出）→ luna_pinyin（繁体）
+patch:
+  schema_list:
+    - schema: luna_pinyin_simp
+    - schema: luna_pinyin
