@@ -420,10 +420,9 @@ class DictionaryRepository(
     suspend fun installSourceIntoRime(source: DictionarySource): Boolean {
         val dir = userDir() ?: return false
         val imported = importedDir() ?: return false
+        val sources = sourceDao ?: return false
 
         if (!RimeDictionaryBridge.canAutoDeploy(source)) {
-            // 大词库不自动 deploy（原生侧内存/耗时不可控），交给用户手动触发。
-            // 这里**不解压**：长期只留 gz，需要部署时才展开。
             Log.i(TAG, "词库 ${source.name}（${source.entryCount} 条）超过自动部署上限，等待手动部署")
             return false
         }
@@ -432,17 +431,28 @@ class DictionaryRepository(
             return false
         }
 
+        // 1) schema 挂接（额外词源，不动原来的 luna_pinyin）
+        val live = sources.allByType(DictionarySourceType.IMPORTED)
+        if (!RimeDictionaryBridge.applySchemaPatch(dir, live)) {
+            Log.w(TAG, "schema patch 未就位，跳过部署：${source.name}")
+            return false
+        }
+        // 2) 解压临时工作文件
         val staged = withContext(Dispatchers.IO) {
             RimeDictionaryBridge.stageForDeploy(dir, source, imported)
         } ?: return false
 
-        val deployed = withContext(Dispatchers.IO) { RimeRuntime.deploy(fullCheck = false) }
+        // 3) full deploy：schema 变了必须整体重建
+        val deployed = withContext(Dispatchers.IO) { RimeRuntime.deploy(fullCheck = true) }
         return finishSourceDeploy(source, dir, staged, deployed)
     }
 
     /**
-     * 部署收尾：**无论成功失败都要删掉临时解压出来的 `.dict.yaml`**，
-     * 长期只保留 `<hash>.dict.yaml.gz`。
+     * 部署收尾。
+     *
+     * **只有 deploy 成功、并且确认 `<逻辑名>.table.bin` 真的生成了**，
+     * 才删临时 `.dict.yaml` 并把 `ready` 置 1；
+     * 否则保留 gz、删掉临时文件、`ready` 保持 0（不假装词库已生效）。
      */
     private suspend fun finishSourceDeploy(
         source: DictionarySource,
@@ -451,17 +461,20 @@ class DictionaryRepository(
         deployed: Boolean,
     ): Boolean {
         val sources = sourceDao ?: return false
-        // 部署产物（table.bin）已经生成，工作文件不再需要 —— 先清临时文件
+        val table = RimeDictionaryBridge.tableFile(dir, source)
+        val tableReady = deployed && table.isFile && table.length() > 0L
+        // 无论成败都清临时文件（gz 永久保留）
         runCatching { staged.delete() }
-        return if (deployed) {
-            sources.setReady(source.id, true, source.version, System.currentTimeMillis())
-            Log.i(TAG, "词库已接入 Rime 并清理临时文件：${source.name}")
-            true
+        sources.setReady(source.id, tableReady, source.version, System.currentTimeMillis())
+        if (tableReady) {
+            Log.i(TAG, "词库已接入 Rime：${source.name}（table=${table.name} ${table.length()} B）")
         } else {
-            sources.setReady(source.id, false, source.version, System.currentTimeMillis())
-            Log.w(TAG, "词库接 Rime 失败（旧词库仍可用，gz 保留）：${source.name}")
-            false
+            Log.w(
+                TAG,
+                "词库未生效（deploy=$deployed table=${table.isFile}），已清理临时文件并保留 gz：${source.name}",
+            )
         }
+        return tableReady
     }
 
     /**
@@ -477,27 +490,50 @@ class DictionaryRepository(
             val list = sources.allByType(DictionarySourceType.IMPORTED)
             if (list.isEmpty()) return@withContext 0 to 0
 
-            // 部署前临时展开 gz（Rime 部署要读 .dict.yaml）
+            // 1) schema 挂接：把大型词典作为额外词源写进 luna_pinyin_simp.custom.yaml
+            if (!RimeDictionaryBridge.applySchemaPatch(dir, list)) {
+                Log.w(TAG, "schema patch 未就位（存在用户自己的 custom.yaml？），本次不部署")
+                return@withContext 0 to list.size
+            }
+
+            // 2) 部署前临时展开 gz（流式，头部会重写成逻辑 dictionary 名）
             val staged = HashMap<Long, File>()
             list.forEach { source ->
                 RimeDictionaryBridge.stageForDeploy(dir, source, imported)?.let { staged[source.id] = it }
             }
-            if (staged.isEmpty()) return@withContext 0 to list.size
+            if (staged.isEmpty()) {
+                Log.w(TAG, "没有可用的数据源，跳过部署")
+                return@withContext 0 to list.size
+            }
 
-            val deployed = RimeRuntime.deploy(fullCheck = false)
+            // 3) full deploy：schema 变了必须整体重建
+            val started = System.currentTimeMillis()
+            val deployed = RimeRuntime.deploy(fullCheck = true)
+            val cost = System.currentTimeMillis() - started
+
+            // 4) 只有 table.bin 真的生成才算成功
             var ready = 0
             list.forEach { source ->
-                val ok = deployed && staged.containsKey(source.id)
-                // 无论成败都清掉临时解压文件：长期只留 gz
+                val table = RimeDictionaryBridge.tableFile(dir, source)
+                val ok = deployed && staged.containsKey(source.id) && table.isFile && table.length() > 0L
+                if (ok) ready++
+                // 5) 无论成败都清理临时解压文件；gz 永久保留
                 staged[source.id]?.let { runCatching { it.delete() } }
+                sources.setReady(source.id, ok, source.version, System.currentTimeMillis())
                 if (ok) {
-                    sources.setReady(source.id, true, source.version, System.currentTimeMillis())
-                    ready++
+                    Log.i(TAG, "部署成功：${source.name} table=${table.name}（${table.length()} B）")
                 } else {
-                    sources.setReady(source.id, false, source.version, System.currentTimeMillis())
+                    Log.w(
+                        TAG,
+                        "部署未生效：${source.name} deploy=$deployed table=${table.isFile} " +
+                            "（gz 与 build/ 均未改动）",
+                    )
                 }
             }
-            Log.i(TAG, "手动部署完成：ready=$ready/${list.size}，临时 .dict.yaml 已清理")
+            Log.i(
+                TAG,
+                "手动部署完成：ready=$ready/${list.size} 耗时=${cost}ms，临时 .dict.yaml 已清理",
+            )
             ready to list.size
         }
     }

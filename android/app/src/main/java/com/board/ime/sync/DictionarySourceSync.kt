@@ -104,10 +104,13 @@ class DictionarySourceSync(
      * 跑一次词库文件同步。
      *
      * @param localDir 本地词库文件目录（`files/rime/user/imported`）
+     * @param syncDir 同步目录（例如 `Board`）。**必须带**：MKCOL 走的是「相对 baseUrl」的路径，
+     *   漏掉它就会把集合建到账号根目录，导致随后 PUT 因父目录不存在而 409（真机上踩过）。
      * @param onProgress (词库名, 0f..1f 或 null)
      */
     suspend fun sync(
         localDir: File,
+        syncDir: String,
         onProgress: (String, Float?) -> Unit = { _, _ -> },
     ): Report {
         localDir.mkdirs()
@@ -147,7 +150,7 @@ class DictionarySourceSync(
                 return@forEach
             }
 
-            ensureDir(id)
+            ensureDir(id, syncDir)
             val started = System.currentTimeMillis()
             // 线上传的永远是**未压缩**内容（协议不变）：本地若是 gz，先临时解压，传完必删
             val upload = if (com.board.ime.dictionary.DictionaryStore.isCompressedStore(file.path)) {
@@ -366,8 +369,11 @@ class DictionarySourceSync(
         emptyList()
     }
 
-    private suspend fun ensureDir(id: String) {
-        runCatching { client.ensureDirectory("$DICT_ROOT/$id") }
+    /** MKCOL 需要「同步目录 + 词库目录」的完整相对路径（相对 baseUrl） */
+    private suspend fun ensureDir(id: String, syncDir: String) {
+        val prefix = syncDir.trim().trim('/')
+        val path = if (prefix.isEmpty()) "$DICT_ROOT/$id" else "$prefix/$DICT_ROOT/$id"
+        runCatching { client.ensureDirectory(path) }
     }
 
     private fun fraction(done: Long, total: Long): Float? =

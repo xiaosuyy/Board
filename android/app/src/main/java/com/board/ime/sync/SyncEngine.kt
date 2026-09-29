@@ -259,7 +259,7 @@ class SyncEngine(
             )
 
             // ---------- 阶段 2：导入词库（大型文件，独立状态 + 进度） ----------
-            val dictionaryPart = syncDictionarySources(client)
+            val dictionaryPart = syncDictionarySources(client, config.normalizedDir)
             val tDict = System.currentTimeMillis()
 
             // ---------- 阶段 3：词库 / 学习词 / 常用语：一个实体一个文件，合并而不是互相覆盖 ----------
@@ -545,7 +545,7 @@ class SyncEngine(
      * 与剪贴板阶段**完全独立**：剪贴板早在这一步之前就已经显示「已同步」，
      * 这里只更新「词库」那一行的状态和进度百分比。
      */
-    private suspend fun syncDictionarySources(client: WebDavClient): SyncPart {
+    private suspend fun syncDictionarySources(client: WebDavClient, syncDir: String): SyncPart {
         if (!contentGate.isEnabled(SyncContent.IMPORTED_DICTIONARY)) {
             SyncLog.event(SyncEvent.IGNORED_TYPE, "用户未勾选「导入词库」，本次跳过大型词库同步")
             return SyncPart(SyncPartState.SKIPPED, "未勾选")
@@ -560,7 +560,7 @@ class SyncEngine(
         val started = System.currentTimeMillis()
         var lastProgressAt = 0L
         val report = try {
-            binding.sync.sync(dir) { name, fraction ->
+            binding.sync.sync(dir, syncDir) { name, fraction ->
                 // 节流：最多每 400ms 刷一次 UI（进度条不需要更细）
                 val now = System.currentTimeMillis()
                 if (now - lastProgressAt >= PROGRESS_THROTTLE_MS) {
