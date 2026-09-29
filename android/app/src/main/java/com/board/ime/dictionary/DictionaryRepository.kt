@@ -2,23 +2,37 @@ package com.board.ime.dictionary
 
 import android.content.Context
 import android.util.Log
+import com.board.ime.clipboard.ClipboardHasher
+import com.board.ime.database.BoardDatabase
 import com.board.ime.database.dao.DictionaryDao
+import com.board.ime.database.dao.DictionarySourceDao
 import com.board.ime.database.entity.DictionaryEntry
 import com.board.ime.engine.rime.RimeDataInstaller
 import com.board.ime.engine.rime.RimeRuntime
 import com.board.ime.sync.SyncWordMerge
 import com.board.ime.sync.SyncWordRecord
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 
 /** 导入结果 */
 data class ImportResult(
     val imported: Int,
     val skipped: Int,
     val failed: Int,
+    /** 走「大型词库数据源」时：数据源文件名 */
+    val sourceName: String? = null,
+    /** 走「大型词库数据源」时的条目数 */
+    val sourceEntries: Int = 0,
 ) {
     val summary: String
-        get() = "成功导入 $imported 条，跳过重复 $skipped 条，无法解析 $failed 条"
+        get() = if (sourceName != null) {
+            "已作为词库数据源接入：$sourceName（$sourceEntries 条）\n" +
+                "无法解析 $failed 条；数据源文件保存在应用私有目录，不占用用户词表"
+        } else {
+            "成功导入 $imported 条，跳过重复 $skipped 条，无法解析 $failed 条"
+        }
 }
 
 /** 导出范围 */
@@ -50,6 +64,10 @@ enum class ExportScope(val label: String) {
 class DictionaryRepository(
     private val dao: DictionaryDao,
     context: Context? = null,
+    /** 大型词库数据源（可选：老调用点不传也能工作） */
+    private val sourceDao: DictionarySourceDao? = null,
+    /** 数据库本体（VACUUM 回收空间用；可选） */
+    private val database: BoardDatabase? = null,
 ) {
 
     /** 旧种子词清理标记（每个进程一次） */
@@ -287,6 +305,135 @@ class DictionaryRepository(
 
     suspend fun exportCount(scope: ExportScope): Int =
         ExportScope.types(scope).sumOf { dao.countByType(it) }
+
+    // ---------------------------------------------------------------- 大型词库 / 迁移
+
+    private val migrationMutex = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * 历史遗留的大型导入词条 → [DictionarySource]（幂等，可在启动/打开设置时重复调用）。
+     *
+     * 注意：服务启动和设置页可能**同时**触发，所以这里用 Mutex 串行化，
+     * 否则会写出两份文件、插两条 source。
+     *
+     * @return 迁移报告；没有待迁移数据时返回 null
+     */
+    suspend fun migrateLegacyImportedEntries(): DictionarySourceMigrator.Report? {
+        val sources = sourceDao ?: return null
+        if (!migrationMutex.tryLock()) return null
+        try {
+            val dir = userDir()?.let { File(it, "imported") }
+            val report = runCatching {
+                DictionarySourceMigrator(dao, sources, dir).migrate()
+            }.getOrElse { throwable ->
+                Log.e(TAG, "词库迁移失败（原数据保留）", throwable)
+                null
+            }
+            // 迁移后立即回收空间：SQLite 删行不会自动缩小文件，不 VACUUM 的话
+            // 数据库文件仍然占着那 100MB
+            if (report != null) {
+                runCatching { vacuum() }.onFailure { Log.w(TAG, "VACUUM 失败：${it.message}") }
+            }
+            dropDuplicateSources(sources)
+            return report
+        } finally {
+            migrationMutex.unlock()
+        }
+    }
+
+    /** 同名 / 同 hash 的重复数据源只留一条（并发迁移可能产生重复） */
+    private suspend fun dropDuplicateSources(sources: DictionarySourceDao) {
+        runCatching {
+            val seen = HashSet<String>()
+            sources.all().forEach { source ->
+                val key = source.hash.ifEmpty { source.path }
+                if (!seen.add(key)) {
+                    sources.deleteById(source.id)
+                    Log.i(TAG, "删除重复词库数据源：${source.name}")
+                }
+            }
+        }
+    }
+
+    /** 回收 SQLite 空闲页（真机上 111MB → 迁移后需要它才能真正变小） */
+    private suspend fun vacuum() {
+        val db = database ?: return
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            db.openHelper.writableDatabase.execSQL("VACUUM")
+        }
+        Log.i(TAG, "数据库 VACUUM 完成")
+    }
+
+    /** 待迁移的历史导入行数 */
+    suspend fun legacyImportedCount(): Int = dao.countBySource(SOURCE_IMPORTED)
+
+    /** 词库数据源数量（导入的大词库） */
+    suspend fun sourceCount(): Int = sourceDao?.count() ?: 0
+
+    fun observeSources(): Flow<List<DictionarySource>> =
+        sourceDao?.observeAll() ?: kotlinx.coroutines.flow.flowOf(emptyList())
+
+    /**
+     * 导入入口：大词库走「文件 + 元信息」，小词表才进 Room。
+     * 规模由 [DictionarySourceMigrator.LARGE_IMPORT_THRESHOLD] 决定。
+     */
+    suspend fun importIntoStore(
+        content: String,
+        format: DictionaryFormat,
+        defaultType: WordType = WordType.CUSTOM,
+        sourceName: String,
+    ): ImportResult {
+        val parsed = DictionaryCodec.parse(content, format)
+        val sourceDao = this.sourceDao
+        if (parsed.entries.size > DictionarySourceMigrator.LARGE_IMPORT_THRESHOLD && sourceDao != null) {
+            return saveAsSource(parsed, format, sourceName, sourceDao)
+        }
+        return import(content, format, defaultType)
+    }
+
+    /** 大词库：只写文件 + 一行元信息，**不进 Room** */
+    private suspend fun saveAsSource(
+        parsed: ParseOutcome,
+        format: DictionaryFormat,
+        sourceName: String,
+        sources: DictionarySourceDao,
+    ): ImportResult {
+        val dir = userDir()?.let { File(it, "imported") } ?: return ImportResult(0, 0, parsed.failed)
+        dir.mkdirs()
+        val fileName = sourceName.ifBlank { "imported_${System.currentTimeMillis()}" } + ".dict.txt"
+        val file = File(dir, fileName)
+        val text = buildString(parsed.entries.size * 24) {
+            parsed.entries.forEach { entry ->
+                if (entry.word.isEmpty()) return@forEach
+                append(entry.word).append('\t')
+                append(entry.code.orEmpty()).append('\t')
+                append(entry.frequency).append('\n')
+            }
+        }
+        file.writeText(text)
+        val written = text.count { it == '\n' }
+        val hash = ClipboardHasher.hash(text)
+        sources.upsert(
+            DictionarySource(
+                name = fileName,
+                type = DictionarySourceType.IMPORTED,
+                path = file.absolutePath,
+                hash = hash,
+                entryCount = written,
+                sizeBytes = file.length(),
+                enabled = true,
+                format = format.name,
+            ),
+        )
+        Log.i(TAG, "大型词库导入为数据源：$fileName（$written 条, ${file.length()} B）")
+        return ImportResult(
+            imported = 0,
+            skipped = 0,
+            failed = parsed.failed,
+            sourceName = fileName,
+            sourceEntries = written,
+        )
+    }
 
     // ---------------------------------------------------------------- 与 librime 联动
 

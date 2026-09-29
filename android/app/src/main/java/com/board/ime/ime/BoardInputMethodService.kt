@@ -659,7 +659,16 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             runCatching {
                 val database = BoardDatabase.get(this@BoardInputMethodService)
                 dictionaryRepository.removeLegacySeededWords()
-                // 老版本剪贴板没有内容哈希，补上并合并重复内容（同一文本只留一条）
+                // 历史遗留：把「大词库逐条进 Room」的旧数据搬成词库数据源（幂等）
+                runCatching { dictionaryRepository.migrateLegacyImportedEntries() }
+                    .getOrNull()
+                    ?.let { report ->
+                        Log.i(
+                            TAG,
+                            "词库迁移：${report.movedEntries} 行 → ${report.fileName} " +
+                                "（${report.rowsBefore} → ${report.rowsAfter} 行）",
+                        )
+                    }
                 val merged = clipboardRepository?.dedupeExisting() ?: 0
                 if (merged > 0) {
                     Log.i(TAG, "剪贴板历史去重：处理 $merged 条")

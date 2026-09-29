@@ -66,6 +66,14 @@ class Converters {
     fun toClipboardOrigin(value: String): ClipboardOrigin =
         enumValueOrDefault(value, ClipboardOrigin.LOCAL)
 
+    @TypeConverter
+    fun fromDictionarySourceType(value: com.board.ime.dictionary.DictionarySourceType): String =
+        value.name
+
+    @TypeConverter
+    fun toDictionarySourceType(value: String): com.board.ime.dictionary.DictionarySourceType =
+        enumValueOrDefault(value, com.board.ime.dictionary.DictionarySourceType.IMPORTED)
+
     private inline fun <reified T : Enum<T>> enumValueOrDefault(name: String, fallback: T): T =
         enumValues<T>().firstOrNull { it.name == name } ?: fallback
 }

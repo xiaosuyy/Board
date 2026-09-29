@@ -15,6 +15,15 @@ enum class WordType(val label: String) {
     BLOCKED("屏蔽词"),
     /** 常用语：同样是「编码 → 文本」，单独分类便于同步与展示 */
     PHRASE("常用语"),
+    /**
+     * 大型导入词库的词条（**历史遗留**）。
+     *
+     * 正常的导入应该走 [DictionarySource]（文件 + 元信息），不再往 Room 灌几十万行。
+     * 这个类型只用于识别旧数据、并在迁移时把它们搬出去；迁移完成后不应再有新行。
+     */
+    IMPORTED("导入词库"),
+    /** 系统 / Rime 原始词库，不进入 Board 用户词表（占位） */
+    SYSTEM("系统词库"),
     ;
 
     /** 是否由 Board 主动同步到 librime 的 custom_phrase */

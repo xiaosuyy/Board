@@ -1,0 +1,789 @@
+> Task :android:app:preBuild UP-TO-DATE
+> Task :android:app:preDebugBuild UP-TO-DATE
+> Task :android:app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :android:app:dataBindingMergeDependencyArtifactsDebug UP-TO-DATE
+> Task :android:app:generateDebugResources UP-TO-DATE
+> Task :android:app:mergeDebugResources UP-TO-DATE
+> Task :android:app:packageDebugResources UP-TO-DATE
+> Task :android:app:processDebugNavigationResources UP-TO-DATE
+> Task :android:app:parseDebugLocalResources UP-TO-DATE
+> Task :android:app:dataBindingGenBaseClassesDebug UP-TO-DATE
+> Task :android:app:generateDebugBuildConfig UP-TO-DATE
+> Task :android:app:generateDebugRFile UP-TO-DATE
+> Task :android:app:javaPreCompileDebug UP-TO-DATE
+> Task :android:app:generateDebugAssets UP-TO-DATE
+> Task :android:app:mergeDebugAssets UP-TO-DATE
+> Task :android:app:compressDebugAssets UP-TO-DATE
+> Task :android:app:generateDebugGlobalSynthetics UP-TO-DATE
+> Task :android:app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :android:app:desugarDebugFileDependencies UP-TO-DATE
+> Task :android:app:mergeExtDexDebug UP-TO-DATE
+> Task :android:app:mergeLibDexDebug UP-TO-DATE
+> Task :android:app:checkDebugAarMetadata UP-TO-DATE
+> Task :android:app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :android:app:compileDebugNavigationResources UP-TO-DATE
+> Task :android:app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :android:app:extractDeepLinksDebug UP-TO-DATE
+> Task :android:app:processDebugMainManifest UP-TO-DATE
+> Task :android:app:processDebugManifest UP-TO-DATE
+> Task :android:app:processDebugManifestForPackage UP-TO-DATE
+> Task :android:app:processDebugResources UP-TO-DATE
+> Task :android:app:configureCMakeDebug[arm64-v8a]
+> Task :android:app:buildCMakeDebug[arm64-v8a]
+> Task :android:app:configureCMakeDebug[armeabi-v7a]
+> Task :android:app:buildCMakeDebug[armeabi-v7a]
+> Task :android:app:configureCMakeDebug[x86_64]
+> Task :android:app:buildCMakeDebug[x86_64]
+> Task :android:app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :android:app:mergeDebugNativeLibs UP-TO-DATE
+> Task :android:app:stripDebugDebugSymbols UP-TO-DATE
+> Task :android:app:validateSigningDebug UP-TO-DATE
+> Task :android:app:writeDebugAppMetadata UP-TO-DATE
+> Task :android:app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :android:app:kspDebugKotlin
+
+> Task :android:app:compileDebugKotlin FAILED
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/dictionary/DictionaryRepository.kt:67:27 Unresolved reference 'BoardDatabase'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/dictionary/DictionaryRepository.kt:358:9 Unresolved reference 'withContext'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/dictionary/DictionaryRepository.kt:359:16 Unresolved reference 'openHelper'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/BoardSettingsActivity.kt:170:51 Unresolved reference 'EXTRA_SECTION'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/BoardSettingsActivity.kt:171:51 Unresolved reference 'EXTRA_SHOW_LOGS'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:89:66 Unresolved reference 'EXTRA_SECTION'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:90:43 Unresolved reference 'EXTRA_SHOW_LOGS'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:125:35 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:140:14 Syntax error: Unexpected tokens (use ';' to separate expressions on the same line).
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:141:9 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:182:80 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:183:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:183:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:185:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:185:13 Unresolved reference 'engine'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:185:20 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:185:32 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:186:15 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:187:15 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:194:14 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:196:9 Unresolved reference 'engine'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:196:92 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:197:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:197:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:197:51 Unresolved reference 'engine'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:197:59 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:227:81 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:228:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:228:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:228:57 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:245:75 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:246:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:246:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:248:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:248:13 Unresolved reference 'behaviour'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:248:23 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:248:35 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:249:18 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:250:18 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:253:14 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:255:9 Unresolved reference 'behaviour'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:260:51 Unresolved reference 'behaviour'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:265:37 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:277:58 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:278:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:278:13 Unresolved reference 'counts'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:278:20 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:278:32 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:278:43 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:278:54 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:279:9 Unresolved reference 'card'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:279:13 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:279:22 Unresolved reference 'counts'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:280:13 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:280:84 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:281:9 Unresolved reference 'card'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:281:13 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:287:14 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:289:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:289:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:289:57 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:291:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:291:13 Unresolved reference 'sensitive'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:291:23 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:291:35 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:292:9 Unresolved reference 'sensitive'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:293:9 Unresolved reference 'sensitive'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:294:24 No value passed for parameter 'checked'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:294:24 No value passed for parameter 'onChanged'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:294:98 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:295:17 Unresolved reference 'preferences'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:295:28 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:295:52 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:295:56 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:296:14 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:297:9 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:9 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:18 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:19 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:26 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:27 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:37 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:38 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:42 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:43 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:47 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:49 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:50 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:298:86 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:9 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:16 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:17 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:24 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:25 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:35 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:36 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:44 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:45 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:49 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:51 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:60 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:299:61 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:301:9 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:301:23 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:301:24 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:301:31 Syntax error: Expecting member declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:301:31 Function declaration must have a name.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:302:25 Suspend function 'suspend fun <T> withContext(context: CoroutineContext, block: suspend CoroutineScope.() -> T): T
+    [R|Contract description]
+     <
+        CallsInPlace(block, EXACTLY_ONCE)
+    >' can only be called from a coroutine or another suspend function.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:303:13 Unresolved reference 'counts'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:303:39 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:308:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:309:36 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:310:14 Unresolved reference 'setMessage'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:310:43 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:311:14 Unresolved reference 'setNegativeButton'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:312:41 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:312:44 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:313:17 Unresolved reference 'lifecycleScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:314:35 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:314:65 Unresolved reference 'clipboardRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:315:40 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:315:104 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:316:26 Unresolved reference 'show'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:317:28 Syntax error: Expecting an expression.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:317:29 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:320:20 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:326:38 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:327:43 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:328:38 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:328:53 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:329:9 Unresolved reference 'counts'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:329:15 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:329:24 Unresolved reference 'value'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:330:15 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:331:31 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:332:17 Unresolved reference 'startActivity'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:332:38 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:333:14 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:335:45 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:337:34 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:338:39 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:341:17 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:343:39 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:344:39 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:348:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:348:95 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:349:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:349:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:349:45 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:351:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:351:13 Unresolved reference 'learned'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:351:21 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:351:33 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:351:39 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:352:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:352:44 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:352:58 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:353:9 Unresolved reference 'learned'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:353:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:354:31 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:354:75 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:356:9 Unresolved reference 'learned'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:356:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:356:41 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:356:47 No value passed for parameter 'block'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:356:47 Argument type mismatch: actual type is 'Job', but 'String' was expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:356:92 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:357:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:357:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:357:45 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:357:51 Unresolved reference 'learned'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:359:23 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:359:24 'infix' modifier is required on 'FirNamedFunctionSymbol kotlinx/coroutines/launch'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:359:31 Argument type mismatch: actual type is 'Function0<Unit>', but 'NonCancellable' was expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:360:24 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:360:24 Suspend function 'suspend fun <T> withContext(context: CoroutineContext, block: suspend CoroutineScope.() -> T): T
+    [R|Contract description]
+     <
+        CallsInPlace(block, EXACTLY_ONCE)
+    >' can only be called from a coroutine or another suspend function.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:360:24 Not enough information to infer type argument for 'T'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:362:17 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:362:31 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:363:17 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:363:31 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:364:17 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:364:17 Not enough information to infer type argument for 'T'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:365:21 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:366:21 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:367:21 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:368:21 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:369:21 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:370:21 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:371:21 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:377:38 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:377:38 Not enough information to infer type argument for 'V'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:377:55 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:377:55 Not enough information to infer type argument for 'V'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:378:33 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:378:33 Not enough information to infer type argument for 'V'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:378:52 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:378:52 Not enough information to infer type argument for 'V'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:378:71 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:378:71 Not enough information to infer type argument for 'V'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:380:10 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:384:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:385:36 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:386:14 Unresolved reference 'setMessage'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:386:56 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:387:14 Unresolved reference 'setNegativeButton'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:388:41 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:388:44 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:389:17 Unresolved reference 'lifecycleScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:390:21 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:390:51 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:391:40 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:391:106 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:392:21 Unresolved reference 'render'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:392:28 Syntax error: Expecting an expression.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:392:29 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:395:20 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:400:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:403:17 Unresolved reference 'pendingImportFormat'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:404:17 Unresolved reference 'importLauncher'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:410:9 Unresolved reference 'lifecycleScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:411:27 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:411:27 Not enough information to infer type argument for 'T'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:412:17 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:412:17 Not enough information to infer type argument for 'R'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:413:32 Unresolved reference 'contentResolver'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:413:32 Argument type mismatch: actual type is 'R? (of fun <T : Closeable?, R> T.use)', but 'K? (of fun <K> ELVIS_CALL)' was expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:413:70 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:413:74 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:414:28 Argument type mismatch: actual type is 'Nothing', but 'K (of fun <K> ELVIS_CALL)' was expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:416:34 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:418:25 Unresolved reference 'pendingImportFormat'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:423:21 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:427:21 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:427:21 Not enough information to infer type argument for 'T'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:428:31 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:429:52 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:431:44 Unresolved reference 'summary'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:432:26 Unresolved reference 'setPositiveButton'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:432:54 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:433:26 Unresolved reference 'show'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:433:32 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:437:29 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:448:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:451:17 Unresolved reference 'pendingExportScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:459:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:462:17 Unresolved reference 'pendingExportFormat'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:464:23 Unresolved reference 'pendingExportFormat'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:465:46 Unresolved reference 'exportJsonLauncher'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:466:45 Unresolved reference 'exportCsvLauncher'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:467:29 Unresolved reference 'exportTextLauncher'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:474:9 Unresolved reference 'lifecycleScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:475:25 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:476:31 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:476:59 Unresolved reference 'pendingExportScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:476:79 Unresolved reference 'pendingExportFormat'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:477:17 Unresolved reference 'contentResolver'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:477:56 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:477:60 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:477:65 Unresolved reference 'write'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:478:17 Unresolved reference 'dictionaryRepository'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:478:50 Unresolved reference 'pendingExportScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:480:32 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:480:101 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:480:101 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:487:43 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:492:42 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:493:9 Argument type mismatch: actual type is 'R (of fun <T, R> T.let)', but 'K? (of fun <K> ELVIS_CALL)' was expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:493:47 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:493:63 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:494:9 Unresolved reference 'statusCard'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:494:19 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:496:17 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:499:60 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:500:55 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:502:29 Unresolved reference 'syncTimedOut'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:502:74 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:508:14 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:13 Unresolved reference 'last'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:18 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:26 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:37 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:39 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:43 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:45 Unresolved reference 'timeFormat'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:78 Argument type mismatch: actual type is 'String', but 'K (of fun <K> ELVIS_CALL)' was expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:510:81 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:511:45 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:511:61 Unresolved reference 'last'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:512:99 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:513:97 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:514:45 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:518:42 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:519:9 Unresolved reference 'invoke'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:519:9 Variable expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:519:9 Only expressions are allowed in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:519:28 Unresolved reference 'invoke'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:519:28 Variable expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:519:28 Only expressions are allowed in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:519:47 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:519:97 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:520:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:520:14 Unresolved reference 'urlLayout'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:520:25 Unresolved reference 'urlEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:520:57 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:521:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:521:14 Unresolved reference 'userLayout'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:521:26 Unresolved reference 'userEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:521:38 Unresolved reference 'invoke'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:521:49 No value passed for parameter 'initial'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:521:59 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:521:89 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:522:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:522:14 Unresolved reference 'passLayout'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:522:26 Unresolved reference 'passEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:522:59 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:523:57 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:524:16 Unresolved reference 'urlLayout'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:524:27 Unresolved reference 'userLayout'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:524:39 Unresolved reference 'passLayout'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:526:48 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:526:99 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:526:99 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:530:17 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:532:39 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:532:66 Unresolved reference 'urlEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:532:75 Unresolved reference 'userEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:532:85 Unresolved reference 'passEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:533:39 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:533:66 Unresolved reference 'urlEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:533:75 Unresolved reference 'userEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:533:85 Unresolved reference 'passEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:538:31 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:538:60 Unresolved reference 'urlEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:538:69 Unresolved reference 'userEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:538:79 Unresolved reference 'passEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:541:34 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:543:30 Unresolved reference 'urlEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:543:39 Unresolved reference 'userEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:543:49 Unresolved reference 'passEdit'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:545:42 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:546:49 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:550:45 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:553:9 Unresolved reference 'contentCard'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:553:48 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:555:13 Unresolved reference 'contentCard'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:556:38 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:556:56 Unresolved reference 'preferences'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:557:21 Unresolved reference 'preferences'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:558:42 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:558:80 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:562:9 Unresolved reference 'contentCard'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:563:29 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:563:85 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:565:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:565:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:565:45 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:565:51 Unresolved reference 'contentCard'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:565:64 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:573:50 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:587:50 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:592:28 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:595:43 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:597:37 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:598:35 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:598:78 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:599:9 Unresolved reference 'render'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:599:16 Syntax error: Expecting an expression.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:599:17 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:605:28 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:608:43 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:610:9 Unresolved reference 'lifecycleScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:611:32 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:611:98 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:612:13 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:612:17 Unresolved reference 'response'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:612:26 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:612:40 Unresolved reference 'invoke'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:612:65 Suspension functions can only be called within coroutine body.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:614:21 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:615:21 Unresolved reference 'response'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:618:13 Unresolved reference 'render'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:625:28 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:628:43 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:630:9 Unresolved reference 'syncTimedOut'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:631:9 Unresolved reference 'lifecycleScope'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:632:32 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:632:95 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:634:13 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:634:17 Unresolved reference 'job'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:634:21 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:635:17 Suspension functions can only be called within coroutine body.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:637:46 Unresolved reference 'SYNC_UI_TIMEOUT_MS'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:637:68 Unresolved reference 'job'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:639:17 Unresolved reference 'syncTimedOut'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:642:31 Unresolved reference 'SYNC_UI_TIMEOUT_MS'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:642:83 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:645:25 Unresolved label.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:650:13 Unresolved reference 'render'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:657:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:658:41 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:658:58 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:659:9 Unresolved reference 'card'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:659:13 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:660:24 No value passed for parameter 'checked'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:660:24 No value passed for parameter 'onChanged'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:660:34 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:660:98 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:661:17 Unresolved reference 'preferences'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:661:28 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:661:52 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:661:56 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:662:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:663:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:16 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:24 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:25 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:35 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:36 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:44 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:45 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:49 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:51 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:55 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:664:56 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:666:37 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:15 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:22 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:23 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:33 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:34 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:41 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:42 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:46 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:48 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:49 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:58 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:59 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:667:60 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:668:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:668:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:668:15 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:668:22 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:669:13 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:669:23 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:669:24 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:669:28 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:670:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:670:21 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:671:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:671:18 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:671:55 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:672:21 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:672:22 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:672:73 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:673:13 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:673:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:674:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:20 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:21 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:28 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:29 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:36 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:36 Function declaration must have a name.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:38 Unresolved reference 'preferences'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:60 Unresolved reference 'it'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:65 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:66 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:74 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:675:74 Function declaration must have a name.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:676:44 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:676:55 Unresolved reference 'it'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:16 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:24 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:25 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:35 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:36 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:44 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:45 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:49 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:51 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:56 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:678:57 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:679:5 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:684:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:685:41 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:685:58 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:686:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:686:13 Unresolved reference 'enabled'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:686:21 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:686:36 Syntax error: Expecting an expression.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:13 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:43 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:58 'if' must have both main and 'else' branches when used as an expression.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:62 Unresolved reference 'enabled'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:84 Unresolved reference '鏈'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:84 Literals must be surrounded by whitespace.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:85 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:88 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:687:91 Unresolved reference 'enabled'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:688:13 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:690:17 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:692:32 No value passed for parameter 'onClick'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:692:39 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:692:45 Argument type mismatch: actual type is 'Result<uninferred R (of fun <T, R> T.runCatching)>', but 'String' was expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:692:63 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:693:25 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:693:25 'infix' modifier is required on 'FirNamedFunctionSymbol kotlin/runCatching'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:694:29 Unresolved reference 'startActivity'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:695:26 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:696:22 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:21 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:31 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:32 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:38 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:39 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:43 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:45 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:46 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:697:57 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:698:25 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:698:37 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:698:37 Function declaration must have a name.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:699:29 Unresolved reference 'getSystemService'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:701:21 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:701:22 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:702:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:702:18 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:703:13 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:703:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:704:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:16 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:24 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:25 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:35 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:36 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:44 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:45 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:49 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:51 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:55 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:705:56 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:707:37 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:15 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:22 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:23 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:33 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:34 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:41 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:42 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:46 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:48 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:49 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:58 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:59 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:708:60 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:15 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:22 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:23 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:33 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:39 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:40 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:44 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:46 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:47 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:51 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:53 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:64 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:65 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:77 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:78 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:79 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:709:80 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:710:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:710:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:710:15 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:710:22 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:711:13 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:711:23 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:711:24 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:711:28 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:712:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:712:21 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:713:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:713:18 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:713:103 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:714:13 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:714:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:715:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:716:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:716:12 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:716:13 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:716:24 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:716:25 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:716:38 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:716:40 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:716:40 Function declaration must have a name.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:718:35 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:719:21 Unresolved reference 'showLogs'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:720:21 Unresolved reference 'render'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:16 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:24 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:25 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:35 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:36 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:44 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:45 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:49 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:51 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:56 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:724:57 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:725:5 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:730:36 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:731:41 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:731:60 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:732:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:732:13 Unresolved reference 'lines'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:732:19 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:732:28 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:732:36 Syntax error: Expecting an expression.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:733:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:733:13 Unresolved reference 'body'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:733:18 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:733:29 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:733:35 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:733:35 Unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+fun <T> T.apply(block: T.() -> Unit): T
+    [R|Contract description]
+     <
+        CallsInPlace(block, EXACTLY_ONCE)
+    >
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:733:41 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:734:13 Unresolved reference 'text'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:734:24 Function invocation 'lines()' expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:734:55 Function invocation 'lines()' expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:735:13 Unresolved reference 'textSize'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:736:13 Unresolved reference 'typeface'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:737:13 Unresolved reference 'setTextColor'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:739:22 Unresolved reference 'body'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:740:38 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:740:97 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:741:9 Unresolved reference 'content'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:741:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:741:45 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:743:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:743:13 Unresolved reference 'learned'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:743:21 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:743:33 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:743:39 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:744:16 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:744:44 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:745:9 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:745:13 Unresolved reference 'info'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:745:18 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:745:30 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:745:37 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:745:41 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:745:41 Syntax error: Unexpected tokens (use ';' to separate expressions on the same line).
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:746:9 Unresolved reference 'learned'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:746:25 Unresolved reference 'info'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:747:9 Unresolved reference 'learned'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:748:24 No value passed for parameter 'onClick'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:748:31 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:748:58 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:749:17 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:749:21 Unresolved reference 'records'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:749:29 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:749:48 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:750:21 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:750:27 Syntax error: Expecting an element.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:750:28 Syntax error: Expecting ','.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:750:34 Unresolved reference 'records'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:751:21 Unresolved reference 'records'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:751:55 Unresolved reference 'it'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:751:66 Unresolved reference 'it'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:751:74 Unresolved reference 'orEmpty'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:751:87 Unresolved reference 'it'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:751:109 Syntax error: Expecting '"'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:751:109 Syntax error: Expecting ')'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:752:14 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:753:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:9 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:16 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:17 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:24 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:25 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:35 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:36 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:44 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:45 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:49 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:51 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:58 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:754:59 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:755:5 Syntax error: Expecting a top level declaration.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:772:68 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:776:9 Unresolved reference 'theme'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:778:58 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:786:9 Unresolved reference 'theme'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:788:58 'this' is not defined in this context.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:794:50 Unresolved reference 'resources'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:796:5 Modifier 'companion' is not applicable inside 'file'.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:796:21 Syntax error: Name expected.
+e: file:///E:/OpenCode/blueboard/android/app/src/main/java/com/board/ime/settings/SettingsSectionActivity.kt:803:1 Syntax error: Expecting a top level declaration.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':android:app:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 2s
+40 actionable tasks: 8 executed, 32 up-to-date

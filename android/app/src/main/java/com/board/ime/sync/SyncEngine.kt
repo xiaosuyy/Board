@@ -176,6 +176,9 @@ class SyncEngine(
             _status.value = _status.value.copy(kind = SyncStatusKind.SYNCING, lastError = null)
             SyncLog.event(SyncEvent.DONE, "开始同步 触发=$trigger dir=${config.normalizedDir}")
 
+            // 从这里开始整段兜底：任何异常都必须把状态推进到终态（FAILED），
+            // 绝不允许停在 SYNCING —— 否则 UI 会永久显示「同步中」。
+            try {
             val client = clientFactory(config)
             val tStart = System.currentTimeMillis()
             val ensure = client.ensureDirectory(config.normalizedDir)
@@ -230,6 +233,20 @@ class SyncEngine(
                 conflicts = conflicts,
                 skipped = skipped,
             )
+            } catch (throwable: Throwable) {
+                // 兜底：异常也要给 UI 一个明确结束状态
+                SyncLog.warn(
+                    SyncEvent.NETWORK_ERROR,
+                    "同步异常：${throwable.javaClass.simpleName}: ${throwable.message}（本地数据与任务都保留）",
+                )
+                val status = SyncStatus(
+                    kind = SyncStatusKind.FAILED,
+                    lastSyncAt = _status.value.lastSyncAt,
+                    lastError = throwable.message ?: throwable.javaClass.simpleName,
+                )
+                publish(status)
+                SyncResult(outcome = SyncOutcome.RETRYABLE_ERROR, status = status)
+            }
         }
     }
 

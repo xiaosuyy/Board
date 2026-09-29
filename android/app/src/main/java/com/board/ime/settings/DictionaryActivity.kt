@@ -48,7 +48,11 @@ class DictionaryActivity : AppCompatActivity() {
         // 三级页面同样要避开状态栏 / 挖孔（Android 15+ 强制 edge-to-edge）
         SettingsUi.applySystemBarInset(binding.root)
 
-        repository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
+        repository = DictionaryRepository(
+            BoardDatabase.get(this).dictionaryDao(),
+            this,
+            BoardDatabase.get(this).dictionarySourceDao(),
+        )
 
         binding.buttonBack.setOnClickListener { finish() }
         binding.buttonAdd.setOnClickListener { showEditor(null) }

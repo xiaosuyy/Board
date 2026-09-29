@@ -11,11 +11,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.board.ime.database.dao.ClipboardDao
 import com.board.ime.database.dao.DeviceDao
 import com.board.ime.database.dao.DictionaryDao
+import com.board.ime.database.dao.DictionarySourceDao
 import com.board.ime.database.dao.SyncOperationDao
 import com.board.ime.database.entity.ClipboardItem
 import com.board.ime.database.entity.Device
 import com.board.ime.database.entity.DictionaryEntry
 import com.board.ime.database.entity.SyncOperation
+import com.board.ime.dictionary.DictionarySource
 
 /**
  * Board 基础数据库。
@@ -32,10 +34,11 @@ import com.board.ime.database.entity.SyncOperation
     entities = [
         ClipboardItem::class,
         DictionaryEntry::class,
+        DictionarySource::class,
         Device::class,
         SyncOperation::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -44,6 +47,8 @@ abstract class BoardDatabase : RoomDatabase() {
     abstract fun clipboardDao(): ClipboardDao
 
     abstract fun dictionaryDao(): DictionaryDao
+
+    abstract fun dictionarySourceDao(): DictionarySourceDao
 
     abstract fun deviceDao(): DeviceDao
 
@@ -188,6 +193,42 @@ abstract class BoardDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6：新增「词库数据源」表。
+         *
+         * 大型导入词库以后只在这个表里占一行（文件路径 + hash + 条数），
+         * 不再往 `dictionary_entry` 灌几十万行。表结构必须与 Room 的期望完全一致。
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS dictionary_source (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        type TEXT NOT NULL DEFAULT 'IMPORTED',
+                        path TEXT NOT NULL,
+                        hash TEXT NOT NULL DEFAULT '',
+                        entryCount INTEGER NOT NULL DEFAULT 0,
+                        sizeBytes INTEGER NOT NULL DEFAULT 0,
+                        enabled INTEGER NOT NULL DEFAULT 1,
+                        format TEXT NOT NULL DEFAULT 'RIME_DICT',
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_dictionary_source_type " +
+                        "ON dictionary_source (type)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_dictionary_source_enabled " +
+                        "ON dictionary_source (enabled)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: BoardDatabase? = null
 
@@ -229,7 +270,7 @@ abstract class BoardDatabase : RoomDatabase() {
                 BoardDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
     }

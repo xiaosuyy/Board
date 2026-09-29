@@ -70,8 +70,25 @@ interface DictionaryDao {
     // ---------------------------------------------------------------- 同步（含墓碑）
 
     /** 同步导出：连墓碑一起带走，删除才能传播到别的设备 */
-    @Query("SELECT * FROM dictionary_entry WHERE type IN (:types) ORDER BY word ASC")
+    @Query(
+        "SELECT * FROM dictionary_entry WHERE type IN (:types) " +
+            "AND source != 'imported' ORDER BY word ASC",
+    )
     suspend fun exportAll(types: List<WordType>): List<DictionaryEntry>
+
+    /** 历史遗留的大型导入词条（迁移用） */
+    @Query("SELECT * FROM dictionary_entry WHERE source = :source ORDER BY word ASC")
+    suspend fun bySource(source: String): List<DictionaryEntry>
+
+    /** 迁移用分页读取：避免一次读几十万行进内存 */
+    @Query(
+        "SELECT * FROM dictionary_entry WHERE source = :source " +
+            "ORDER BY word ASC LIMIT :limit OFFSET :offset",
+    )
+    suspend fun bySourcePaged(source: String, limit: Int, offset: Int): List<DictionaryEntry>
+
+    @Query("SELECT COUNT(*) FROM dictionary_entry WHERE source = :source")
+    suspend fun countBySource(source: String): Int
 
     // ---------------------------------------------------------------- 写入
 

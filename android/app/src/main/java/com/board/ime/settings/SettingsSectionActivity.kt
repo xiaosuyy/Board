@@ -92,8 +92,14 @@ class SettingsSectionActivity : AppCompatActivity() {
         section = SettingsSection.fromName(intent.getStringExtra(EXTRA_SECTION))
         showLogs = intent.getBooleanExtra(EXTRA_SHOW_LOGS, false)
         preferences = BoardPreferences(this)
-        dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
-        clipboardRepository = ClipboardRepository(BoardDatabase.get(this).clipboardDao())
+        val boardDatabase = BoardDatabase.get(this)
+        dictionaryRepository = DictionaryRepository(
+            boardDatabase.dictionaryDao(),
+            this,
+            boardDatabase.dictionarySourceDao(),
+            boardDatabase,
+        )
+        clipboardRepository = ClipboardRepository(boardDatabase.clipboardDao())
         render()
     }
 
@@ -357,15 +363,25 @@ class SettingsSectionActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val data = withContext(Dispatchers.IO) {
+                // 首次打开设置也顺手完成「历史大词库 → 数据源」迁移（幂等、不丢数据）
+                runCatching { dictionaryRepository.migrateLegacyImportedEntries() }
                 runCatching { dictionaryRepository.refreshLearnedFromRime() }
                 listOf(
                     dictionaryRepository.countAll(),
                     dictionaryRepository.countByType(WordType.LEARNED),
                     dictionaryRepository.countByType(WordType.CUSTOM),
                     dictionaryRepository.countByType(WordType.PHRASE),
+                    dictionaryRepository.countByType(WordType.PINNED),
+                    dictionaryRepository.countByType(WordType.BLOCKED),
+                    dictionaryRepository.sourceCount(),
                 )
             }
-            value.text = "词条 ${data[0]} · 学习词 ${data[1]} · 自定义词 ${data[2]} · 常用语 ${data[3]}"
+            value.text = buildString {
+                append("系统词库：未接入\n")
+                append("导入词库：${data[6]} 个数据源（文件形式，不占用户词表）\n")
+                append("我的词：自定义 ${data[2]} · 固定 ${data[4]}\n")
+                append("学习词：${data[1]} · 屏蔽词：${data[5]} · 常用语：${data[3]}")
+            }
         }
     }
 
@@ -401,7 +417,14 @@ class SettingsSectionActivity : AppCompatActivity() {
                 runCatching {
                     val text = contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
                         ?: throw DictionaryFormatException("无法读取文件")
-                    val result = dictionaryRepository.import(text, pendingImportFormat, WordType.CUSTOM)
+                    // 大词库走「数据源文件」，小词表才进 Room（避免几十万行灌进数据库）
+                    val result = dictionaryRepository.importIntoStore(
+                        text,
+                        pendingImportFormat,
+                        WordType.CUSTOM,
+                        sourceName = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')
+                            ?: "imported",
+                    )
                     dictionaryRepository.syncCustomPhrasesToRime()
                     result
                 }

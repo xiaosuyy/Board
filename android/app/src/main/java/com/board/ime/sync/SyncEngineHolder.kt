@@ -39,6 +39,7 @@ object SyncEngineHolder {
             dictionaryRepository = com.board.ime.dictionary.DictionaryRepository(
                 database.dictionaryDao(),
                 context,
+                database.dictionarySourceDao(),
             ),
             contentGate = preferences,
         )
