@@ -88,7 +88,9 @@ class DictionarySourceSync(
             }
 
             fun of(source: DictionarySource): Manifest = Manifest(
-                sourceId = source.remoteId,
+                // 内容身份 = SHA-256：同一份内容永远映射到同一个云端目录，
+                // 与文件名无关（否则 A.dict 与 B.dict 同内容会在云端存两份）
+                sourceId = source.hash.ifBlank { source.remoteId },
                 name = source.name,
                 type = source.type.name,
                 entryCount = source.entryCount,
@@ -214,7 +216,11 @@ class DictionarySourceSync(
         // ---------- 云端 → 本地 ----------
         remote.values.toList().forEach { manifest ->
             if (manifest.sourceId in localIds) return@forEach
+            // 先按 sourceId 找，再按**内容 hash** 找：老数据里同一份内容可能有两条 source
+            // （因为早期用文件名派生 id）。命中内容就复用那一行，不再新增重复记录。
             val existing = sources.findBySourceId(manifest.sourceId)
+                ?: sources.allByType(DictionarySourceType.IMPORTED)
+                    .firstOrNull { it.hash.equals(manifest.sha256, ignoreCase = true) }
             if (existing != null && existing.hash == manifest.sha256 && File(existing.path).exists()) {
                 SyncLog.event(
                     SyncEvent.SKIP_SAME_HASH,
