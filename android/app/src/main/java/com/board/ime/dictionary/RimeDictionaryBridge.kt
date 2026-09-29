@@ -5,18 +5,22 @@ import com.board.ime.engine.rime.RimeRuntime
 import java.io.File
 
 /**
- * 把导入的大型词库（[DictionarySource]）生成成 **Rime 能加载的词典配置**。
+ * 大型词库与 Rime 之间的桥。
  *
- * 现在「同步成功」不等于「Rime 可用」：只把 dict 文件放到磁盘上，Rime 不认识它。
- * 这一步负责：
- * 1. 生成 `<user_data_dir>/imported/<name>.dict.yaml`（Rime 词典标准格式：
- *    YAML 头部声明 `columns: text / code / weight`，正文就是 `词条\t编码\t词频`）
- * 2. 触发 Rime deploy（由调用方完成），成功后才把 source 标记为 ready
+ * ## 分工
+ * - **长期存储**：`imported/<sha256>.dict.yaml.gz`（见 [DictionaryStore]）
+ * - **部署**：解压成 `<user_dir>/imported/<名字>.dict.yaml` → 触发 Rime deploy
+ *   → 成功即删掉这份临时的 `.dict.yaml`，只留 gz
  *
- * **安全约束**：
- * - 先写 `.tmp`，校验后原子替换正式文件；失败绝不删除原有可用词典
- * - deploy 失败时用 `.bak` 回滚到上一版
- * - 只生成配置、只读源文件；**从不删除源 dict 文件**
+ * ## 为什么部署要临时解压
+ * Rime 部署时会读 `.dict.yaml` 编译出 `table.bin` / `prism.bin`；
+ * **输入过程只读编译产物**，跟 `.dict.yaml`、`.gz` 都没关系。
+ * 所以「长期压缩 + 部署时临时解压」不会给打字路径增加任何解压开销。
+ *
+ * ## 安全
+ * - 解压出的临时文件在部署成功/失败后都会清理
+ * - gz 永不被删除（除非数据源本身被移除）
+ * - deploy 失败时不会留下半份词典
  */
 object RimeDictionaryBridge {
 
@@ -26,132 +30,85 @@ object RimeDictionaryBridge {
     /**
      * 自动部署的条目上限。
      *
-     * 60 万条的词典让 librime 在部署时构建索引，内存与耗时都不可控
-     * （可能在原生层 OOM，最坏情况影响正在使用的键盘）。
-     * 所以超过这个规模时**只生成配置、不自动部署**，由用户在词库页手动点「部署」，
-     * 我们是「暂缓」而不是「假装成功」——此时 `ready` 保持 false。
+     * 60 万条的词典让 librime 在部署时构建索引，内存与耗时都不可控，
+     * 超过这个规模就只生成配置、由用户手动触发部署（`ready` 保持 false）。
      */
     const val AUTO_DEPLOY_MAX_ENTRIES = 120_000
 
-    /** 一个数据源对应的 Rime 词典文件名（不含目录） */
+    fun directory(userDir: File): File = File(userDir, DIR_NAME)
+
+    /** Rime 词典名（稳定：按数据源名字派生，不含 hash，避免方案引用漂移） */
     fun rimeDictName(source: DictionarySource): String = baseName(source) + ".dict.yaml"
 
     fun rimeDictFile(userDir: File, source: DictionarySource): File =
-        File(File(userDir, DIR_NAME), rimeDictName(source))
+        File(directory(userDir), rimeDictName(source))
 
-    fun directory(userDir: File): File = File(userDir, DIR_NAME)
+    /** 当前是否已经有解压出来的、可供 Rime 部署的工作文件 */
+    fun isStaged(userDir: File, source: DictionarySource): Boolean =
+        rimeDictFile(userDir, source).isFile
 
     /**
-     * 生成 / 更新 Rime 词典文件。
+     * 部署前把 gz 解压成 Rime 能读的工作文件。
      *
-     * @return 生成的 `.dict.yaml`；源文件不存在或写失败时返回 null
+     * @param importedDir 长期存储目录（`files/rime/user/imported`）
+     * @return 解压出的 `.dict.yaml`；失败返回 null（此时**不会**动 gz）
      */
-    fun writeRimeDict(userDir: File, source: DictionarySource): File? {
-        val sourceFile = File(source.path)
-        if (!sourceFile.exists() || !sourceFile.isFile) {
-            Log.w(TAG, "数据源文件不存在，跳过 Rime 接入：${source.name}")
+    fun stageForDeploy(userDir: File, source: DictionarySource, importedDir: File): File? {
+        val stored = File(source.path)
+        if (!stored.isFile) {
+            Log.w(TAG, "数据源文件不存在：${stored.absolutePath}")
             return null
         }
-        val dir = directory(userDir).apply { mkdirs() }
         val target = rimeDictFile(userDir, source)
-        val tmp = File(dir, rimeDictName(source) + ".tmp")
-        val backup = File(dir, rimeDictName(source) + ".bak")
-
-        return try {
-            tmp.bufferedWriter().use { out ->
-                out.write(header(source))
-                sourceFile.bufferedReader().useLines { lines ->
-                    lines.forEach { line ->
-                        if (line.isNotBlank()) {
-                            out.write(line)
-                            out.write("\n")
-                        }
-                    }
-                }
+        if (!DictionaryStore.isCompressedStore(stored)) {
+            // 兼容：还没迁移成 gz 的旧文件，直接复制过去（迁移会在启动时统一处理）
+            return try {
+                target.parentFile?.mkdirs()
+                stored.copyTo(target, overwrite = true)
+                target
+            } catch (throwable: Throwable) {
+                Log.e(TAG, "复制词典失败：${throwable.message}", throwable)
+                null
             }
-            // 留一份上一版，deploy 失败时能回滚
-            if (target.exists()) {
-                backup.delete()
-                if (!target.renameTo(backup)) {
-                    target.copyTo(backup, overwrite = true)
-                }
-            }
-            if (!tmp.renameTo(target)) {
-                tmp.copyTo(target, overwrite = true)
-                tmp.delete()
-            }
-            Log.i(
-                TAG,
-                "已生成 Rime 词典 ${target.name}（${source.entryCount} 条，version=${source.version}）",
-            )
-            target
-        } catch (throwable: Throwable) {
-            Log.e(TAG, "生成 Rime 词典失败（原有词典保留）：${source.name}", throwable)
-            tmp.delete()
-            null
         }
+        val ok = DictionaryStore.decompressTo(stored, target, source.hash)
+        if (!ok) {
+            Log.w(TAG, "解压失败，保持 gz 不动：${stored.name}")
+            return null
+        }
+        Log.i(TAG, "已解压待部署：${target.name}（${target.length()} B）")
+        return target
     }
 
-    /** deploy 成功：丢掉上一版备份 */
-    fun commit(userDir: File, source: DictionarySource) {
-        File(directory(userDir), rimeDictName(source) + ".bak").delete()
-    }
-
-    /** deploy 失败：回滚到上一版（没有上一版就删掉刚生成的，保持「不可用」而不是「半套」） */
-    fun rollback(userDir: File, source: DictionarySource): Boolean {
-        val dir = directory(userDir)
+    /** 部署结束后清理临时解压出来的工作文件（**gz 保留**） */
+    fun removeStaged(userDir: File, source: DictionarySource): Boolean {
         val target = rimeDictFile(userDir, source)
-        val backup = File(dir, rimeDictName(source) + ".bak")
-        return try {
-            if (backup.exists()) {
-                target.delete()
-                backup.renameTo(target)
-                Log.w(TAG, "Rime deploy 失败，已回滚到上一版词典：${target.name}")
-                true
-            } else {
-                val removed = target.delete()
-                Log.w(TAG, "Rime deploy 失败且无上一版，已删除本次生成的词典：removed=$removed")
-                true
-            }
-        } catch (throwable: Throwable) {
-            Log.e(TAG, "回滚词典失败（文件保留，不影响其它数据）", throwable)
-            false
+        val removed = runCatching { !target.exists() || target.delete() }.getOrDefault(false)
+        if (removed && target.exists()) {
+            Log.w(TAG, "临时词典删除失败：${target.name}")
         }
+        return removed
     }
 
-    /** Rime 词典的 YAML 头部 */
-    private fun header(source: DictionarySource): String = buildString {
-        append("---\n")
-        append("name: ").append(baseName(source)).append('\n')
-        append("version: \"").append(source.version).append("\"\n")
-        append("sort: by_weight\n")
-        append("use_preset_vocabulary: false\n")
-        append("columns:\n")
-        append("  - text\n")
-        append("  - code\n")
-        append("  - weight\n")
-        append("...\n")
-    }
+    /** 磁盘上是否还留着旧的（未压缩）Rime 词典文件 */
+    fun legacyFile(userDir: File, source: DictionarySource): File = rimeDictFile(userDir, source)
+
+    /** 是否应该自动部署（超过规模上限时交给用户手动触发） */
+    fun canAutoDeploy(source: DictionarySource): Boolean =
+        source.entryCount in 1..AUTO_DEPLOY_MAX_ENTRIES
+
+    /** Rime 是否已经初始化（没初始化时无法 deploy） */
+    fun isRimeReady(): Boolean = RimeRuntime.userDataDir() != null
 
     /** 文件名安全化：Rime 词典名只保留字母 / 数字 / 下划线 / 中划线 */
     fun baseName(source: DictionarySource): String {
         // 去掉 Board 自己的后缀，避免生成 `..._dict_dict.dict.yaml` 这种叠字名字
         val raw = source.name
             .removeSuffix(".dict.txt")
+            .removeSuffix(".dict.yaml")
             .removeSuffix(".dict")
             .substringBeforeLast('.')
         val safe = raw.replace(Regex("[^A-Za-z0-9_-]"), "_").trim('_')
         return safe.ifBlank { "board_${source.remoteId}" }
     }
-
-    /** 当前是否已经生成过 Rime 词典配置 */
-    fun hasRimeDict(userDir: File, source: DictionarySource): Boolean =
-        rimeDictFile(userDir, source).isFile
-
-    /** 是否应该自动部署（超过规模上限时交给用户手动触发） */
-    fun canAutoDeploy(source: DictionarySource): Boolean =
-        source.entryCount in 1..AUTO_DEPLOY_MAX_ENTRIES
-
-    /** Rime 是否已经初始化（没初始化时无法 deploy，但生成文件是安全的） */
-    fun isRimeReady(): Boolean = RimeRuntime.userDataDir() != null
 }

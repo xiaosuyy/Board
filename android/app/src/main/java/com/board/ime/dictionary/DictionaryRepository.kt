@@ -419,42 +419,47 @@ class DictionaryRepository(
      */
     suspend fun installSourceIntoRime(source: DictionarySource): Boolean {
         val dir = userDir() ?: return false
-        val written = withContext(Dispatchers.IO) {
-            RimeDictionaryBridge.writeRimeDict(dir, source)
-        } ?: return false
+        val imported = importedDir() ?: return false
 
-        if (!RimeDictionaryBridge.isRimeReady()) {
-            // Rime 还没初始化（例如刚从其它设备下载完）：配置已生成，等下次部署
-            Log.i(TAG, "Rime 未初始化，词库配置已生成待部署：${written.name}")
-            return false
-        }
         if (!RimeDictionaryBridge.canAutoDeploy(source)) {
-            // 60 万条这种规模不自动 deploy（原生侧内存/耗时不可控），交给用户手动触发。
-            // 但**回滚备份必须立刻丢掉**：没有 deploy 就没有回滚需求，
-            // 留着就是白占一份 20MB 的永久副本（审计里实测到过）。
-            RimeDictionaryBridge.commit(dir, source)
+            // 大词库不自动 deploy（原生侧内存/耗时不可控），交给用户手动触发。
+            // 这里**不解压**：长期只留 gz，需要部署时才展开。
             Log.i(TAG, "词库 ${source.name}（${source.entryCount} 条）超过自动部署上限，等待手动部署")
             return false
         }
+        if (!RimeDictionaryBridge.isRimeReady()) {
+            Log.i(TAG, "Rime 未初始化，词库保持压缩存储待部署：${source.name}")
+            return false
+        }
+
+        val staged = withContext(Dispatchers.IO) {
+            RimeDictionaryBridge.stageForDeploy(dir, source, imported)
+        } ?: return false
+
         val deployed = withContext(Dispatchers.IO) { RimeRuntime.deploy(fullCheck = false) }
-        return finishSourceDeploy(source, dir, deployed)
+        return finishSourceDeploy(source, dir, staged, deployed)
     }
 
+    /**
+     * 部署收尾：**无论成功失败都要删掉临时解压出来的 `.dict.yaml`**，
+     * 长期只保留 `<hash>.dict.yaml.gz`。
+     */
     private suspend fun finishSourceDeploy(
         source: DictionarySource,
         dir: File,
+        staged: File,
         deployed: Boolean,
     ): Boolean {
         val sources = sourceDao ?: return false
+        // 部署产物（table.bin）已经生成，工作文件不再需要 —— 先清临时文件
+        runCatching { staged.delete() }
         return if (deployed) {
-            RimeDictionaryBridge.commit(dir, source)
             sources.setReady(source.id, true, source.version, System.currentTimeMillis())
-            Log.i(TAG, "词库已接入 Rime：${source.name}")
+            Log.i(TAG, "词库已接入 Rime 并清理临时文件：${source.name}")
             true
         } else {
-            RimeDictionaryBridge.rollback(dir, source)
             sources.setReady(source.id, false, source.version, System.currentTimeMillis())
-            Log.w(TAG, "词库接 Rime 失败，已回滚（旧词库仍可用）：${source.name}")
+            Log.w(TAG, "词库接 Rime 失败（旧词库仍可用，gz 保留）：${source.name}")
             false
         }
     }
@@ -466,30 +471,39 @@ class DictionaryRepository(
     suspend fun deployImportedSources(): Pair<Int, Int> {
         val sources = sourceDao ?: return 0 to 0
         val dir = userDir() ?: return 0 to 0
+        val imported = importedDir() ?: return 0 to 0
         if (!RimeDictionaryBridge.isRimeReady()) return 0 to 0
         return withContext(Dispatchers.IO) {
             val list = sources.allByType(DictionarySourceType.IMPORTED)
             if (list.isEmpty()) return@withContext 0 to 0
-            var written = 0
+
+            // 部署前临时展开 gz（Rime 部署要读 .dict.yaml）
+            val staged = HashMap<Long, File>()
             list.forEach { source ->
-                if (RimeDictionaryBridge.writeRimeDict(dir, source) != null) written++
+                RimeDictionaryBridge.stageForDeploy(dir, source, imported)?.let { staged[source.id] = it }
             }
-            if (written == 0) return@withContext 0 to list.size
+            if (staged.isEmpty()) return@withContext 0 to list.size
 
             val deployed = RimeRuntime.deploy(fullCheck = false)
             var ready = 0
             list.forEach { source ->
-                if (deployed && RimeDictionaryBridge.hasRimeDict(dir, source)) {
-                    RimeDictionaryBridge.commit(dir, source)
+                val ok = deployed && staged.containsKey(source.id)
+                // 无论成败都清掉临时解压文件：长期只留 gz
+                staged[source.id]?.let { runCatching { it.delete() } }
+                if (ok) {
                     sources.setReady(source.id, true, source.version, System.currentTimeMillis())
                     ready++
                 } else {
                     sources.setReady(source.id, false, source.version, System.currentTimeMillis())
                 }
             }
+            Log.i(TAG, "手动部署完成：ready=$ready/${list.size}，临时 .dict.yaml 已清理")
             ready to list.size
         }
     }
+
+    /** 长期存储目录：`files/rime/user/imported` */
+    fun importedDir(): File? = userDir()?.let { File(it, "imported") }
 
     /** 由名字派生稳定 sourceId（sha256 前 16 位） */
     fun stableSourceId(name: String): String = ClipboardHasher.hash(name.trim()).take(16)
@@ -522,15 +536,28 @@ class DictionaryRepository(
         sourceName: String,
         sources: DictionarySourceDao,
     ): ImportResult {
-        val dir = userDir()?.let { File(it, "imported") } ?: return ImportResult(0, 0, parsed.failed)
+        val dir = importedDir() ?: return ImportResult(0, 0, parsed.failed)
         dir.mkdirs()
-        val fileName = sourceName.ifBlank { "imported_${System.currentTimeMillis()}" } + ".dict.txt"
-        val file = File(dir, fileName)
-        // 流式写：60 万条如果在内存里拼字符串会直接 OOM（这个坑以前踩过）
+        val displayName = sourceName.ifBlank { "imported_${System.currentTimeMillis()}" } + ".dict.yaml"
+
+        // 先用临时文件写出「带 YAML 头的完整 .dict.yaml」并算内容 hash，
+        // 再压缩成 <hash>.dict.yaml.gz —— 临时文件在 finally 里一定删掉。
+        val tmpPlain = File(dir, "import-${System.currentTimeMillis()}.plain.tmp")
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         var written = 0
         try {
-            file.bufferedWriter().use { writer ->
+            tmpPlain.bufferedWriter().use { writer ->
+                val header = buildString {
+                    append("---\n")
+                    append("name: ").append(displayName.removeSuffix(".dict.yaml")).append('\n')
+                    append("version: \"1\"\n")
+                    append("sort: by_weight\n")
+                    append("use_preset_vocabulary: false\n")
+                    append("columns:\n  - text\n  - code\n  - weight\n")
+                    append("...\n")
+                }
+                writer.write(header)
+                digest.update(header.toByteArray(Charsets.UTF_8))
                 parsed.entries.forEach { entry ->
                     if (entry.word.isEmpty()) return@forEach
                     val line = buildString {
@@ -545,36 +572,217 @@ class DictionaryRepository(
             }
         } catch (throwable: Throwable) {
             Log.e(TAG, "写入大词库失败（未入库）", throwable)
-            file.delete()
+            tmpPlain.delete()
             return ImportResult(0, 0, parsed.failed)
         }
+
         val hash = digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
-        val existing = sources.findBySourceId(stableSourceId(fileName))
+        val plainBytes = tmpPlain.length()
+        // 去重：内容相同就直接复用已有 gz，不再产生第二份物理数据
+        val stored = DictionaryStore.writeCompressed(dir, hash, tmpPlain)
+        tmpPlain.delete()
+        if (stored == null) {
+            return ImportResult(0, 0, parsed.failed)
+        }
+
+        // Room 里同一份内容最多一条 source
+        val existingByHash = sources.all().firstOrNull { it.hash == hash }
+        val existing = existingByHash ?: sources.findBySourceId(stableSourceId(displayName))
         sources.upsert(
             DictionarySource(
                 id = existing?.id ?: 0L,
-                sourceId = stableSourceId(fileName),
-                name = fileName,
+                sourceId = existing?.sourceId?.ifBlank { stableSourceId(displayName) }
+                    ?: stableSourceId(displayName),
+                name = existing?.name ?: displayName,
                 type = DictionarySourceType.IMPORTED,
-                path = file.absolutePath,
+                path = stored.absolutePath,
                 hash = hash,
                 entryCount = written,
-                sizeBytes = file.length(),
+                sizeBytes = plainBytes,
                 enabled = true,
                 format = format.name,
                 version = (existing?.version ?: 0L) + 1L,
                 ready = existing?.ready ?: false,
             ),
         )
-        Log.i(TAG, "大型词库导入为数据源：$fileName（$written 条, ${file.length()} B）")
+        Log.i(
+            TAG,
+            "大型词库已压缩存储：${stored.name}（$written 条，$plainBytes → ${stored.length()} B）",
+        )
         return ImportResult(
             imported = 0,
             skipped = 0,
             failed = parsed.failed,
-            sourceName = fileName,
+            sourceName = existing?.name ?: displayName,
             sourceEntries = written,
         )
     }
+
+    // ---------------------------------------------------------------- gz 迁移
+
+    /** 迁移结果（用于日志与设置页提示） */
+    data class GzipMigrationReport(
+        val migrated: Int = 0,
+        val alreadyCompressed: Int = 0,
+        val failed: Int = 0,
+        val removedLegacyFiles: Int = 0,
+        val plainBytes: Long = 0,
+        val storedBytes: Long = 0,
+    ) {
+        val savedBytes: Long get() = (plainBytes - storedBytes).coerceAtLeast(0)
+    }
+
+    /**
+     * 一次性把旧的长期存储（`.dict.yaml` / 裸 `.dict.txt`）迁移成 `<sha256>.dict.yaml.gz`。
+     *
+     * 安全铁律：**校验通过才删原文件**。
+     * 1. 取「带 YAML 头的完整词典文本」（优先用已生成的 `.dict.yaml`，否则用数据源补头）
+     * 2. 算内容 SHA-256 → 压成 `<hash>.dict.yaml.gz`
+     * 3. **把 gz 解压回来再算一次 hash**，必须与原内容完全一致
+     * 4. 通过后才把 DB 指向 gz，并删除旧文件；任何一步失败都保留原文件
+     *
+     * 已存在的 gz 直接复用（同内容不会产生第二份）。
+     */
+    suspend fun migrateToCompressedStore(): GzipMigrationReport {
+        val sources = sourceDao ?: return GzipMigrationReport()
+        val userDir = userDir() ?: return GzipMigrationReport()
+        val dir = importedDir() ?: return GzipMigrationReport()
+        return withContext(Dispatchers.IO) {
+            var report = GzipMigrationReport()
+            var plainTotal = 0L
+            var storedTotal = 0L
+            val list = sources.allByType(DictionarySourceType.IMPORTED)
+
+            list.forEach { source ->
+                if (DictionaryStore.isCompressedStore(source.path) && File(source.path).isFile) {
+                    report = report.copy(alreadyCompressed = report.alreadyCompressed + 1)
+                    plainTotal += source.sizeBytes
+                    storedTotal += File(source.path).length()
+                    return@forEach
+                }
+
+                val current = File(source.path)
+                val legacyYaml = RimeDictionaryBridge.rimeDictFile(userDir, source)
+                val legacyFiles = ArrayList<File>()
+                val prepared = preparePlainContent(source, current, legacyYaml, dir, legacyFiles)
+                if (prepared == null) {
+                    Log.w(TAG, "迁移跳过（找不到可用的词典内容）：${source.name}")
+                    report = report.copy(failed = report.failed + 1)
+                    return@forEach
+                }
+
+                val hash = DictionaryStore.hashOf(prepared)
+                val plainBytes = prepared.length()
+                val stored = DictionaryStore.writeCompressed(dir, hash, prepared)
+                prepared.delete()
+                if (stored == null || !verifyCompressed(stored, hash)) {
+                    // 校验失败：什么都不删
+                    Log.w(TAG, "迁移校验失败，保留原文件：${source.name}")
+                    report = report.copy(failed = report.failed + 1)
+                    return@forEach
+                }
+
+                sources.updateMeta(
+                    id = source.id,
+                    sourceId = source.remoteId,
+                    hash = hash,
+                    entryCount = source.entryCount,
+                    sizeBytes = plainBytes,
+                    version = source.version,
+                    path = stored.absolutePath,
+                    updatedAt = System.currentTimeMillis(),
+                )
+                // 校验通过，才清理旧文件（含旧 .dict.yaml / .bak / 旧命名的 yaml）
+                legacyFiles.filter { it.isFile }.forEach { file ->
+                    if (file.delete()) report = report.copy(removedLegacyFiles = report.removedLegacyFiles + 1)
+                }
+                if (current.isFile && !DictionaryStore.isCompressedStore(current.path)) {
+                    if (current.delete()) report = report.copy(removedLegacyFiles = report.removedLegacyFiles + 1)
+                }
+                plainTotal += plainBytes
+                storedTotal += stored.length()
+                report = report.copy(migrated = report.migrated + 1)
+                Log.i(TAG, "已迁移为 gz：${stored.name}（$plainBytes → ${stored.length()} B）")
+            }
+
+            // 收尾：删掉无引用的旧命名 yaml 与 .bak（有引用的绝不动）
+            val live = sources.allByType(DictionarySourceType.IMPORTED)
+            val liveNames = live.map { RimeDictionaryBridge.rimeDictName(it) }.toSet()
+            val livePaths = live.map { File(it.path).absolutePath }.toSet()
+            dir.listFiles()?.forEach { file ->
+                if (!file.isFile) return@forEach
+                val name = file.name
+                val isLegacyYaml = name.endsWith(".dict.yaml") && name !in liveNames
+                val isBackup = name.endsWith(".bak")
+                val isUnreferencedSource = !DictionaryStore.isCompressedStore(name) &&
+                    file.absolutePath !in livePaths &&
+                    (name.endsWith(".dict.txt") || name.endsWith(".plain.tmp"))
+                if (isLegacyYaml || isBackup || isUnreferencedSource) {
+                    if (file.delete()) {
+                        report = report.copy(removedLegacyFiles = report.removedLegacyFiles + 1)
+                    }
+                }
+            }
+
+            report = report.copy(plainBytes = plainTotal, storedBytes = storedTotal)
+            if (report.migrated > 0 || report.removedLegacyFiles > 0) {
+                Log.i(
+                    TAG,
+                    "词库压缩迁移完成：迁移 ${report.migrated}，已压缩 ${report.alreadyCompressed}，" +
+                        "失败 ${report.failed}，清理旧文件 ${report.removedLegacyFiles}，" +
+                        "体积 $plainTotal → $storedTotal",
+                )
+            }
+            report
+        }
+    }
+
+    /** 准备一份「带 YAML 头的完整词典文本」临时文件（临时文件由调用方删除） */
+    private fun preparePlainContent(
+        source: DictionarySource,
+        current: File,
+        legacyYaml: File,
+        dir: File,
+        legacyFiles: MutableList<File>,
+    ): File? {
+        // 1) 已生成的 .dict.yaml 就是最终内容（带头），直接用
+        if (legacyYaml.isFile) {
+            legacyFiles += legacyYaml
+            legacyFiles += File(legacyYaml.absolutePath + ".bak")
+            return legacyYaml
+        }
+        // 2) 旧的数据源（裸 词条\t编码\t词频）→ 补上 YAML 头
+        if (!current.isFile) return null
+        if (DictionaryStore.isCompressedStore(current.path)) return null
+        val tmp = File(dir, "migrate-${source.id}.plain.tmp")
+        return try {
+            tmp.bufferedWriter().use { writer ->
+                val header = buildString {
+                    append("---\n")
+                    append("name: ").append(RimeDictionaryBridge.baseName(source)).append('\n')
+                    append("version: \"").append(source.version).append("\"\n")
+                    append("sort: by_weight\n")
+                    append("use_preset_vocabulary: false\n")
+                    append("columns:\n  - text\n  - code\n  - weight\n")
+                    append("...\n")
+                }
+                writer.write(header)
+                current.bufferedReader().useLines { lines ->
+                    lines.forEach { line -> if (line.isNotBlank()) { writer.write(line); writer.write("\n") } }
+                }
+            }
+            legacyFiles += current
+            tmp
+        } catch (throwable: Throwable) {
+            Log.e(TAG, "准备迁移内容失败：${throwable.message}", throwable)
+            tmp.delete()
+            null
+        }
+    }
+
+    /** 解压回来重新算 hash，必须与期望一致 */
+    private fun verifyCompressed(file: File, expectedHash: String): Boolean =
+        DictionaryStore.hashOfCompressed(file)?.equals(expectedHash, ignoreCase = true) == true
 
     // ---------------------------------------------------------------- 与 librime 联动
 

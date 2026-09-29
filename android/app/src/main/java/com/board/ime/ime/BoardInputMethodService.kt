@@ -775,6 +775,16 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                                 "（${report.rowsBefore} → ${report.rowsAfter} 行）",
                         )
                     }
+                // 旧版长期保留 .dict.yaml / 裸 .dict.txt → 迁移成 <sha256>.dict.yaml.gz（校验通过才删原文件）
+                runCatching { dictionaryRepository.migrateToCompressedStore() }
+                    .getOrNull()
+                    ?.let { report ->
+                        Log.i(
+                            TAG,
+                            "词库压缩迁移：迁移 ${report.migrated}，已压缩 ${report.alreadyCompressed}，" +
+                                "失败 ${report.failed}，清理旧文件 ${report.removedLegacyFiles}",
+                        )
+                    }
                 val merged = clipboardRepository?.dedupeExisting() ?: 0
                 if (merged > 0) {
                     Log.i(TAG, "剪贴板历史去重：处理 $merged 条")

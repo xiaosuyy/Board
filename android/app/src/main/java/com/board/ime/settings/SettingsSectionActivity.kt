@@ -927,6 +927,7 @@ class SettingsSectionActivity : AppCompatActivity() {
             val data = withContext(Dispatchers.IO) {
                 // 首次打开设置也顺手完成「历史大词库 → 数据源」迁移（幂等、不丢数据）
                 runCatching { dictionaryRepository.migrateLegacyImportedEntries() }
+                runCatching { dictionaryRepository.migrateToCompressedStore() }
                 runCatching { dictionaryRepository.ensureSourceIds() }
                 runCatching { dictionaryRepository.refreshLearnedFromRime() }
                 listOf(

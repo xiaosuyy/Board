@@ -149,12 +149,31 @@ class DictionarySourceSync(
 
             ensureDir(id)
             val started = System.currentTimeMillis()
-            val put = client.uploadFile(
-                path = dataPath(id),
-                file = file,
-                contentType = "application/octet-stream",
-            ) { done, total ->
-                onProgress(source.name, fraction(done, total))
+            // 线上传的永远是**未压缩**内容（协议不变）：本地若是 gz，先临时解压，传完必删
+            val upload = if (com.board.ime.dictionary.DictionaryStore.isCompressedStore(file.path)) {
+                val tmp = File(localDir, "sync-upload-${id}.plain.tmp")
+                if (!com.board.ime.dictionary.DictionaryStore.decompressTo(file, tmp, source.hash)) {
+                    tmp.delete()
+                    report = report.copy(
+                        failed = report.failed + 1,
+                        firstError = report.firstError ?: "本地压缩词库解压失败：${source.name}",
+                    )
+                    return@forEach
+                }
+                tmp
+            } else {
+                file
+            }
+            val put = try {
+                client.uploadFile(
+                    path = dataPath(id),
+                    file = upload,
+                    contentType = "application/octet-stream",
+                ) { done, total ->
+                    onProgress(source.name, fraction(done, total))
+                }
+            } finally {
+                if (upload !== file) upload.delete()
             }
             if (!put.isOk) {
                 report = report.copy(
@@ -289,12 +308,14 @@ class DictionarySourceSync(
             return null
         }
 
-        // 原子替换：先改名，再删旧名（renameTo 在同一目录内是原子的）
-        if (target.exists()) target.delete()
-        if (!tmp.renameTo(target)) {
-            tmp.copyTo(target, overwrite = true)
+        // 校验通过 → 压成长期存储格式 `<sha256>.dict.yaml.gz`（原子替换），并删掉临时明文
+        val storedFile = com.board.ime.dictionary.DictionaryStore.writeCompressed(localDir, actualHash, tmp)
+        if (storedFile == null) {
+            SyncLog.warn(SyncEvent.CONFLICT, "压缩存储失败，保留原文件并丢弃下载内容：${manifest.name}")
             tmp.delete()
+            return null
         }
+        tmp.delete()
 
         val now = System.currentTimeMillis()
         val existing = sources.findBySourceId(manifest.sourceId)
@@ -303,10 +324,10 @@ class DictionarySourceSync(
             sourceId = manifest.sourceId,
             name = targetName,
             type = DictionarySourceType.IMPORTED,
-            path = target.absolutePath,
+            path = storedFile.absolutePath,
             hash = actualHash,
             entryCount = manifest.entryCount,
-            sizeBytes = actualSize,
+            sizeBytes = manifest.fileSize.takeIf { it > 0 } ?: actualSize,
             enabled = true,
             format = "RIME_DICT",
             version = manifest.version,
