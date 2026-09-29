@@ -498,6 +498,69 @@ class SettingsSectionActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 合并重复词库：本地按内容 hash 只留一条 source，并尽力清理云端多余目录。
+     * 会联网（DELETE + 重写 index.json），失败不影响本地结果。
+     */
+    private fun mergeDuplicateSources(out: TextView) {
+        val engine = SyncEngineHolder.get(this)
+        val config = engine.loadConfig()
+        if (!config.isConfigured) {
+            Toast.makeText(this, "请先在「同步」里配置 WebDAV", Toast.LENGTH_SHORT).show()
+            return
+        }
+        out.text = "正在合并重复词库…"
+        lifecycleScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                runCatching {
+                    val client = com.board.ime.sync.OkHttpWebDavClientFactory.create(config)
+                    com.board.ime.sync.DictionarySourceSync(
+                        client = client,
+                        sources = boardDatabase.dictionarySourceDao(),
+                        install = { false },
+                    ).mergeDuplicateSources(config.normalizedDir)
+                }.getOrNull()
+            }
+            Toast.makeText(
+                this@SettingsSectionActivity,
+                report?.summary ?: "合并失败（见日志）",
+                Toast.LENGTH_LONG,
+            ).show()
+            render()
+        }
+    }
+    /**
+     * 扫描云端 `dictionary/sources/`，删除没有任何本地数据源引用的孤儿目录。
+     * 会联网（PROPFIND + DELETE），属于破坏性操作 —— 因此只删「目录名不是任何存活数据源
+     * 内容 hash」的目录，活的目录一律不碰。
+     */
+    private fun sweepRemoteOrphans(out: TextView) {
+        val engine = SyncEngineHolder.get(this)
+        val config = engine.loadConfig()
+        if (!config.isConfigured) {
+            Toast.makeText(this, "请先在「同步」里配置 WebDAV", Toast.LENGTH_SHORT).show()
+            return
+        }
+        out.text = "正在扫描云端目录…"
+        lifecycleScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                runCatching {
+                    val client = com.board.ime.sync.OkHttpWebDavClientFactory.create(config)
+                    com.board.ime.sync.DictionarySourceSync(
+                        client = client,
+                        sources = boardDatabase.dictionarySourceDao(),
+                        install = { false },
+                    ).sweepRemoteOrphans(config.normalizedDir)
+                }.getOrNull()
+            }
+            Toast.makeText(
+                this@SettingsSectionActivity,
+                report?.summary ?: "扫描失败（见日志）",
+                Toast.LENGTH_LONG,
+            ).show()
+            render()
+        }
+    }
     private fun storageManager() = com.board.ime.storage.StorageManager(
         this,
         boardDatabase.dictionarySourceDao(),
@@ -912,6 +975,23 @@ class SettingsSectionActivity : AppCompatActivity() {
         sourcesCard.addView(SettingsUi.heading(this, "导入词库（大型文件）"))
         val sourcesValue = SettingsUi.value(this, "读取中…")
         sourcesCard.addView(sourcesValue)
+        sourcesCard.addView(
+            SettingsUi.button(this, "合并重复词库（含云端清理）") {
+                mergeDuplicateSources(sourcesValue)
+            },
+        )
+        sourcesCard.addView(
+            SettingsUi.hint(
+                this,
+                "按内容 SHA-256 合并：同一份内容只保留一条数据源，并删除云端多余的 source 目录。\n" +
+                    "本地合并一定生效；云端清理失败不影响本地结果。",
+            ),
+        )
+        sourcesCard.addView(
+            SettingsUi.button(this, "清理云端孤儿目录") {
+                sweepRemoteOrphans(sourcesValue)
+            },
+        )
         val deployButton = SettingsUi.button(this, "部署到 Rime") {
             deployImportedSources(sourcesValue)
         }
@@ -1453,7 +1533,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         const val EXTRA_SHOW_LOGS = "show_logs"
 
         /** UI 等待同步的最长时间：到点就结束「同步中」，后台任务不取消 */
-        private const val SYNC_UI_TIMEOUT_MS = 45_000L
+        private const val SYNC_UI_TIMEOUT_MS = 180_000L
 
         /** 自定义颜色的预设色板（默认项是 Board 现有的那点蓝） */
         private val COLOR_PRESETS = listOf(

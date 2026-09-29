@@ -60,6 +60,13 @@ interface WebDavClient {
     /** PUT 二进制 */
     suspend fun putBytes(path: String, bytes: ByteArray, contentType: String): WebDavResponse<Unit>
 
+    /**
+     * PROPFIND 列目录（Depth: 1），返回**子项名**列表。
+     * 用于「清理云端孤儿目录」：先列出现有目录，再和有效数据源对比。
+     */
+    suspend fun list(path: String): WebDavResponse<List<String>>
+    /** DELETE 一个文件 / 集合（合并重复词库时清理云端多余目录） */
+    suspend fun delete(path: String): WebDavResponse<Unit>
     /** 递归创建目录（MKCOL）；已存在视为成功 */
     suspend fun ensureDirectory(path: String): WebDavResponse<Unit>
 }
@@ -215,6 +222,33 @@ class OkHttpWebDavClient(
         )
     }
 
+    override suspend fun list(path: String): WebDavResponse<List<String>> {
+        invalidUrl<Unit>()?.let { return WebDavResponse.fail(it.error, it.httpCode, it.message) }
+        val request = authed(urlFor(path))
+            .method("PROPFIND", ByteArray(0).toRequestBody(null))
+            .header("Depth", "1")
+            .build()
+        val response = execute(request)
+        if (!response.isOk) return WebDavResponse.fail(response.error, response.httpCode, response.message)
+        return WebDavResponse.ok(parseChildNames(response.value.orEmpty(), path), response.httpCode)
+    }
+
+    /** 从 multistatus XML 里取出子目录名（排除自身、文件项、以及 .  开头的隐藏项） */
+    private fun parseChildNames(xml: String, requestedPath: String): List<String> {
+        val self = requestedPath.trim('/').substringAfterLast('/')
+        val names = LinkedHashSet<String>()
+        HREF.findAll(xml).forEach { match ->
+            val raw = match.groupValues[1].trim()
+            val decoded = runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+            val name = decoded.trimEnd('/').substringAfterLast('/')
+            if (name.isNotBlank() && name != self && !name.contains('.')) names += name
+        }
+        return names.toList()
+    }
+    override suspend fun delete(path: String): WebDavResponse<Unit> {
+        invalidUrl<Unit>()?.let { return it }
+        return executeUnit(authed(urlFor(path)).delete().build())
+    }
     override suspend fun ensureDirectory(path: String): WebDavResponse<Unit> {
         invalidUrl<Unit>()?.let { return it }
         val dir = path.trim('/')
@@ -381,6 +415,9 @@ class OkHttpWebDavClient(
     companion object {
         /** 流式读写的块大小（64KB） */
         const val STREAM_BUFFER_BYTES = 64 * 1024
+
+        /** multistatus 里的 href 提取（命名空间前缀不固定，用宽松匹配） */
+        private val HREF = Regex("<[^>]*href[^>]*>([^<]+)</[^>]*href>", RegexOption.IGNORE_CASE)
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             // 更短的超时：不可达的服务器要**快速失败**，而不是让 UI 一直「同步中」

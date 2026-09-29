@@ -122,6 +122,7 @@ class DictionarySourceSync(
         index.forEach { remote[it.sourceId] = it }
 
         var report = Report()
+        var indexDirty = false   // 清单被规范化过（把旧 id 收敛到内容寻址 id）就需要写回
         val locals = sources.allByType(DictionarySourceType.IMPORTED).filter { it.enabled }
         val localIds = HashSet<String>()
 
@@ -139,11 +140,25 @@ class DictionarySourceSync(
                 return@forEach
             }
 
+            // 云端是否已有**同一份内容**？
+            //
+            // 两个关键点（都是真机上踩出来的）：
+            // 1. 先按 id 找，找不到再**按内容 hash** 在清单里找 —— id 是内容寻址的，
+            //    但历史 manifest 可能还是旧的「文件名派生 id」，只按 id 查会永远查不到。
+            // 2. **不再要求 fileSize 相同** —— sizeBytes 在 gz 迁移时被改成"未压缩大小"，
+            //    与云端旧记录不一致，会导致每轮同步都重复上传整份词库（用户看到的就是
+            //    「一直同步不成功」+ 设置页 45s 看门狗报「同步超时」）。
             val remoteManifest = remote[id]
+                ?: index.firstOrNull { it.sha256.equals(manifest.sha256, ignoreCase = true) }
             if (remoteManifest != null &&
-                remoteManifest.sha256 == manifest.sha256 &&
-                remoteManifest.fileSize == manifest.fileSize
+                remoteManifest.sha256.equals(manifest.sha256, ignoreCase = true)
             ) {
+                // 顺手把清单收敛到内容寻址的 id（下次 index.json 写回时生效）
+                if (remoteManifest.sourceId != manifest.sourceId) {
+                    remote.remove(remoteManifest.sourceId)
+                    remote[manifest.sourceId] = manifest
+                    indexDirty = true
+                }
                 SyncLog.event(
                     SyncEvent.SKIP_SAME_HASH,
                     "词库 ${source.name} 云端一致（sha=${SyncLog.shortHash(source.hash)}），跳过上传",
@@ -253,7 +268,7 @@ class DictionarySourceSync(
         }
 
         // ---------- 回写清单（让其它设备能看到本次新增 / 更新） ----------
-        if (report.uploaded > 0) {
+        if (report.uploaded > 0 || indexDirty) {
             val array = JSONArray()
             remote.values.forEach { array.put(it.toJson()) }
             val indexJson = JSONObject().apply {
@@ -348,6 +363,137 @@ class DictionarySourceSync(
         return row.copy(id = if (id > 0L) id else row.id)
     }
 
+    /** 云端孤儿扫描结果 */
+    data class SweepReport(
+        val scanned: Int = 0,
+        val orphans: Int = 0,
+        val removed: Int = 0,
+        val error: String? = null,
+    ) {
+        val summary: String
+            get() = when {
+                error != null -> error
+                orphans == 0 -> "云端正干净：扫描 $scanned 个目录，没有孤儿"
+                else -> "扫描 $scanned 个目录，发现孤儿 $orphans 个，已删除 $removed 个"
+            }
+    }
+
+    /**
+     * 扫描云端 `dictionary/sources/` 下的目录，删掉**没有任何本地数据源引用**的孤儿目录。
+     *
+     * 背景：早期用「文件名派生 id」建过一批目录，后来又改成内容寻址 id，
+     * 那些旧目录不再被 index.json 引用，会永久留在云端（用户看到"建了很多文件夹"）。
+     * 合并重复词库只删"被移除的行"对应的 id，清不掉这些**无主**目录，所以需要这一步。
+     *
+     * 只删「目录名不是任何存活数据源内容 hash」的目录；活的目录一律不碰。
+     */
+    suspend fun sweepRemoteOrphans(syncDir: String): SweepReport {
+        val listing = client.list(DICT_ROOT)
+        if (!listing.isOk) {
+            return SweepReport(error = "无法列出云端目录（HTTP ${listing.httpCode}）")
+        }
+        val dirs = listing.value.orEmpty()
+        val live = sources.allByType(DictionarySourceType.IMPORTED)
+            .map { it.hash.lowercase() }
+            .toSet()
+        var report = SweepReport(scanned = dirs.size)
+        dirs.filter { it.lowercase() !in live }.forEach { orphan ->
+            report = report.copy(orphans = report.orphans + 1)
+            runCatching {
+                val data = client.delete("$DICT_ROOT/$orphan/$FILE_DATA")
+                val manifest = client.delete("$DICT_ROOT/$orphan/$FILE_MANIFEST")
+                val dir = client.delete("$DICT_ROOT/$orphan")
+                if (data.isOk || manifest.isOk || dir.isOk) {
+                    report = report.copy(removed = report.removed + 1)
+                    SyncLog.event(SyncEvent.DONE, "已删除云端孤儿目录：$orphan")
+                }
+            }
+        }
+        SyncLog.event(SyncEvent.DONE, "云端孤儿扫描：${report.summary}")
+        return report
+    }
+    /** 合并结果 */
+    data class MergeReport(
+        val groupsMerged: Int = 0,
+        val rowsRemoved: Int = 0,
+        val remoteDirsRemoved: Int = 0,
+        val indexUpdated: Boolean = false,
+        val error: String? = null,
+    ) {
+        val summary: String
+            get() = if (rowsRemoved == 0) {
+                "没有重复词库，无需合并"
+            } else {
+                "已合并 $groupsMerged 组：删除 $rowsRemoved 条重复记录，清理云端目录 $remoteDirsRemoved 个"
+            }
+    }
+
+    /**
+     * 合并「同一份内容、多个 source」的重复词库。
+     *
+     * 1. 按**内容 SHA-256** 分组，每组只保留一条（优先已接入 Rime、其次优先指向 gz、最后取 id 最小）
+     * 2. 删除多余的 dictionary_source 行；**不动磁盘文件**（内容寻址的 gz 是共享的，
+     *    真正变成孤儿的文件交给 StorageManager 回收）
+     * 3. 尽力清理云端多余目录（DELETE dictionary.dict / manifest.json），并重写 index.json
+     *
+     * 本地合并先做、且一定生效；云端清理是尽力而为，失败不影响本地结果。
+     */
+    suspend fun mergeDuplicateSources(syncDir: String): MergeReport {
+        val duplicated = sources.allByType(DictionarySourceType.IMPORTED)
+            .filter { it.hash.isNotBlank() }
+            .groupBy { it.hash.lowercase() }
+            .filter { it.value.size > 1 }
+        if (duplicated.isEmpty()) return MergeReport()
+
+        var report = MergeReport()
+        val removedIds = ArrayList<String>()
+        duplicated.forEach { (_, rows) ->
+            val keep = rows.sortedWith(
+                compareByDescending<DictionarySource> { it.ready }
+                    .thenByDescending { com.board.ime.dictionary.DictionaryStore.isCompressedStore(it.path) }
+                    .thenBy { it.id },
+            ).first()
+            rows.filter { it.id != keep.id }.forEach { duplicate ->
+                sources.deleteById(duplicate.id)
+                removedIds += duplicate.remoteId
+                report = report.copy(rowsRemoved = report.rowsRemoved + 1)
+            }
+            report = report.copy(groupsMerged = report.groupsMerged + 1)
+            SyncLog.event(
+                SyncEvent.DONE,
+                "合并重复词库：保留 ${keep.name}（sha=${SyncLog.shortHash(keep.hash)}），删掉 ${rows.size - 1} 条",
+            )
+        }
+
+        // 云端清理：DELETE 走 urlFor，会自动带上同步目录，所以这里不要再拼 syncDir
+        removedIds.forEach { id ->
+            runCatching {
+                val data = client.delete("$DICT_ROOT/$id/$FILE_DATA")
+                val manifest = client.delete("$DICT_ROOT/$id/$FILE_MANIFEST")
+                if (data.isOk || manifest.isOk) {
+                    report = report.copy(remoteDirsRemoved = report.remoteDirsRemoved + 1)
+                }
+            }
+        }
+
+        // 重写云端清单：只保留合并后的数据源，避免别的设备又把删掉的目录拉回来
+        runCatching {
+            val array = JSONArray()
+            sources.allByType(DictionarySourceType.IMPORTED).forEach { array.put(Manifest.of(it).toJson()) }
+            val indexJson = JSONObject().apply {
+                put("version", INDEX_VERSION)
+                put("updatedAt", System.currentTimeMillis())
+                put("sources", array)
+            }
+            val put = client.putText(INDEX_PATH, indexJson.toString(2), CONTENT_TYPE_JSON)
+            report = report.copy(
+                indexUpdated = put.isOk,
+                error = if (put.isOk) null else "云端清单更新失败（本地合并已生效）",
+            )
+        }
+        SyncLog.event(SyncEvent.DONE, "合并重复词库完成：${report.summary}")
+        return report
+    }
     // ---------------------------------------------------------------- 清单
 
     private suspend fun loadIndex(): List<Manifest> {
