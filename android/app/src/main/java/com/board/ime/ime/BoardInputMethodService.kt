@@ -40,7 +40,9 @@ import com.board.ime.keyboard.KeyboardLayoutMetrics
 import com.board.ime.settings.BoardPreferences
 import com.board.ime.settings.BoardSettingsActivity
 import com.board.ime.settings.EngineKind
+import com.board.ime.settings.KeyboardScope
 import com.board.ime.settings.LayoutMode
+import com.board.ime.settings.SettingsRepository
 import com.board.ime.sync.SyncEngine
 import com.board.ime.sync.SyncEngineHolder
 import com.board.ime.sync.SyncScheduler
@@ -72,6 +74,7 @@ import kotlinx.coroutines.launch
 class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardView.OnKeyboardActionListener {
 
     private lateinit var preferences: BoardPreferences
+    private lateinit var settingsRepository: SettingsRepository
 
     private var engine: InputEngine = BasicEngine(InputMode.ENGLISH)
     private var rimeEngine: RimeEngine? = null
@@ -100,6 +103,38 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private val preferenceListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> applyPreferences() }
 
+    /**
+     * 外观 / 尺寸参数（独立存储）的变更监听。
+     *
+     * 拖动 SeekBar 时事件很密，这里做 60ms 合并：**只重绘真正受影响的 View**
+     * （键盘 + 面板 + 尺寸），不重启输入法、不重新部署 Rime、不动数据库。
+     */
+    private val uiSettingsListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> scheduleThemeRefresh() }
+
+    private val themeRefresh = Runnable { applyTheme() }
+
+    private fun scheduleThemeRefresh() {
+        mainHandler.removeCallbacks(themeRefresh)
+        mainHandler.postDelayed(themeRefresh, THEME_REFRESH_DELAY_MS)
+    }
+
+    /** 当前该用哪一套键盘尺寸参数（竖屏 / 横屏 / 悬浮各一套） */
+    private fun currentKeyboardScope(): KeyboardScope {
+        val floating = when (preferences.layoutMode) {
+            LayoutMode.AUTO -> KeyboardLayoutCalculator.prefersFloatingLayout(this)
+            LayoutMode.FILL_WIDTH -> false
+            LayoutMode.FLOATING -> true
+        }
+        return when {
+            floating -> KeyboardScope.FLOATING
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ->
+                KeyboardScope.LANDSCAPE
+
+            else -> KeyboardScope.PORTRAIT
+        }
+    }
+
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         captureClipboard()
     }
@@ -110,6 +145,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         super.onCreate()
         active = this
         preferences = BoardPreferences(this)
+        settingsRepository = SettingsRepository(this)
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
         buildController(preferences.engineKind, preferences.mode)
 
@@ -122,6 +158,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         startSync()
 
         preferences.registerListener(preferenceListener)
+        settingsRepository.registerListener(uiSettingsListener)
         bootstrapDatabase()
         prepareRimeIfNeeded()
     }
@@ -208,6 +245,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     override fun onDestroy() {
         if (active === this) active = null
         preferences.unregisterListener(preferenceListener)
+        settingsRepository.unregisterListener(uiSettingsListener)
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         stopClipboardObservation()
         serviceScope.cancel()
@@ -462,7 +500,13 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private fun applyPanelLayout(mode: PanelLayoutMode) {
         val binding = binding ?: return
         val keyboardHeight = metrics?.keyboardHeightPx(binding.keyboardView.keyboardLayout.rowCount) ?: 0
-        val theme = KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize)
+        val theme = KeyboardTheme.from(
+            this,
+            preferences.themeMode,
+            preferences.candidateTextSize,
+            settingsRepository.geometry(currentKeyboardScope()),
+            settingsRepository.appearance(),
+        )
 
         // 分隔线始终保留：面板与下方内容（键盘 / 剪贴板）的分界在四种状态下一致
         binding.panelDivider.visibility = View.VISIBLE
@@ -583,10 +627,23 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     }
 
     private fun applyTheme() {
+        val scope = currentKeyboardScope()
+        val geometry = settingsRepository.geometry(scope)
+        val appearance = settingsRepository.appearance()
+        // 只记参数摘要，不记任何用户内容；用来证明「改设置 → 键盘实时重算」而不是重启
+        Log.i(
+            TAG,
+            "外观/尺寸应用 scope=$scope height=${geometry.heightFactor} " +
+                "gap=${geometry.keyGapDp} keyRadius=${geometry.keyCornerRadiusDp} " +
+                "fn=${geometry.functionKeyWidthRatio} colors=${appearance.colors.size} " +
+                "radii=${appearance.radii.size} binding=${binding != null}",
+        )
         val resolved = KeyboardTheme.from(
             this,
             preferences.themeMode,
             preferences.candidateTextSize,
+            geometry,
+            appearance,
         )
         val binding = binding ?: return
 
@@ -597,7 +654,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         binding.keyboardView.applyTheme(resolved)
         panelController?.applyTheme(resolved)
 
-        applyLayoutMetrics(resolved)
+        applyLayoutMetrics(resolved, scope)
         refreshInputView()
     }
 
@@ -605,14 +662,15 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
      * 竖屏铺满宽度；横屏 / 大屏使用悬浮布局。
      * 尺寸全部由 [KeyboardLayoutCalculator] 算出来，View 与布局里没有硬编码尺寸。
      */
-    private fun applyLayoutMetrics(theme: KeyboardTheme) {
+    private fun applyLayoutMetrics(theme: KeyboardTheme, scope: KeyboardScope) {
         val binding = binding ?: return
-        val floating = when (preferences.layoutMode) {
-            LayoutMode.AUTO -> KeyboardLayoutCalculator.prefersFloatingLayout(this)
-            LayoutMode.FILL_WIDTH -> false
-            LayoutMode.FLOATING -> true
-        }
-        val config = KeyboardLayoutCalculator.configFor(this, floating)
+        val floating = scope == KeyboardScope.FLOATING ||
+            (scope == KeyboardScope.LANDSCAPE && preferences.layoutMode == LayoutMode.AUTO)
+        val config = KeyboardLayoutCalculator.configFor(
+            context = this,
+            floating = floating,
+            geometry = settingsRepository.geometry(scope),
+        )
         val display = resources.displayMetrics
 
         val resolved = KeyboardLayoutCalculator.metrics(
@@ -726,6 +784,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         const val CLIPBOARD_LIMIT = 60
         /** 写系统剪贴板时的标签（只在系统的剪贴板浮层里显示） */
         const val CLIPBOARD_LABEL = "Board"
+
+        /** 外观 / 尺寸变更的合并窗口：60ms 内多次拖动只重绘一次 */
+        private const val THEME_REFRESH_DELAY_MS = 60L
 
         /**
          * 当前活着的输入法服务。

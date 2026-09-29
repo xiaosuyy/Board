@@ -12,6 +12,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import com.board.ime.engine.InputMode
+import com.board.ime.keyboard.KeyRow
 import com.board.ime.keyboard.KeySpec
 import com.board.ime.keyboard.KeyType
 import com.board.ime.keyboard.KeyboardLayout
@@ -218,19 +219,21 @@ class KeyboardView @JvmOverloads constructor(
         // 命中区域向外扩半个间隙 → 键与键之间不再有「点了没反应」的死区
         val expandX = metrics.keyGapHorizontalPx / 2f
         val expandY = metrics.keyGapVerticalPx / 2f
+        // 功能键宽度倍率：只影响功能键（Shift / 退格 / 回车 / 切层…），字母区不变
+        val fnRatio = metrics.functionKeyWidthRatio
 
         keyboardLayout.rows.forEachIndexed { rowIndex, row ->
-            val totalUnits = row.totalUnits
-            if (totalUnits <= 0f) return@forEachIndexed
+            val unit = contentWidth / row.unitsWith(fnRatio)
+            if (unit <= 0f) return@forEachIndexed
 
-            val unit = contentWidth / totalUnits
             val top = metrics.paddingVerticalPx +
                 rowIndex * (metrics.keyHeightPx + metrics.keyGapVerticalPx)
             var cursor = padH + row.leadingPadUnits * unit
 
             row.keys.forEach { key ->
+                val width = key.unitsFor(fnRatio) * unit
                 val left = cursor + metrics.keyGapHorizontalPx / 2f
-                val right = cursor + key.units * unit - metrics.keyGapHorizontalPx / 2f
+                val right = cursor + width - metrics.keyGapHorizontalPx / 2f
                 val rect = RectF(left, top, right, top + metrics.keyHeightPx)
                 keys += key
                 bounds += rect
@@ -240,9 +243,20 @@ class KeyboardView @JvmOverloads constructor(
                     rect.right + expandX,
                     rect.bottom + expandY,
                 )
-                cursor += key.units * unit
+                cursor += width
             }
         }
+    }
+
+    /** 某个键在给定功能键倍率下的实际宽度单位 */
+    private fun KeySpec.unitsFor(functionKeyRatio: Float): Float =
+        if (type.isFunctional && functionKeyRatio != 1f) units * functionKeyRatio else units
+
+    /** 一行的总单位数（考虑功能键倍率） */
+    private fun KeyRow.unitsWith(functionKeyRatio: Float): Float {
+        var sum = leadingPadUnits + trailingPadUnits
+        keys.forEach { sum += it.unitsFor(functionKeyRatio) }
+        return sum
     }
 
     // ---------------------------------------------------------------- 绘制

@@ -3,21 +3,20 @@ package com.board.ime.settings
 /**
  * 设置的一级分类。
  *
- * 首页只列这些入口（外加最上方的状态区、最下方的版本号），
- * 详细、低频的设置都放进各自的二级页面 —— 首页不再堆几十个开关。
+ * 首页**只列这些入口**（外加最上方的状态区、最下方的版本号），
+ * 一级页面不堆解释文字，详细、低频的设置都放进各自的二级页面。
  */
 enum class SettingsSection(
     val title: String,
     val summary: String,
 ) {
     INPUT("输入", "中文输入、输入引擎"),
-    APPEARANCE("外观", "主题、候选词字号"),
-    KEYBOARD("键盘", "布局、按键音效与震动"),
-    CLIPBOARD("剪贴板", "历史、敏感内容、清理"),
+    KEYBOARD("键盘", "高度、间距、圆角、按键行为"),
+    APPEARANCE("外观", "主题、强调色、颜色与圆角"),
     DICTIONARY("词库", "我的词库、学习词、导入导出"),
+    CLIPBOARD("剪贴板", "历史、敏感内容、清理"),
     SYNC("同步", "WebDAV、同步内容"),
-    PRIVACY("隐私", "敏感剪贴板、同步数据范围"),
-    ABOUT("关于", "输入法状态、版本"),
+    ADVANCED("高级", "隐私、输入法状态、开发者选项"),
     ;
 
     companion object {

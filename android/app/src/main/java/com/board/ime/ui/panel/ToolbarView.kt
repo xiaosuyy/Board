@@ -54,7 +54,7 @@ class ToolbarView @JvmOverloads constructor(
 
     fun applyTheme(theme: KeyboardTheme) {
         this.theme = theme
-        setBackgroundColor(theme.panelBackground)
+        setBackgroundColor(theme.toolbarBackground)
         requestLayout()
         invalidate()
     }

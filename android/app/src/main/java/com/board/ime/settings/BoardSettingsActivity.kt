@@ -112,7 +112,7 @@ class BoardSettingsActivity : AppCompatActivity() {
             val dev = SettingsUi.card(this)
             dev.addView(SettingsUi.heading(this, "开发者"))
             val row = SettingsUi.entryRow(this, "日志详情", "同步与输入法运行日志（不含剪贴板正文）") {
-                openSection(SettingsSection.ABOUT, showLogs = true)
+                openSection(SettingsSection.ADVANCED, showLogs = true)
             }
             logEntryRow = row
             dev.addView(row)

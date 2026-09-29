@@ -36,6 +36,8 @@ data class KeyboardLayoutConfig(
     val edgeMarginDp: Float,
     /** 悬浮时靠右对齐（单手操作友好） */
     val alignEnd: Boolean,
+    /** 功能键宽度倍率（1.0 = 设计默认） */
+    val functionKeyWidthRatio: Float = 1f,
 ) {
 
     companion object {
@@ -82,6 +84,8 @@ data class KeyboardLayoutMetrics(
     val cornerRadiusPx: Float,
     val edgeMarginPx: Int,
     val alignEnd: Boolean,
+    /** 功能键宽度倍率（1.0 = 设计默认） */
+    val functionKeyWidthRatio: Float = 1f,
 ) {
     /** 键盘本体高度（不含顶部面板） */
     fun keyboardHeightPx(rowCount: Int): Int {

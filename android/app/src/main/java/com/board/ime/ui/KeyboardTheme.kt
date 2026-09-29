@@ -33,6 +33,8 @@ data class KeyboardTheme(
 
     /** 顶部面板背景：TOOLBAR / CANDIDATES / MORE / CLIPBOARD 全部使用同一个颜色 */
     @param:ColorInt val panelBackground: Int,
+    /** 工具栏背景（默认与 [panelBackground] 相同，可单独自定义） */
+    @param:ColorInt val toolbarBackground: Int,
     @param:ColorInt val candidateText: Int,
     @param:ColorInt val candidateMutedText: Int,
     @param:ColorInt val candidateSelectedBackground: Int,
@@ -113,13 +115,17 @@ data class KeyboardTheme(
             context: Context,
             mode: ThemeMode,
             candidateSize: CandidateTextSize = CandidateTextSize.STANDARD,
+            geometry: com.board.ime.settings.KeyboardGeometry =
+                com.board.ime.settings.KeyboardGeometry.DEFAULT,
+            appearance: com.board.ime.settings.AppearanceConfig =
+                com.board.ime.settings.AppearanceConfig.DEFAULT,
         ): KeyboardTheme {
             val isDark = when (mode) {
                 ThemeMode.SYSTEM -> isSystemNight(context)
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
-            return create(context, isDark, candidateSize)
+            return create(context, isDark, candidateSize, geometry, appearance)
         }
 
         fun isSystemNight(context: Context): Boolean {
@@ -131,6 +137,8 @@ data class KeyboardTheme(
             context: Context,
             isDark: Boolean,
             candidateSize: CandidateTextSize,
+            geometry: com.board.ime.settings.KeyboardGeometry,
+            appearance: com.board.ime.settings.AppearanceConfig,
         ): KeyboardTheme {
             val res = context.resources
 
@@ -147,7 +155,7 @@ data class KeyboardTheme(
 
             val density = res.displayMetrics.density
 
-            return KeyboardTheme(
+            val base = KeyboardTheme(
                 isDark = isDark,
 
                 keyboardBackground = color(R.color.kb_light_background, R.color.kb_dark_background),
@@ -168,6 +176,10 @@ data class KeyboardTheme(
                 divider = color(R.color.kb_light_divider, R.color.kb_dark_divider),
 
                 panelBackground = color(
+                    R.color.kb_light_candidate_bar,
+                    R.color.kb_dark_candidate_bar,
+                ),
+                toolbarBackground = color(
                     R.color.kb_light_candidate_bar,
                     R.color.kb_dark_candidate_bar,
                 ),
@@ -245,6 +257,118 @@ data class KeyboardTheme(
                 iconMedium = dimen(R.dimen.kb_icon_medium),
                 iconLarge = dimen(R.dimen.kb_icon_large),
             )
+            return base.withOverrides(geometry, appearance, density)
         }
+
+        /**
+         * 叠加用户自定义的尺寸 / 颜色 / 圆角。
+         *
+         * 原则：**没配置的项一律保持设计默认**，所以默认视觉与旧版本一致。
+         * 另外还会做两件防御：
+         * 1. 用户改了底色但没改文字色时，自动挑黑 / 白保证对比度（不会出现「白底白字」）
+         * 2. 所有圆角都夹在 `AppearanceRadius` 的上下限内，拖不出畸形 UI
+         */
+        private fun KeyboardTheme.withOverrides(
+            geometry: com.board.ime.settings.KeyboardGeometry,
+            appearance: com.board.ime.settings.AppearanceConfig,
+            density: Float,
+        ): KeyboardTheme {
+            val keyRadius = appearance.radiusDp(
+                com.board.ime.settings.AppearanceRadius.KEY,
+                keyCornerRadius / density,
+            ) * density
+            val chipRadius = appearance.radiusDp(
+                com.board.ime.settings.AppearanceRadius.CANDIDATE_CHIP,
+                candidateCornerRadius / density,
+            ) * density
+            val keyboardRadius = appearance.radiusDp(
+                com.board.ime.settings.AppearanceRadius.KEYBOARD,
+                radiusLarge / density,
+            ) * density
+            val cardRadius = appearance.radiusDp(
+                com.board.ime.settings.AppearanceRadius.CLIPBOARD_CARD,
+                clipboardCardRadius / density,
+            ) * density
+
+            val keyBackgroundOverride = appearance.color(
+                com.board.ime.settings.AppearanceColor.KEY_BACKGROUND,
+            )
+            val panelBackgroundOverride = appearance.color(
+                com.board.ime.settings.AppearanceColor.CANDIDATE_BAR,
+            )
+            val selectedBackgroundOverride = appearance.color(
+                com.board.ime.settings.AppearanceColor.CANDIDATE_SELECTED,
+            )
+            val accentOverride = appearance.color(com.board.ime.settings.AppearanceColor.ACCENT)
+
+            val resolvedKeyText = appearance.color(com.board.ime.settings.AppearanceColor.KEY_TEXT)
+                ?: keyBackgroundOverride?.let(::autoTextColor)
+                ?: keyText
+            val resolvedCandidateText = appearance.color(
+                com.board.ime.settings.AppearanceColor.CANDIDATE_TEXT,
+            )
+                ?: panelBackgroundOverride?.let(::autoTextColor)
+                ?: candidateText
+
+            return copy(
+                keyboardBackground = appearance.colorOr(
+                    com.board.ime.settings.AppearanceColor.KEYBOARD_BACKGROUND,
+                    keyboardBackground,
+                ),
+                keyBackground = keyBackgroundOverride ?: keyBackground,
+                keyPressedBackground = keyBackgroundOverride?.let { shade(it, 0.90f) }
+                    ?: keyPressedBackground,
+                functionKeyBackground = keyBackgroundOverride?.let { shade(it, 0.960f) }
+                    ?: functionKeyBackground,
+                functionKeyPressedBackground = keyBackgroundOverride?.let { shade(it, 0.88f) }
+                    ?: functionKeyPressedBackground,
+                keyText = resolvedKeyText,
+                functionKeyText = resolvedKeyText,
+                accent = accentOverride ?: accent,
+                accentText = accentOverride?.let(::autoTextColor) ?: accentText,
+                panelBackground = panelBackgroundOverride ?: panelBackground,
+                toolbarBackground = appearance.colorOr(
+                    com.board.ime.settings.AppearanceColor.TOOLBAR,
+                    panelBackgroundOverride ?: panelBackground,
+                ),
+                candidateText = resolvedCandidateText,
+                candidateSelectedBackground = selectedBackgroundOverride ?: candidateSelectedBackground,
+                candidateSelectedText = selectedBackgroundOverride?.let(::autoTextColor)
+                    ?: candidateSelectedText,
+                keyHeight = keyHeight * geometry.heightFactor,
+                keyGapHorizontal = if (geometry.hasCustomGap) {
+                    geometry.keyGapDp * density
+                } else {
+                    keyGapHorizontal
+                },
+                keyGapVertical = if (geometry.hasCustomGap) {
+                    geometry.keyGapDp * density
+                } else {
+                    keyGapVertical
+                },
+                keyCornerRadius = keyRadius,
+                candidateCornerRadius = chipRadius,
+                panelPillCornerRadius = chipRadius,
+                clipboardCardRadius = cardRadius,
+                radiusLarge = keyboardRadius,
+            )
+        }
+
+        /** 按背景亮度自动挑黑 / 白文字，避免用户改色后文字看不见 */
+        private fun autoTextColor(background: Int): Int {
+            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(background)
+            return if (luminance > 0.55) {
+                android.graphics.Color.rgb(0x22, 0x22, 0x24)
+            } else {
+                android.graphics.Color.rgb(0xF2, 0xF2, 0xF4)
+            }
+        }
+
+        /** 按键按下 / 功能键的深浅变化：只改亮度，不改变色相 */
+        private fun shade(color: Int, factor: Float): Int = android.graphics.Color.rgb(
+            (android.graphics.Color.red(color) * factor).toInt().coerceIn(0, 255),
+            (android.graphics.Color.green(color) * factor).toInt().coerceIn(0, 255),
+            (android.graphics.Color.blue(color) * factor).toInt().coerceIn(0, 255),
+        )
     }
 }

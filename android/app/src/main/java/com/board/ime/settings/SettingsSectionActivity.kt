@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -27,6 +28,7 @@ import com.board.ime.dictionary.WordType
 import com.board.ime.engine.InputMode
 import com.board.ime.engine.rime.RimeRuntime
 import com.board.ime.ime.BoardInputMethodService
+import com.board.ime.ui.KeyboardTheme
 import com.board.ime.sync.LearnedWordBridge
 import com.board.ime.sync.SyncContent
 import com.board.ime.sync.SyncEngineHolder
@@ -60,6 +62,10 @@ class SettingsSectionActivity : AppCompatActivity() {
     private lateinit var dictionaryRepository: DictionaryRepository
     private lateinit var clipboardRepository: ClipboardRepository
     private lateinit var boardDatabase: BoardDatabase
+    private lateinit var settingsRepository: SettingsRepository
+
+    /** 键盘尺寸页当前编辑的作用域（竖屏 / 横屏 / 悬浮） */
+    private var geometryScope: KeyboardScope = KeyboardScope.PORTRAIT
 
     private var section: SettingsSection = SettingsSection.INPUT
     private var showLogs = false
@@ -106,6 +112,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         section = SettingsSection.fromName(intent.getStringExtra(EXTRA_SECTION))
         showLogs = intent.getBooleanExtra(EXTRA_SHOW_LOGS, false)
         preferences = BoardPreferences(this)
+        settingsRepository = SettingsRepository(this)
         val boardDatabase = BoardDatabase.get(this)
         this.boardDatabase = boardDatabase
         dictionaryRepository = DictionaryRepository(
@@ -174,13 +181,12 @@ class SettingsSectionActivity : AppCompatActivity() {
         } else {
             when (section) {
                 SettingsSection.INPUT -> buildInput(content)
-                SettingsSection.APPEARANCE -> buildAppearance(content)
                 SettingsSection.KEYBOARD -> buildKeyboard(content)
-                SettingsSection.CLIPBOARD -> buildClipboard(content)
+                SettingsSection.APPEARANCE -> buildAppearance(content)
                 SettingsSection.DICTIONARY -> buildDictionary(content)
+                SettingsSection.CLIPBOARD -> buildClipboard(content)
                 SettingsSection.SYNC -> buildSync(content)
-                SettingsSection.PRIVACY -> buildPrivacy(content)
-                SettingsSection.ABOUT -> buildAbout(content)
+                SettingsSection.ADVANCED -> buildAdvanced(content)
             }
         }
         SettingsUi.applySystemBarInset(root)
@@ -222,8 +228,11 @@ class SettingsSectionActivity : AppCompatActivity() {
     // ---------------------------------------------------------------- 外观
 
     private fun buildAppearance(content: LinearLayout) {
+        val appearance = settingsRepository.appearance()
+        val resolvedTheme = KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize)
+
         val theme = SettingsUi.card(this)
-        theme.addView(SettingsUi.heading(this, "键盘主题"))
+        theme.addView(SettingsUi.heading(this, "主题"))
         theme.addView(
             SettingsUi.toggleGroup(
                 this,
@@ -231,6 +240,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                 preferences.themeMode.ordinal,
             ) { index ->
                 preferences.themeMode = ThemeMode.entries[index]
+                render()
             },
         )
         content.addView(SettingsUi.cardView(this, theme))
@@ -244,10 +254,148 @@ class SettingsSectionActivity : AppCompatActivity() {
                 preferences.candidateTextSize.ordinal,
             ) { index ->
                 preferences.candidateTextSize = CandidateTextSize.entries[index]
+                render()
             },
         )
-        size.addView(SettingsUi.hint(this, "拼音字号会按同一档位等比调整；面板高度不变。"))
         content.addView(SettingsUi.cardView(this, size))
+
+        val colors = SettingsUi.card(this)
+        colors.addView(SettingsUi.heading(this, "颜色"))
+        colors.addView(SettingsUi.hint(this, "点一行改一项；不设置就沿用默认（白 / 黑 / 灰 + 少量蓝）。"))
+        AppearanceColor.entries.forEach { target ->
+            colors.addView(colorRow(target, appearance.color(target), resolvedTheme))
+        }
+        colors.addView(
+            SettingsUi.button(this, "恢复默认外观") {
+                settingsRepository.resetAppearance()
+                Toast.makeText(this, "外观已恢复默认", Toast.LENGTH_SHORT).show()
+                render()
+            },
+        )
+        content.addView(SettingsUi.cardView(this, colors))
+
+        val radii = SettingsUi.card(this)
+        radii.addView(SettingsUi.heading(this, "圆角"))
+        radii.addView(SettingsUi.hint(this, "每项都有上下限，拖到头也不会出现畸形 UI。"))
+        AppearanceRadius.entries.forEach { target ->
+            radii.addView(
+                SettingsUi.sliderRow(
+                    this,
+                    target.label,
+                    appearance.radiusDp(target, target.defaultDp),
+                    target.minDp,
+                    target.maxDp,
+                    "dp",
+                ) { value -> settingsRepository.setRadius(target, value) },
+            )
+        }
+        content.addView(SettingsUi.cardView(this, radii))
+    }
+
+    /** 一行颜色项：名称 + 当前值 + 色块；点击选色 */
+    private fun colorRow(
+        target: AppearanceColor,
+        current: Int?,
+        theme: KeyboardTheme,
+    ): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(10f), 0, dp(10f))
+        isClickable = true
+        setOnClickListener { pickColor(target, current, theme) }
+        addView(
+            TextView(this@SettingsSectionActivity).apply {
+                text = target.label
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            },
+        )
+        addView(
+            TextView(this@SettingsSectionActivity).apply {
+                text = if (current == null) "默认" else "#%06X".format(0xFFFFFF and current)
+                textSize = 13f
+                setTextColor(secondaryColor())
+            },
+        )
+        addView(
+            View(this@SettingsSectionActivity).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(current ?: defaultColorOf(target, theme))
+                    cornerRadius = dp(5f).toFloat()
+                    setStroke(dp(1f), 0x33000000)
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(30f), dp(20f)).apply { marginStart = dp(10f) }
+            },
+        )
+    }
+
+    /** 某一项在「默认」状态下实际使用的颜色（用于色块预览） */
+    private fun defaultColorOf(target: AppearanceColor, theme: KeyboardTheme): Int = when (target) {
+        AppearanceColor.ACCENT -> theme.accent
+        AppearanceColor.KEYBOARD_BACKGROUND -> theme.keyboardBackground
+        AppearanceColor.KEY_BACKGROUND -> theme.keyBackground
+        AppearanceColor.KEY_TEXT -> theme.keyText
+        AppearanceColor.CANDIDATE_BAR -> theme.panelBackground
+        AppearanceColor.CANDIDATE_TEXT -> theme.candidateText
+        AppearanceColor.CANDIDATE_SELECTED -> theme.candidateSelectedBackground
+        AppearanceColor.TOOLBAR -> theme.toolbarBackground
+    }
+
+    /** 选色：预设色板 / 手输 #RRGGBB / 恢复默认 */
+    private fun pickColor(target: AppearanceColor, current: Int?, theme: KeyboardTheme) {
+        val names = COLOR_PRESETS.map { (name, value) -> "$name  #%06X".format(0xFFFFFF and value) } +
+            listOf("自定义（输入 #RRGGBB）", "恢复默认")
+        MaterialAlertDialogBuilder(this)
+            .setTitle(target.label)
+            .setItems(names.toTypedArray()) { _, which ->
+                when {
+                    which < COLOR_PRESETS.size -> {
+                        settingsRepository.setColor(target, COLOR_PRESETS[which].second)
+                        render()
+                    }
+
+                    which == COLOR_PRESETS.size -> promptHexColor(target, current ?: defaultColorOf(target, theme))
+                    else -> {
+                        settingsRepository.setColor(target, null)
+                        render()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun promptHexColor(target: AppearanceColor, initial: Int) {
+        val input = EditText(this).apply {
+            hint = "#RRGGBB"
+            setText("#%06X".format(0xFFFFFF and initial))
+            setSingleLine(true)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("${target.label} · 自定义颜色")
+            .setView(input)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("确定") { _, _ ->
+                val parsed = parseHexColor(input.text?.toString().orEmpty())
+                if (parsed == null) {
+                    Toast.makeText(this, "格式不对，请用 #RRGGBB", Toast.LENGTH_SHORT).show()
+                } else {
+                    settingsRepository.setColor(target, parsed)
+                    render()
+                }
+            }
+            .show()
+    }
+
+    /** 接受 `#RRGGBB` / `RRGGBB`（大小写均可） */
+    private fun parseHexColor(value: String): Int? {
+        val hex = value.trim().removePrefix("#")
+        if (hex.length != 6 || hex.any { it !in "0123456789abcdefABCDEF" }) return null
+        return runCatching { 0xFF000000.toInt() or hex.toLong(16).toInt() }.getOrNull()
+    }
+
+    private fun buildAdvanced(content: LinearLayout) {
+        buildPrivacy(content)
+        buildAbout(content)
     }
 
     // ---------------------------------------------------------------- 键盘
@@ -266,6 +414,23 @@ class SettingsSectionActivity : AppCompatActivity() {
         )
         layout.addView(SettingsUi.hint(this, "自动：竖屏铺满、横屏 / 大屏悬浮。"))
         content.addView(SettingsUi.cardView(this, layout))
+
+        // ---- 键盘尺寸：竖屏 / 横屏 / 悬浮键盘各自一套参数 ----
+        val sizeCard = SettingsUi.card(this)
+        sizeCard.addView(SettingsUi.heading(this, "键盘尺寸"))
+        val scopeGroup = SettingsUi.toggleGroup(
+            this,
+            KeyboardScope.entries.map { it.label },
+            geometryScope.ordinal,
+        ) { index ->
+            geometryScope = KeyboardScope.entries[index]
+            render()
+        }
+        sizeCard.addView(scopeGroup)
+        sizeCard.addView(SettingsUi.hint(this, "竖屏 / 横屏 / 悬浮键盘分别保存，横屏默认更紧凑。"))
+        content.addView(SettingsUi.cardView(this, sizeCard))
+
+        renderGeometryControls(content, geometryScope)
 
         val behaviour = SettingsUi.card(this)
         behaviour.addView(SettingsUi.heading(this, "按键行为"))
@@ -301,6 +466,101 @@ class SettingsSectionActivity : AppCompatActivity() {
         }
         tryCard.addView(field)
         content.addView(SettingsUi.cardView(this, tryCard))
+    }
+
+    /**
+     * 当前作用域的键盘尺寸控件。
+     *
+     * **拖动即生效**：每次都写进 [SettingsRepository]，输入法服务订阅的是同一个
+     * SharedPreferences 文件，收到变更后只重算尺寸 / 重绘键盘，
+     * 不重启输入法、不重新部署 Rime、不动数据库。
+     */
+    private fun renderGeometryControls(content: LinearLayout, scope: KeyboardScope) {
+        val geometry = settingsRepository.geometry(scope)
+
+        val heightCard = SettingsUi.card(this)
+        heightCard.addView(SettingsUi.heading(this, "键盘高度（${scope.label}）"))
+        heightCard.addView(
+            SettingsUi.toggleGroup(
+                this,
+                KeyboardHeightLevel.entries.map { it.label },
+                geometry.level.ordinal,
+            ) { index ->
+                val level = KeyboardHeightLevel.entries[index]
+                settingsRepository.updateGeometry(scope) { it.copy(level = level) }
+                render()
+            },
+        )
+        content.addView(SettingsUi.cardView(this, heightCard))
+
+        val fine = SettingsUi.card(this)
+        fine.addView(SettingsUi.heading(this, "精细调整（${scope.label}）"))
+
+        fine.addView(
+            SettingsUi.sliderRow(
+                this,
+                "整体高度",
+                value = geometry.customHeightFactor,
+                min = KeyboardGeometry.MIN_CUSTOM_FACTOR,
+                max = KeyboardGeometry.MAX_CUSTOM_FACTOR,
+                unit = "x",
+            ) { value ->
+                // 拖「整体高度」自动切到自定义档，避免出现「档位是大、却拖了标准值」的困惑
+                settingsRepository.updateGeometry(scope) {
+                    it.copy(level = KeyboardHeightLevel.CUSTOM, customHeightFactor = value)
+                }
+            },
+        )
+
+        val gapDefault = 6f
+        fine.addView(
+            SettingsUi.sliderRow(
+                this,
+                "按键间距",
+                value = if (geometry.hasCustomGap) geometry.keyGapDp else gapDefault,
+                min = KeyboardGeometry.MIN_GAP_DP,
+                max = KeyboardGeometry.MAX_GAP_DP,
+                unit = "dp",
+            ) { value ->
+                settingsRepository.updateGeometry(scope) { it.copy(keyGapDp = value) }
+            },
+        )
+
+        val radiusDefault = 10f
+        fine.addView(
+            SettingsUi.sliderRow(
+                this,
+                "按键圆角",
+                value = if (geometry.hasCustomRadius) geometry.keyCornerRadiusDp else radiusDefault,
+                min = 0f,
+                max = 24f,
+                unit = "dp",
+            ) { value ->
+                settingsRepository.updateGeometry(scope) { it.copy(keyCornerRadiusDp = value) }
+            },
+        )
+
+        fine.addView(
+            SettingsUi.sliderRow(
+                this,
+                "功能键宽度",
+                value = geometry.functionKeyWidthRatio,
+                min = KeyboardGeometry.MIN_FN_RATIO,
+                max = KeyboardGeometry.MAX_FN_RATIO,
+                unit = "x",
+            ) { value ->
+                settingsRepository.updateGeometry(scope) { it.copy(functionKeyWidthRatio = value) }
+            },
+        )
+
+        fine.addView(
+            SettingsUi.button(this, "恢复本作用域默认") {
+                settingsRepository.resetGeometry(scope)
+                Toast.makeText(this, "${scope.label}已恢复默认", Toast.LENGTH_SHORT).show()
+                render()
+            },
+        )
+        content.addView(SettingsUi.cardView(this, fine))
     }
 
     /**
@@ -1087,5 +1347,21 @@ class SettingsSectionActivity : AppCompatActivity() {
 
         /** UI 等待同步的最长时间：到点就结束「同步中」，后台任务不取消 */
         private const val SYNC_UI_TIMEOUT_MS = 45_000L
+
+        /** 自定义颜色的预设色板（默认项是 Board 现有的那点蓝） */
+        private val COLOR_PRESETS = listOf(
+            "默认蓝" to 0xFF2F6BFF.toInt(),
+            "深蓝" to 0xFF1E4FD8.toInt(),
+            "青" to 0xFF00A3A3.toInt(),
+            "绿" to 0xFF2E9B57.toInt(),
+            "橙" to 0xFFE07A20.toInt(),
+            "红" to 0xFFD8453C.toInt(),
+            "紫" to 0xFF7B4BD8.toInt(),
+            "白" to 0xFFFFFFFF.toInt(),
+            "浅灰" to 0xFFF2F3F5.toInt(),
+            "中灰" to 0xFFD3D7DC.toInt(),
+            "深灰" to 0xFF3C4248.toInt(),
+            "近黑" to 0xFF14161A.toInt(),
+        )
     }
 }

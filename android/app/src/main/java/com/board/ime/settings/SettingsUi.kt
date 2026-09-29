@@ -108,6 +108,77 @@ object SettingsUi {
         setOnCheckedChangeListener { _, value -> onChanged(value) }
     }
 
+    /**
+     * 一行数值调节：`名称  值` + 下面一根 SeekBar。
+     *
+     * 拖动过程中就会回调 [onChange]（实时预览），不等到松手。
+     * 数值显示保留一位小数，单位由调用方给。
+     */
+    fun sliderRow(
+        context: Context,
+        label: String,
+        value: Float,
+        min: Float,
+        max: Float,
+        unit: String,
+        onChange: (Float) -> Unit,
+    ): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(context, 8f), 0, 0)
+        }
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val valueView = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(secondaryColor(context))
+            text = formatValue(value, unit)
+        }
+        header.addView(
+            TextView(context).apply {
+                text = label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            },
+        )
+        header.addView(valueView)
+        row.addView(header)
+
+        val steps = 100
+        val span = (max - min).takeIf { it > 0f } ?: 1f
+        row.addView(
+            android.widget.SeekBar(context).apply {
+                this.max = steps
+                progress = (((value - min) / span) * steps).toInt().coerceIn(0, steps)
+                setOnSeekBarChangeListener(
+                    object : android.widget.SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(
+                            seekBar: android.widget.SeekBar?,
+                            progress: Int,
+                            fromUser: Boolean,
+                        ) {
+                            val resolved = min + span * (progress.toFloat() / steps)
+                            valueView.text = formatValue(resolved, unit)
+                            if (fromUser) onChange(resolved)
+                        }
+
+                        override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) = Unit
+                        override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) = Unit
+                    },
+                )
+            },
+        )
+        return row
+    }
+
+    private fun formatValue(value: Float, unit: String): String = when (unit) {
+        "x" -> String.format(java.util.Locale.US, "%.2fx", value)
+        "dp" -> String.format(java.util.Locale.US, "%.0fdp", value)
+        else -> String.format(java.util.Locale.US, "%.1f%s", value, unit)
+    }
+
     /** 单选按钮组：返回的 group 上按 index 取选中项 */
     fun toggleGroup(
         context: Context,

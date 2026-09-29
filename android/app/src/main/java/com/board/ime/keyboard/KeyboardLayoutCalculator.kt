@@ -24,31 +24,75 @@ object KeyboardLayoutCalculator {
         return landscape || sw >= 600
     }
 
-    fun configFor(context: Context, floating: Boolean): KeyboardLayoutConfig {
-        if (floating) {
-            return KeyboardLayoutConfig.LANDSCAPE
+    /**
+     * 取某个布局作用域的设计基准配置。
+     *
+     * [geometry] 来自 [com.board.ime.settings.SettingsRepository]：
+     * 只有用户真的改过（倍率 ≠ 1、间距/圆角已设置）时才覆盖设计默认值，
+     * 因此「没配置」= 与旧版本视觉完全一致。
+     */
+    fun configFor(
+        context: Context,
+        floating: Boolean,
+        geometry: com.board.ime.settings.KeyboardGeometry =
+            com.board.ime.settings.KeyboardGeometry.DEFAULT,
+    ): KeyboardLayoutConfig {
+        val base = if (floating) {
+            KeyboardLayoutConfig.LANDSCAPE
+        } else {
+            val res = context.resources
+            // 注意：这里要的是 dp（设计值），不是像素；像素由 metrics() 按 density 换算
+            fun dp(id: Int): Float = res.getDimension(id) / res.displayMetrics.density
+            KeyboardLayoutConfig(
+                floating = false,
+                fillWidth = true,
+                widthFraction = 1f,
+                minWidthDp = 0f,
+                maxWidthDp = Float.MAX_VALUE,
+                maxWidthScreenFraction = 1f,
+                maxHeightScreenFraction = 0.62f,
+                keyHeightDp = dp(R.dimen.kb_key_height),
+                minKeyHeightDp = 34f,
+                keyGapHorizontalDp = dp(R.dimen.kb_key_gap_horizontal),
+                keyGapVerticalDp = dp(R.dimen.kb_key_gap_vertical),
+                paddingHorizontalDp = dp(R.dimen.kb_keyboard_padding_horizontal),
+                paddingVerticalDp = dp(R.dimen.kb_keyboard_padding_vertical),
+                cornerRadiusDp = dp(R.dimen.kb_key_corner_radius),
+                edgeMarginDp = 0f,
+                alignEnd = false,
+            )
         }
-        val res = context.resources
-        // 注意：这里要的是 dp（设计值），不是像素；像素由 metrics() 按 density 换算
-        fun dp(id: Int): Float = res.getDimension(id) / res.displayMetrics.density
-        return KeyboardLayoutConfig(
-            floating = false,
-            fillWidth = true,
-            widthFraction = 1f,
-            minWidthDp = 0f,
-            maxWidthDp = Float.MAX_VALUE,
-            maxWidthScreenFraction = 1f,
-            maxHeightScreenFraction = 0.62f,
-            keyHeightDp = dp(R.dimen.kb_key_height),
-            minKeyHeightDp = 34f,
-            keyGapHorizontalDp = dp(R.dimen.kb_key_gap_horizontal),
-            keyGapVerticalDp = dp(R.dimen.kb_key_gap_vertical),
-            paddingHorizontalDp = dp(R.dimen.kb_keyboard_padding_horizontal),
-            paddingVerticalDp = dp(R.dimen.kb_keyboard_padding_vertical),
-            cornerRadiusDp = dp(R.dimen.kb_key_corner_radius),
-            edgeMarginDp = 0f,
-            alignEnd = false,
+        return base.withGeometry(geometry, context)
+    }
+
+    /** 把用户设置叠加到设计基准上（不改调用方传进来的对象） */
+    private fun KeyboardLayoutConfig.withGeometry(
+        geometry: com.board.ime.settings.KeyboardGeometry,
+        context: Context,
+    ): KeyboardLayoutConfig {
+        val fnRatio = geometry.functionKeyWidthRatio.coerceIn(
+            com.board.ime.settings.KeyboardGeometry.MIN_FN_RATIO,
+            com.board.ime.settings.KeyboardGeometry.MAX_FN_RATIO,
         )
+        return if (geometry.hasCustomGap) {
+            val gap = geometry.keyGapDp.coerceIn(
+                com.board.ime.settings.KeyboardGeometry.MIN_GAP_DP,
+                com.board.ime.settings.KeyboardGeometry.MAX_GAP_DP,
+            )
+            copy(
+                keyHeightDp = keyHeightDp * geometry.heightFactor,
+                keyGapHorizontalDp = gap,
+                keyGapVerticalDp = gap,
+                cornerRadiusDp = if (geometry.hasCustomRadius) geometry.keyCornerRadiusDp else cornerRadiusDp,
+                functionKeyWidthRatio = fnRatio,
+            )
+        } else {
+            copy(
+                keyHeightDp = keyHeightDp * geometry.heightFactor,
+                cornerRadiusDp = if (geometry.hasCustomRadius) geometry.keyCornerRadiusDp else cornerRadiusDp,
+                functionKeyWidthRatio = fnRatio,
+            )
+        }
     }
 
     fun metrics(
@@ -87,6 +131,7 @@ object KeyboardLayoutCalculator {
             cornerRadiusPx = config.cornerRadiusDp * density,
             edgeMarginPx = (config.edgeMarginDp * density).toInt(),
             alignEnd = config.alignEnd,
+            functionKeyWidthRatio = config.functionKeyWidthRatio,
         )
     }
 
