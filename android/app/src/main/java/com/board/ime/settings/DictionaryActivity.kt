@@ -45,6 +45,8 @@ class DictionaryActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityDictionaryBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // 三级页面同样要避开状态栏 / 挖孔（Android 15+ 强制 edge-to-edge）
+        SettingsUi.applySystemBarInset(binding.root)
 
         repository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
 
