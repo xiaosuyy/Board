@@ -426,7 +426,9 @@ class ClipboardPanel @JvmOverloads constructor(
             val device = item.originType?.takeIf { it.isNotBlank() }
             return if (device != null) "云端 · $device" else "云端"
         }
-        return if (item.contentType == ClipboardContentType.LINK) "本机 · 链接" else "本机"
+        // 本机内容同时是「服务器当前内容」时也标出来（语义：remoteCurrent，不是历史同步）
+        val local = if (item.contentType == ClipboardContentType.LINK) "本机 · 链接" else "本机"
+        return if (item.remoteCurrent) "$local · 云端" else local
     }
 
     // ---------------------------------------------------------------- 动作条

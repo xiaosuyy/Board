@@ -28,6 +28,8 @@ data class ClipboardSummary(
     val isPinned: Boolean,
     val isFavorite: Boolean,
     val isDeleted: Boolean,
+    /** 服务器上的 SyncClipboard.json 此刻就是这条 */
+    val remoteCurrent: Boolean,
     val createdAt: Long,
     val updatedAt: Long,
 ) {
@@ -64,6 +66,7 @@ fun ClipboardItem.toSummary(): ClipboardSummary = ClipboardSummary(
     isPinned = isPinned,
     isFavorite = isFavorite,
     isDeleted = isDeleted,
+    remoteCurrent = remoteCurrent,
     createdAt = createdAt,
     updatedAt = updatedAt,
 )

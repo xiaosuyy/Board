@@ -116,7 +116,8 @@ class ClipboardRepository(
         limit: Int = DEFAULT_LIMIT,
         remoteOnly: Boolean = false,
     ): Flow<List<ClipboardSummary>> =
-        if (remoteOnly) dao.observeByOrigin(ClipboardOrigin.REMOTE, limit) else dao.observeActive(limit)
+        // 「云端」= 服务器当前内容（remoteCurrent），不是「历史上同步过」也不是「origin=REMOTE」
+        if (remoteOnly) dao.observeRemoteCurrent(limit) else dao.observeActive(limit)
 
     /** 空查询等同于「最近」；非空时走 SQLite LIKE，本地即时过滤（不加载完整内容） */
     fun search(
@@ -126,9 +127,9 @@ class ClipboardRepository(
     ): Flow<List<ClipboardSummary>> {
         val keyword = query.trim()
         return when {
-            keyword.isEmpty() && remoteOnly -> dao.observeByOrigin(ClipboardOrigin.REMOTE, limit)
+            keyword.isEmpty() && remoteOnly -> dao.observeRemoteCurrent(limit)
             keyword.isEmpty() -> dao.observeActive(limit)
-            remoteOnly -> dao.observeSearchByOrigin(keyword, ClipboardOrigin.REMOTE, limit)
+            remoteOnly -> dao.observeSearchRemoteCurrent(keyword, limit)
             else -> dao.observeSearch(keyword, limit)
         }
     }
@@ -337,6 +338,30 @@ class ClipboardRepository(
         }
     }
 
+    /**
+     * 确认「服务器当前内容」就是 [hash] 这条记录。
+     *
+     * 语义严格：**先把所有旧标记清掉，再给这条打上**，
+     * 所以服务器从 A 变成 B 之后，A 会自动从「云端」筛选里消失。
+     *
+     * 只在**成功拿到并校验通过服务器内容**之后调用；网络失败/超时一律不调用。
+     *
+     * @return 被打上标记的记录 id；本地没有这条时返回 null
+     */
+    suspend fun markRemoteCurrent(hash: String): Long? {
+        val target = dao.findSummaryByHash(hash) ?: return null
+        dao.clearRemoteCurrent()
+        dao.setRemoteCurrent(target.id)
+        SyncLog.event(SyncEvent.DONE, "云端当前内容 → hash=${SyncLog.shortHash(hash)}（已重置旧标记）")
+        return target.id
+    }
+
+    /** 本机成功上传后，本地这条就是「服务器当前内容」 */
+    suspend fun markRemoteCurrentById(id: Long) {
+        dao.clearRemoteCurrent()
+        dao.setRemoteCurrent(id)
+        SyncLog.event(SyncEvent.UPLOAD, "本机已上传，标记为云端当前内容 id=$id")
+    }
     /** 标记某个哈希在 [SUPPRESS_WINDOW_MS] 内不要产生上传任务 */
     fun suppressCapture(hash: String, windowMs: Long = SUPPRESS_WINDOW_MS) {
         synchronized(suppressed) {

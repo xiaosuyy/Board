@@ -83,6 +83,21 @@ data class ClipboardItem(
      */
     @ColumnInfo(defaultValue = "")
     val searchText: String = "",
+    /**
+     * **当前云端内容标记**（语义严格限定）。
+     *
+     * = 「服务器上的 `SyncClipboard.json` **此刻**就是这条」。
+     * **不是**「历史上曾经同步过」，所以服务器内容换掉后旧记录必须被清标记。
+     *
+     * 与 [origin] 正交，四种组合都合法：
+     * - `LOCAL + true` → 本机复制后成功上传（本机 + 云端）
+     * - `REMOTE + true` → 从别的设备同步过来的（远端 + 云端）
+     * - `LOCAL + false` / `REMOTE + false` → 服务器当前已经不是它
+     *
+     * 注意：不要用 [originType] 表达这件事，那是「远端设备名」。
+     */
+    @ColumnInfo(defaultValue = "0")
+    val remoteCurrent: Boolean = false,
 ) {
     /** 固定和收藏都不该被普通清理带走 */
     val isProtected: Boolean get() = isPinned || isFavorite

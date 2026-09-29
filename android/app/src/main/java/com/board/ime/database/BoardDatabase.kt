@@ -38,7 +38,7 @@ import com.board.ime.dictionary.DictionarySource
         Device::class,
         SyncOperation::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -306,6 +306,22 @@ abstract class BoardDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v10：剪贴板增加「当前云端内容」标记。
+         *
+         * 语义：服务器上的 SyncClipboard.json **此刻**就是这条记录。
+         * 只有确认了服务器当前内容之后才会更新它（服务器 A→B 时旧的 A 会被清掉）。
+         *
+         * 普通 ADD COLUMN，默认 0，**不做 destructive migration**；已有记录全部保留。
+         */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE clipboard_item ADD COLUMN remoteCurrent INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         @Volatile
         private var instance: BoardDatabase? = null
 
@@ -361,6 +377,7 @@ abstract class BoardDatabase : RoomDatabase() {
                     MIGRATION_6_7,
                     MIGRATION_7_8,
                     MIGRATION_8_9,
+                    MIGRATION_9_10,
                 )
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

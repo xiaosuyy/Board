@@ -386,6 +386,8 @@ class SyncEngine(
             response.isOk -> {
                 complete(operation)
                 pushCount = 1
+                // 本机成功上传 → 本地这条就是「服务器当前内容」，立即打标记（不必等下一次 pull）
+                clipboardRepository.markRemoteCurrentById(item.id)
                 SyncLog.event(
                     SyncEvent.UPLOAD,
                     "hash=${SyncLog.shortHash(payload.hash)} bytes=${payload.size} " +
@@ -477,6 +479,9 @@ class SyncEngine(
         val local = clipboardDao.findSummaryByHash(computed)
         if (local != null) {
             SyncLog.event(SyncEvent.SKIP_SAME_HASH, "hash=${SyncLog.shortHash(computed)} 本地已存在")
+            // 服务器当前内容就是本地这条（可能是本机复制过、也被上传过）：
+            // 不建重复记录、保留原 origin，只把它标成「云端当前内容」。
+            clipboardRepository.markRemoteCurrent(computed)
             return PullOutcome.Applied(0, 0, 1)
         }
 
@@ -512,6 +517,7 @@ class SyncEngine(
                     SyncEvent.DOWNLOAD,
                     "hash=${SyncLog.shortHash(computed)} bytes=${payload.size}",
                 )
+                clipboardRepository.markRemoteCurrentById(applied.id)
                 _applied.tryEmit(text)
             }
             return PullOutcome.Applied(if (applied != null) 1 else 0, 1, 0)
@@ -531,6 +537,7 @@ class SyncEngine(
                 SyncEvent.DOWNLOAD,
                 "hash=${SyncLog.shortHash(computed)} bytes=${payload.size}",
             )
+            clipboardRepository.markRemoteCurrentById(applied.id)
             // 通知宿主把它设为系统剪贴板（宿主会先登记抑制，避免回环）
             _applied.tryEmit(text)
         }

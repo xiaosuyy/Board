@@ -41,11 +41,26 @@ interface ClipboardDao {
     fun observeSearch(query: String, limit: Int): Flow<List<ClipboardSummary>>
 
     /** 只看某个来源（例如「云端」= REMOTE） */
+    /**
+     * 「云端」筛选：**只看服务器当前的这一条**（remoteCurrent），
+     * 不再要求 origin = REMOTE —— 本机复制后成功上传的内容同样属于「当前云端」。
+     */
+    @Query(SUMMARY_COLUMNS + " WHERE isDeleted = 0 AND remoteCurrent = 1 " +
+        "ORDER BY isPinned DESC, isFavorite DESC, updatedAt DESC LIMIT :limit")
+    fun observeRemoteCurrent(limit: Int): Flow<List<ClipboardSummary>>
+
+    /** 来源筛选（保留旧语义，供需要按来源查看的场景） */
     @Query(SUMMARY_COLUMNS + " WHERE isDeleted = 0 AND origin = :origin " +
         "ORDER BY isPinned DESC, isFavorite DESC, updatedAt DESC LIMIT :limit")
     fun observeByOrigin(origin: ClipboardOrigin, limit: Int): Flow<List<ClipboardSummary>>
 
     /** 来源 + 关键字 */
+    /** 「云端」+ 关键字 */
+    @Query(SUMMARY_COLUMNS + " WHERE isDeleted = 0 AND remoteCurrent = 1 " +
+        "AND (" + MATCH_COLUMNS + ") " +
+        "ORDER BY isPinned DESC, isFavorite DESC, updatedAt DESC LIMIT :limit")
+    fun observeSearchRemoteCurrent(query: String, limit: Int): Flow<List<ClipboardSummary>>
+
     @Query(SUMMARY_COLUMNS + " WHERE isDeleted = 0 AND origin = :origin " +
         "AND (" + MATCH_COLUMNS + ") " +
         "ORDER BY isPinned DESC, isFavorite DESC, updatedAt DESC LIMIT :limit")
@@ -116,6 +131,15 @@ interface ClipboardDao {
 
     @Query("UPDATE clipboard_item SET searchText = :text WHERE id = :id")
     suspend fun updateSearchText(id: Long, text: String)
+
+    // ---- 「当前云端内容」标记（语义：服务器此刻就是这条）----
+
+    /** 每次确认服务器当前内容前，先把所有旧标记清掉（保证 A→B 时旧的 A 不再显示在云端） */
+    @Query("UPDATE clipboard_item SET remoteCurrent = 0 WHERE remoteCurrent = 1")
+    suspend fun clearRemoteCurrent(): Int
+
+    @Query("UPDATE clipboard_item SET remoteCurrent = 1 WHERE id = :id")
+    suspend fun setRemoteCurrent(id: Long)
 
     // ---------------------------------------------------------------- 维护（老数据收敛）
 
@@ -213,7 +237,7 @@ interface ClipboardDao {
         const val SUMMARY_COLUMNS =
             "SELECT id, preview, contentType, contentHash, contentSize, contentStorage, " +
                 "contentFilePath, origin, originType, isPinned, isFavorite, isDeleted, " +
-                "createdAt, updatedAt FROM clipboard_item"
+                "createdAt, updatedAt, remoteCurrent FROM clipboard_item"
 
         /**
          * 搜索匹配条件。
