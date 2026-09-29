@@ -40,9 +40,11 @@ import com.board.ime.keyboard.KeyboardLayoutMetrics
 import com.board.ime.settings.BoardPreferences
 import com.board.ime.settings.BoardSettingsActivity
 import com.board.ime.settings.EngineKind
+import com.board.ime.settings.CandidateTextSize
 import com.board.ime.settings.KeyboardScope
 import com.board.ime.settings.LayoutMode
 import com.board.ime.settings.SettingsRepository
+import com.board.ime.settings.ThemeMode
 import com.board.ime.sync.SyncEngine
 import com.board.ime.sync.SyncEngineHolder
 import com.board.ime.sync.SyncScheduler
@@ -74,7 +76,14 @@ import kotlinx.coroutines.launch
 class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardView.OnKeyboardActionListener {
 
     private lateinit var preferences: BoardPreferences
-    private lateinit var settingsRepository: SettingsRepository
+
+    /**
+     * 外观 / 尺寸仓库。
+     *
+     * 用 `lazy` 而不是 `lateinit`：即使某个回调（例如主题刷新）在 onCreate 之外
+     * 被触发，也不会因为「未初始化」把输入法整个弄挂。
+     */
+    private val settingsRepository: SettingsRepository by lazy { SettingsRepository(this) }
 
     private var engine: InputEngine = BasicEngine(InputMode.ENGLISH)
     private var rimeEngine: RimeEngine? = null
@@ -145,7 +154,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         super.onCreate()
         active = this
         preferences = BoardPreferences(this)
-        settingsRepository = SettingsRepository(this)
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
         buildController(preferences.engineKind, preferences.mode)
 
@@ -194,7 +202,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onCollapseKeyboard = { collapseKeyboard() }
         panelController = panel
 
-        applyTheme()
+        // 主题 / 尺寸只影响外观：即使失败也必须把键盘交出去
+        runCatching { applyTheme() }.onFailure { throwable ->
+            Log.e(TAG, "应用外观失败，键盘继续使用默认外观：${throwable.message}", throwable)
+        }
         refreshInputView()
         return binding.root
     }
@@ -244,8 +255,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     override fun onDestroy() {
         if (active === this) active = null
-        preferences.unregisterListener(preferenceListener)
-        settingsRepository.unregisterListener(uiSettingsListener)
+        runCatching {
+            preferences.unregisterListener(preferenceListener)
+            settingsRepository.unregisterListener(uiSettingsListener)
+        }.onFailure { Log.w(TAG, "注销监听失败：${it.message}") }
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         stopClipboardObservation()
         serviceScope.cancel()
@@ -628,23 +641,34 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     private fun applyTheme() {
         val scope = currentKeyboardScope()
-        val geometry = settingsRepository.geometry(scope)
-        val appearance = settingsRepository.appearance()
-        // 只记参数摘要，不记任何用户内容；用来证明「改设置 → 键盘实时重算」而不是重启
-        Log.i(
-            TAG,
-            "外观/尺寸应用 scope=$scope height=${geometry.heightFactor} " +
-                "gap=${geometry.keyGapDp} keyRadius=${geometry.keyCornerRadiusDp} " +
-                "fn=${geometry.functionKeyWidthRatio} colors=${appearance.colors.size} " +
-                "radii=${appearance.radii.size} binding=${binding != null}",
-        )
-        val resolved = KeyboardTheme.from(
-            this,
-            preferences.themeMode,
-            preferences.candidateTextSize,
-            geometry,
-            appearance,
-        )
+        // 关键防线：外观 / 尺寸出任何问题都只能影响「好不好看」，
+        // **绝不允许影响「键盘能不能出来」**。所以这里整体兜底并回退默认外观。
+        val resolved = runCatching {
+            val geometry = settingsRepository.geometry(scope)
+            val appearance = settingsRepository.appearance()
+            Log.i(
+                TAG,
+                "外观/尺寸应用 scope=$scope height=${geometry.heightFactor} " +
+                    "gap=${geometry.keyGapDp} keyRadius=${geometry.keyCornerRadiusDp} " +
+                    "fn=${geometry.functionKeyWidthRatio} colors=${appearance.colors.size} " +
+                    "radii=${appearance.radii.size} binding=${binding != null}",
+            )
+            KeyboardTheme.from(
+                this,
+                preferences.themeMode,
+                preferences.candidateTextSize,
+                geometry,
+                appearance,
+            )
+        }.getOrElse { throwable ->
+            Log.e(TAG, "外观/尺寸参数有问题，已回退到默认外观：${throwable.message}", throwable)
+            runCatching {
+                KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize)
+            }.getOrElse { inner ->
+                Log.e(TAG, "默认外观也解析失败，回退浅色标准外观：${inner.message}", inner)
+                KeyboardTheme.from(this, ThemeMode.LIGHT, CandidateTextSize.STANDARD)
+            }
+        }
         val binding = binding ?: return
 
         binding.panelDivider.setBackgroundColor(resolved.divider)
