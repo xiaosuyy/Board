@@ -7,5 +7,5 @@ Clean board_rime-x86_64
 > Task :android:app:externalNativeBuildCleanRelease
 > Task :android:app:clean
 
-BUILD SUCCESSFUL in 986ms
+BUILD SUCCESSFUL in 1s
 3 actionable tasks: 3 executed

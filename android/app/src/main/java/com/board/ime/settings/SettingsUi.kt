@@ -255,17 +255,38 @@ object SettingsUi {
     /**
      * 让根布局避开状态栏 / 挖孔。
      *
-     * Android 15（targetSdk 35+）强制 edge-to-edge：不加这一步的话，
-     * 页面顶部的标题会画到状态栏底下（真机上实测「Board 设置」被状态栏压住）。
+     * Android 15（targetSdk 35+）强制 edge-to-edge：不加这一步，标题会画到状态栏底下。
+     *
+     * 关键：设置页会**重建内容视图**（例如点「立即同步」后重新 render），
+     * 新视图 padding 从 0 开始，而 WindowInsets 是**异步**重发的 ——
+     * 中间那一瞬间标题就会跳到状态栏下面。所以这里缓存上次的 inset，重建时立刻套用。
      */
+    @Volatile
+    private var cachedTopInset = 0
+
+    @Volatile
+    private var cachedBottomInset = 0
+
     fun applySystemBarInset(view: View) {
         val originalTop = view.paddingTop
         val originalBottom = view.paddingBottom
+        val extraTop = (8 * view.resources.displayMetrics.density).toInt()
+
+        // 先用缓存值立即撑开，避免重建瞬间 padding 归零
+        view.setPadding(
+            view.paddingLeft,
+            cachedTopInset + originalTop + extraTop,
+            view.paddingRight,
+            cachedBottomInset + originalBottom,
+        )
+
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(view) { target, insets ->
             val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            cachedTopInset = bars.top
+            cachedBottomInset = bars.bottom
             target.setPadding(
                 target.paddingLeft,
-                bars.top + originalTop,
+                bars.top + originalTop + extraTop,
                 target.paddingRight,
                 bars.bottom + originalBottom,
             )
