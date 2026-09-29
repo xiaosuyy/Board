@@ -429,7 +429,10 @@ class DictionaryRepository(
             return false
         }
         if (!RimeDictionaryBridge.canAutoDeploy(source)) {
-            // 60 万条这种规模不自动 deploy（原生侧内存/耗时不可控），交给用户手动触发
+            // 60 万条这种规模不自动 deploy（原生侧内存/耗时不可控），交给用户手动触发。
+            // 但**回滚备份必须立刻丢掉**：没有 deploy 就没有回滚需求，
+            // 留着就是白占一份 20MB 的永久副本（审计里实测到过）。
+            RimeDictionaryBridge.commit(dir, source)
             Log.i(TAG, "词库 ${source.name}（${source.entryCount} 条）超过自动部署上限，等待手动部署")
             return false
         }

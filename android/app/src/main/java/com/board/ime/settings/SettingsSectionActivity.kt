@@ -394,9 +394,114 @@ class SettingsSectionActivity : AppCompatActivity() {
     }
 
     private fun buildAdvanced(content: LinearLayout) {
+        buildStorageCard(content)
         buildPrivacy(content)
         buildAbout(content)
     }
+
+    /** 高级 → 存储空间：先看清楚占用，再分别清理（绝不动词库/学习数据/收藏） */
+    private fun buildStorageCard(content: LinearLayout) {
+        val card = SettingsUi.card(this)
+        card.addView(SettingsUi.heading(this, "存储空间"))
+        val out = SettingsUi.value(this, "统计中…")
+        card.addView(out)
+
+        fun cleanWith(label: String, action: suspend () -> com.board.ime.storage.CleanResult) {
+            lifecycleScope.launch {
+                val result = withContext(Dispatchers.IO) { runCatching { action() } }
+                val message = result.fold(
+                    onSuccess = { "$label：${it.summary}" },
+                    onFailure = { "$label 失败：${it.javaClass.simpleName}" },
+                )
+                Toast.makeText(this@SettingsSectionActivity, message, Toast.LENGTH_LONG).show()
+                out.text = renderStorage(auditStorage())
+            }
+        }
+
+        card.addView(
+            SettingsUi.buttonRow(
+                this,
+                listOf(
+                    SettingsUi.button(this, "清理缓存") {
+                        cleanWith("清理缓存") { storageManager().cleanCache() }
+                    },
+                    SettingsUi.button(this, "清理同步临时文件") {
+                        cleanWith("清理同步临时文件") { storageManager().cleanSyncTemp() }
+                    },
+                ),
+            ),
+        )
+        card.addView(
+            SettingsUi.buttonRow(
+                this,
+                listOf(
+                    SettingsUi.button(this, "清理旧词库") {
+                        cleanWith("清理旧词库") { storageManager().cleanOldDictionaries() }
+                    },
+                    SettingsUi.button(this, "回收已删除剪贴板") {
+                        cleanWith("回收已删除剪贴板") { storageManager().cleanDeletedClipboard() }
+                    },
+                ),
+            ),
+        )
+        card.addView(
+            SettingsUi.button(this, "检查重复词库") {
+                lifecycleScope.launch {
+                    val groups = withContext(Dispatchers.IO) {
+                        runCatching { storageManager().duplicateReport() }.getOrDefault(emptyList())
+                    }
+                    val text = if (groups.isEmpty()) {
+                        "没有发现内容重复的词库文件 ✓"
+                    } else {
+                        buildString {
+                            append("发现 ${groups.size} 组重复：\n")
+                            groups.take(5).forEach { group ->
+                                append("· ${group.label}，可省 ${group.wastedBytes / 1024 / 1024} MB\n")
+                            }
+                        }
+                    }
+                    MaterialAlertDialogBuilder(this@SettingsSectionActivity)
+                        .setTitle("重复词库检查")
+                        .setMessage(text)
+                        .setPositiveButton("好", null)
+                        .show()
+                }
+            },
+        )
+        card.addView(
+            SettingsUi.hint(
+                this,
+                "清理只作用于缓存、无引用的旧词库文件、已删除剪贴板的正文；\n" +
+                    "学习数据、用户词库、收藏与仍在使用的剪贴板一律不动。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, card))
+
+        lifecycleScope.launch { out.text = renderStorage(auditStorage()) }
+    }
+
+    private suspend fun auditStorage() = withContext(Dispatchers.IO) {
+        runCatching { storageManager().audit() }.getOrNull()
+    }
+
+    private fun renderStorage(report: com.board.ime.storage.StorageReport?): String {
+        if (report == null) return "统计失败（见日志）"
+        fun mb(bytes: Long) = "%.1f MB".format(bytes / 1024.0 / 1024.0)
+        return buildString {
+            append("总占用：${mb(report.totalBytes)}（APK ${mb(report.apkBytes)} + 数据 ${mb(report.dataBytes)}）\n")
+            report.items.forEach { append("├─ ${it.label}：${it.bytes / 1024 / 1024} MB\n") }
+            append("可回收：${mb(report.reclaimableBytes)}")
+            if (report.duplicates.isNotEmpty()) {
+                append("（另有重复 ${mb(report.duplicateBytes)}）")
+            }
+        }
+    }
+
+    private fun storageManager() = com.board.ime.storage.StorageManager(
+        this,
+        boardDatabase.dictionarySourceDao(),
+        boardDatabase.clipboardDao(),
+    )
 
     // ---------------------------------------------------------------- 键盘
 
