@@ -177,15 +177,19 @@ class SyncEngine(
             SyncLog.event(SyncEvent.DONE, "开始同步 触发=$trigger dir=${config.normalizedDir}")
 
             val client = clientFactory(config)
+            val tStart = System.currentTimeMillis()
             val ensure = client.ensureDirectory(config.normalizedDir)
+            val tEnsure = System.currentTimeMillis()
             if (!ensure.isOk && ensure.error != WebDavError.CONFLICT) {
                 return@withLock fail(ensure, trigger)
             }
 
             val push = pushLocal(client)
+            val tPush = System.currentTimeMillis()
             if (push != null) return@withLock push
 
             val pull = pullRemote(client)
+            val tPull = System.currentTimeMillis()
             if (pull is PullOutcome.Failed) return@withLock pull.result
 
             val downloaded = (pull as? PullOutcome.Applied)?.applied ?: 0
@@ -194,6 +198,7 @@ class SyncEngine(
 
             // 词库 / 学习词 / 常用语：一个实体一个文件，合并而不是互相覆盖
             val words = syncWordEntities(client, config)
+            val tWords = System.currentTimeMillis()
             if (words is WordOutcome.Failed) return@withLock words.result
 
             val wordResult = words as? WordOutcome.Applied ?: WordOutcome.Applied(0, 0, 0)
@@ -214,7 +219,8 @@ class SyncEngine(
             SyncLog.event(
                 SyncEvent.DONE,
                 "同步完成 上传=$pushCount 下载=$downloaded 冲突=$conflicts 跳过=$skipped " +
-                    "词库=${wordResult.words} 学习词=${wordResult.learned} 常用语=${wordResult.phrases}",
+                    "词库=${wordResult.words} 学习词=${wordResult.learned} 常用语=${wordResult.phrases} " +
+                    "耗时[目录=${tEnsure - tStart} 上传=${tPush - tEnsure} 剪贴板=${tPull - tPush} 词库学习词=${tWords - tPull} 合计=${tWords - tStart}]ms",
             )
             return@withLock SyncResult(
                 outcome = SyncOutcome.SUCCESS,
@@ -520,6 +526,14 @@ class SyncEngine(
         client: WebDavClient,
         config: WebDavConfig,
     ): WordOutcome {
+        // 用户正在打字：这次不碰 librime 用户词典（导出会先销毁会话，会打断组词）
+        if (RimeRuntime.isRecentlyActive(INPUT_QUIET_WINDOW_MS)) {
+            SyncLog.event(
+                SyncEvent.IGNORED_TYPE,
+                "最近 $INPUT_QUIET_WINDOW_MS ms 内有输入，本次跳过学习词同步（下次再传）",
+            )
+            return WordOutcome.Applied(0, 0, 0)
+        }
         val dir = RimeRuntime.userDataDir()
             ?: run {
                 SyncLog.warn(
@@ -678,6 +692,9 @@ class SyncEngine(
         const val FILE_LEARNED = "board_learned.json"
         const val FILE_PHRASES = "board_phrases.json"
         const val LEARNED_EXPORT_FILE = "board_learned_export.txt"
+
+        /** 最近这么久内有输入，就先不导出学习词（避免打断组词） */
+        const val INPUT_QUIET_WINDOW_MS = 5_000L
     }
 }
 

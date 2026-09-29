@@ -87,8 +87,21 @@ class KeyboardView @JvmOverloads constructor(
 
     private val keys = ArrayList<KeySpec>()
     private val bounds = ArrayList<RectF>()
+
+    /**
+     * 实际可点击区域。
+     *
+     * 视觉键帽之间留有 6dp/8dp 间隙，如果按视觉矩形做命中判定，手指落在间隙里就会
+     * 「点了没反应」（真机上手感就是「要按得很准、很用力」）。这里把命中矩形向四周
+     * 各扩半个间隙，间隙被完全覆盖、键盘没有死区，**视觉尺寸一点不变**。
+     */
+    private val hitBounds = ArrayList<RectF>()
+
     private var pressedIndex = -1
     private var longPressFired = false
+    private var downX = 0f
+    private var downY = 0f
+    private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
 
     private val handler = Handler(Looper.getMainLooper())
     private var repeatRunnable: Runnable? = null
@@ -192,6 +205,7 @@ class KeyboardView @JvmOverloads constructor(
     private fun rebuildKeyBounds() {
         keys.clear()
         bounds.clear()
+        hitBounds.clear()
 
         val width = width
         if (width <= 0) return
@@ -200,6 +214,10 @@ class KeyboardView @JvmOverloads constructor(
         val padH = metrics.paddingHorizontalPx
         val contentWidth = width - padH * 2f
         if (contentWidth <= 0f) return
+
+        // 命中区域向外扩半个间隙 → 键与键之间不再有「点了没反应」的死区
+        val expandX = metrics.keyGapHorizontalPx / 2f
+        val expandY = metrics.keyGapVerticalPx / 2f
 
         keyboardLayout.rows.forEachIndexed { rowIndex, row ->
             val totalUnits = row.totalUnits
@@ -213,8 +231,15 @@ class KeyboardView @JvmOverloads constructor(
             row.keys.forEach { key ->
                 val left = cursor + metrics.keyGapHorizontalPx / 2f
                 val right = cursor + key.units * unit - metrics.keyGapHorizontalPx / 2f
+                val rect = RectF(left, top, right, top + metrics.keyHeightPx)
                 keys += key
-                bounds += RectF(left, top, right, top + metrics.keyHeightPx)
+                bounds += rect
+                hitBounds += RectF(
+                    rect.left - expandX,
+                    rect.top - expandY,
+                    rect.right + expandX,
+                    rect.bottom + expandY,
+                )
                 cursor += key.units * unit
             }
         }
@@ -448,6 +473,8 @@ class KeyboardView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
                 val index = findKeyIndex(event.x, event.y)
                 if (index >= 0) {
                     longPressFired = false
@@ -457,6 +484,12 @@ class KeyboardView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                // 轻微的抖动 / 滑动不换键：只有离开按下点超过 touch slop 才重新判定
+                val dx = event.x - downX
+                val dy = event.y - downY
+                if (dx * dx + dy * dy < touchSlop * touchSlop) {
+                    if (pressedIndex >= 0) return true
+                }
                 val index = findKeyIndex(event.x, event.y)
                 if (index != pressedIndex) {
                     cancelPendingTouch()
@@ -517,11 +550,27 @@ class KeyboardView @JvmOverloads constructor(
         invalidate()
     }
 
+    /**
+     * 命中判定：在**扩大后的可点区域**里挑「离手指最近的那颗键」。
+     *
+     * 因为相邻键的命中矩形会互相重叠，直接取第一个匹配会在边界上忽左忽右；
+     * 取最近中心点既消除死区，又不会在缝里乱跳。
+     */
     private fun findKeyIndex(x: Float, y: Float): Int {
-        for (index in bounds.indices) {
-            if (bounds[index].contains(x, y)) return index
+        var best = -1
+        var bestDistance = Float.MAX_VALUE
+        for (index in hitBounds.indices) {
+            val rect = hitBounds[index]
+            if (!rect.contains(x, y)) continue
+            val dx = x - rect.centerX()
+            val dy = y - rect.centerY()
+            val distance = dx * dx + dy * dy
+            if (distance < bestDistance) {
+                bestDistance = distance
+                best = index
+            }
         }
-        return -1
+        return best
     }
 
     override fun onDetachedFromWindow() {

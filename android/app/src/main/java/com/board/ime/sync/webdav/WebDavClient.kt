@@ -143,8 +143,17 @@ class OkHttpWebDavClient(
     }
 
     private fun execute(request: Request): WebDavResponse<String> = try {
+        val start = System.currentTimeMillis()
         client.newCall(request).execute().use { response ->
-            classify(response)
+            val classify = classify(response)
+            // 只记方法 + 文件名 + 状态码 + 耗时，不记完整 URL / 正文（隐私）
+            com.board.ime.sync.SyncLog.event(
+                if (classify.isOk) com.board.ime.sync.SyncEvent.DONE
+                else com.board.ime.sync.SyncEvent.NETWORK_ERROR,
+                "HTTP ${request.method} ${request.url.pathSegments.lastOrNull().orEmpty()} " +
+                    "http=${response.code} ${System.currentTimeMillis() - start}ms",
+            )
+            classify
         }
     } catch (timeout: SocketTimeoutException) {
         WebDavResponse.fail(WebDavError.TIMEOUT, message = "超时")
@@ -215,9 +224,11 @@ class OkHttpWebDavClient(
 
     companion object {
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
+            // 更短的超时：不可达的服务器要**快速失败**，而不是让 UI 一直「同步中」
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(12, TimeUnit.SECONDS)
+            .writeTimeout(12, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.SECONDS)
             .followRedirects(true)
             .build()
     }

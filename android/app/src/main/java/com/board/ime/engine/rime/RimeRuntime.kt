@@ -64,6 +64,10 @@ object RimeRuntime {
     @Volatile
     private var userDirPath: String? = null
 
+    /** 最近一次「按键/组词」活动时间，用来避免同步任务打断正在进行的输入 */
+    @Volatile
+    private var lastActivityAt: Long = 0L
+
     val isNativeAvailable: Boolean
         get() = RimeNative.isAvailable
 
@@ -74,6 +78,42 @@ object RimeRuntime {
     /** 当前会话 id，0 表示不可用 */
     val session: Long
         get() = sessionId
+
+    /**
+     * 在**持有会话锁**的前提下使用当前会话。
+     *
+     * 为什么需要：同步任务（导出/导入学习词、重写 custom_phrase）会先销毁会话再重开；
+     * 如果按键路径先用 [session] 取到 id、随后同步线程把会话销毁了，就会拿一个**已销毁的
+     * session 去调 native** —— 真机上表现为「用着用着输入法自己退出/键盘消失」。
+     * 这里把「取 id」和「调用」放进同一把锁，保证两者严格互斥：
+     * 键处理要么完整跑在旧会话上，要么完整跑在新会话上。
+     *
+     * @param fallback 会话不可用时的返回值
+     */
+    fun <T> withSession(fallback: T, block: (Long) -> T): T {
+        lock.lock()
+        return try {
+            val id = sessionId
+            if (id == 0L) {
+                fallback
+            } else {
+                lastActivityAt = System.currentTimeMillis()
+                block(id)
+            }
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    /**
+     * 最近有没有在输入。
+     *
+     * 同步任务导出/导入学习词时需要**先销毁会话**；如果用户正在打字，这一步会把
+     * 组词打断（真机上表现为「打一半突然没了」）。所以同步侧先用这个判断，最近有输入
+     * 就跳过一次学习词同步，等下一次机会再传——数据不会丢，只是延后。
+     */
+    fun isRecentlyActive(windowMs: Long): Boolean =
+        System.currentTimeMillis() - lastActivityAt < windowMs
 
     /** 初始化 RimeSetup + RimeInitialize；可重复调用 */
     fun initialize(context: Context, appVersion: String): Boolean {

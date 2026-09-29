@@ -28,6 +28,7 @@ import com.board.ime.ime.BoardInputMethodService
 import com.board.ime.sync.LearnedWordBridge
 import com.board.ime.sync.SyncContent
 import com.board.ime.sync.SyncEngineHolder
+import com.board.ime.sync.SyncEvent
 import com.board.ime.sync.SyncLog
 import com.board.ime.sync.SyncScheduler
 import com.board.ime.sync.SyncStatusKind
@@ -40,6 +41,7 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 二级设置页。
@@ -59,6 +61,9 @@ class SettingsSectionActivity : AppCompatActivity() {
     private var pendingImportFormat: DictionaryFormat = DictionaryFormat.TXT
     private var pendingExportScope: ExportScope = ExportScope.ALL
     private var pendingExportFormat: DictionaryFormat = DictionaryFormat.TXT
+
+    /** 本次「立即同步」是否已经超时（UI 结束等待、后台继续） */
+    private var syncTimedOut = false
 
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.US)
 
@@ -475,8 +480,10 @@ class SettingsSectionActivity : AppCompatActivity() {
                 when (status.kind) {
                     SyncStatusKind.NOT_CONFIGURED -> "未配置"
                     SyncStatusKind.CONNECTED -> "已连接"
-                    SyncStatusKind.SYNCING -> "同步中…"
-                    SyncStatusKind.SUCCESS -> "已连接"
+                    SyncStatusKind.SYNCING ->
+                        if (syncTimedOut) "同步超时（后台继续）" else "同步中…"
+
+                    SyncStatusKind.SUCCESS -> "刚刚同步"
                     SyncStatusKind.FAILED -> "同步失败"
                 },
                 status.kind == SyncStatusKind.CONNECTED || status.kind == SyncStatusKind.SUCCESS,
@@ -603,9 +610,26 @@ class SettingsSectionActivity : AppCompatActivity() {
         }
         val engine = SyncEngineHolder.get(this)
         engine.saveConfig(config)
+        syncTimedOut = false
         lifecycleScope.launch {
             Toast.makeText(this@SettingsSectionActivity, "正在同步…", Toast.LENGTH_SHORT).show()
-            withContext(Dispatchers.IO) { runCatching { engine.syncNow(SyncTrigger.MANUAL) } }
+            // 后台任务放在子 job：UI 到点就结束「同步中」，但任务本身不取消
+            val job = launch {
+                withContext(Dispatchers.IO) { runCatching { engine.syncNow(SyncTrigger.MANUAL) } }
+            }
+            val finished = withTimeoutOrNull(SYNC_UI_TIMEOUT_MS) { job.join() } != null
+            if (!finished) {
+                syncTimedOut = true
+                SyncLog.event(
+                    SyncEvent.NETWORK_ERROR,
+                    "同步超过 ${SYNC_UI_TIMEOUT_MS / 1000}s，UI 先结束等待（后台任务继续）",
+                )
+                Toast.makeText(
+                    this@SettingsSectionActivity,
+                    "同步超时：UI 已结束等待，后台仍会继续",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
             render()
         }
     }
@@ -755,5 +779,8 @@ class SettingsSectionActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_SECTION = "section"
         const val EXTRA_SHOW_LOGS = "show_logs"
+
+        /** UI 等待同步的最长时间：到点就结束「同步中」，后台任务不取消 */
+        private const val SYNC_UI_TIMEOUT_MS = 45_000L
     }
 }

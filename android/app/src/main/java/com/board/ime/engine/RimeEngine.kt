@@ -58,38 +58,34 @@ class RimeEngine(
         latin.reset()
         if (currentMode != InputMode.CHINESE) return
 
-        val session = RimeRuntime.session
-        if (session == 0L) {
-            composingCache = ""
-            candidatesCache = emptyList()
-            return
-        }
-        lock.withLock {
-            RimeNative.nativeClearComposition(session)
-            // 丢弃可能残留的待上屏内容，避免切到下一个输入框时串字
-            RimeNative.nativeGetCommit(session)
-            refresh(session)
+        // 与「同步线程关/开会话」互斥，避免用到已销毁的 session
+        RimeRuntime.withSession(Unit) { session ->
+            lock.withLock {
+                RimeNative.nativeClearComposition(session)
+                // 丢弃可能残留的待上屏内容，避免切到下一个输入框时串字
+                RimeNative.nativeGetCommit(session)
+                refresh(session)
+            }
+            Unit
         }
     }
 
     override fun handleKey(key: EngineKey): EngineResult {
         if (currentMode != InputMode.CHINESE) return latin.handleKey(key)
 
-        val session = RimeRuntime.session
-        if (session == 0L) return EngineResult.Ignored
-
-        return lock.withLock { handleChineseKey(session, key) }
+        return RimeRuntime.withSession(EngineResult.Ignored) { session ->
+            lock.withLock { handleChineseKey(session, key) }
+        }
     }
 
     override fun pickCandidate(index: Int): EngineResult {
         if (currentMode != InputMode.CHINESE) return latin.pickCandidate(index)
 
-        val session = RimeRuntime.session
-        if (session == 0L) return EngineResult.Ignored
-
-        return lock.withLock {
-            val committed = selectAndDrain(session, index)
-            if (committed.isEmpty()) EngineResult.Ignored else EngineResult.Commit(committed)
+        return RimeRuntime.withSession(EngineResult.Ignored) { session ->
+            lock.withLock {
+                val committed = selectAndDrain(session, index)
+                if (committed.isEmpty()) EngineResult.Ignored else EngineResult.Commit(committed)
+            }
         }
     }
 
