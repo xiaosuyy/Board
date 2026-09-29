@@ -161,6 +161,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             dao = BoardDatabase.get(this).clipboardDao(),
             syncOperationDao = BoardDatabase.get(this).syncOperationDao(),
             contentStore = ClipboardRepository.contentStoreFor(this),
+            sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector { preferences.skipSensitiveClipboard },  // 开关必须在这里生效
         )
         registerClipboardListener()
         startSync()

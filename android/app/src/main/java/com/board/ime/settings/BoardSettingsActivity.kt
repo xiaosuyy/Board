@@ -49,6 +49,7 @@ class BoardSettingsActivity : AppCompatActivity() {
         clipboardRepository = ClipboardRepository(
             BoardDatabase.get(this).clipboardDao(),
             contentStore = ClipboardRepository.contentStoreFor(this),
+            sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector { preferences.skipSensitiveClipboard },  // 开关必须在这里生效
         )
 
         setContentView(buildHome())

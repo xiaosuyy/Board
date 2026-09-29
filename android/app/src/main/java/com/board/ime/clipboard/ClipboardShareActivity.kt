@@ -55,6 +55,7 @@ class ClipboardShareActivity : AppCompatActivity() {
             dao = BoardDatabase.get(this).clipboardDao(),
             syncOperationDao = BoardDatabase.get(this).syncOperationDao(),
             contentStore = contentStore,
+            sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector { com.board.ime.settings.BoardPreferences(this).skipSensitiveClipboard },
         )
 
         // 1) 优先：content:// URI（大文本不必经过 Intent 字符串）
