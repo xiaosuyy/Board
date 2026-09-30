@@ -117,15 +117,18 @@ class VoicePrivacyCard @JvmOverloads constructor(
      * @param consent true=首次确认（取消 / 继续）；false=完整说明（关闭）
      * @param serviceLabel 能可靠取到识别服务应用名时传入；取不到就传 null（不猜名字）
      */
-    fun bind(theme: KeyboardTheme, serviceLabel: String?, consent: Boolean) {
+    fun bind(
+        theme: KeyboardTheme,
+        serviceLabel: String?,
+        consent: Boolean,
+        title: String = if (consent) "使用系统语音识别" else "语音隐私说明",
+        body: String = "语音会交给设备提供的系统语音识别服务处理，可能联网发送给该服务。" +
+            "Board 不保存录音或识别结果。数据处理及留存以该服务提供方的政策为准。",
+    ) {
         this.theme = theme
 
-        titleView.text = if (consent) "使用系统语音识别" else "语音隐私说明"
-        bodyView.text = buildString {
-            append("语音会交给设备提供的系统语音识别服务处理，可能联网发送给该服务。")
-            append("Board 不保存语音，也不保存识别结果，不建立识别历史。")
-            append("该服务是否在服务端留存数据由服务提供方决定，Board 无法代为保证。")
-        }
+        titleView.text = title
+        bodyView.text = body
 
         if (serviceLabel.isNullOrBlank()) {
             serviceView.visibility = GONE

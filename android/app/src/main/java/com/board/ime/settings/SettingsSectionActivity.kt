@@ -188,6 +188,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                 SettingsSection.CLIPBOARD -> buildClipboard(content)
                 SettingsSection.SYNC -> buildSync(content)
                 SettingsSection.TRANSLATION -> buildTranslation(content)
+                SettingsSection.VOICE -> buildVoice(content)
                 SettingsSection.ADVANCED -> buildAdvanced(content)
             }
         }
@@ -1316,6 +1317,79 @@ class SettingsSectionActivity : AppCompatActivity() {
             SettingsUi.hint(this, "只有勾选的内容进入同步；账号密码、日志、调试信息永远不同步。"),
         )
         content.addView(SettingsUi.cardView(this, contentCard))
+    }
+
+    // ---------------------------------------------------------------- 语音
+
+    private fun buildVoice(content: LinearLayout) {
+        val store = com.board.ime.voice.VoiceCredentialStore(this)
+        val current = store.load()
+
+        val card = SettingsUi.card(this)
+        card.addView(SettingsUi.heading(this, "语音识别服务"))
+        card.addView(SettingsUi.value(this, "服务：百度实时语音识别（WebSocket，边录边发）"))
+        val (appIdLayout, appIdEdit) = SettingsUi.textField(this, "语音 AppID", current.appId)
+        val (keyLayout, keyEdit) = SettingsUi.textField(this, "语音 API Key", current.apiKey, password = true)
+        card.addView(appIdLayout)
+        card.addView(keyLayout)
+        card.addView(
+            SettingsUi.hint(
+                this,
+                "在百度智能云控制台「语音技术」应用里查看 AppID 与 API Key。" +
+                    "注意：这是**语音服务的凭据**，与翻译的 APPID / 密钥不是同一套，请勿混填。" +
+                    "凭据保存在 Android 加密存储中；Board 不保存录音，也不保存识别结果。",
+            ),
+        )
+        card.addView(
+            SettingsUi.button(this, "保存") {
+                store.save(
+                    com.board.ime.voice.VoiceCredentials(
+                        appId = appIdEdit.text?.toString().orEmpty(),
+                        apiKey = keyEdit.text?.toString().orEmpty(),
+                    ),
+                )
+                Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+                render()
+            },
+        )
+        card.addView(
+            SettingsUi.button(this, "清空凭据") {
+                store.clear()
+                Toast.makeText(this, "已清空", Toast.LENGTH_SHORT).show()
+                render()
+            },
+        )
+        card.addView(
+            SettingsUi.value(
+                this,
+                if (current.isComplete) "当前状态：已配置" else "当前状态：未配置",
+            ),
+        )
+        card.addView(
+            SettingsUi.hint(
+                this,
+                "额度：百度实时语音识别 · 按百度账户计费/免费额度（以百度控制台实际额度为准）。",
+            ),
+        )
+        if (!store.secureStorageAvailable) {
+            card.addView(
+                SettingsUi.hint(this, "注意：本机加密存储不可用，凭据只保留在本次会话内存中。"),
+            )
+        }
+        content.addView(SettingsUi.cardView(this, card))
+
+        val privacy = SettingsUi.card(this)
+        privacy.addView(SettingsUi.heading(this, "隐私说明"))
+        privacy.addView(
+            SettingsUi.hint(
+                this,
+                "· 语音输入需要联网（WSS 加密连接）\n" +
+                    "· 录音会边录边发给百度语音服务处理\n" +
+                    "· Board 不在本地保存录音、识别文本或识别历史\n" +
+                    "· 百度侧的数据处理与留存以其服务协议和隐私政策为准",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, privacy))
     }
 
     // ---------------------------------------------------------------- 翻译

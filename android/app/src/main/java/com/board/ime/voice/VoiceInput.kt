@@ -40,7 +40,16 @@ enum class VoiceState {
  * - 同一时刻最多一个识别会话（[start] 内部有保护）
  * - [release] 之后对象作废；宿主必须在 onDestroy 调用
  */
-class VoiceInputController(private val context: Context) {
+class VoiceInputController(
+    private val context: Context,
+    /**
+     * 云端实时语音识别引擎（默认百度）。
+     *
+     * **已配置凭据时优先使用它**；未配置时才回退到系统 SpeechRecognizer。
+     * 这样「语音」工具在目标环境（没有 RecognitionService 的机器）上依然可用。
+     */
+    private val cloudEngine: VoiceRecognitionEngine? = null,
+) {
 
     /** (状态, 展示文本)：LISTENING 时是 partial 预览，SUCCESS 时是最终结果，ERROR 时是提示语 */
     var onState: ((VoiceState, String) -> Unit)? = null
@@ -51,25 +60,44 @@ class VoiceInputController(private val context: Context) {
     private var languageRetried = false
     private var languageTag: String = ""
 
-    fun isAvailable(): Boolean = runCatching {
+    /** 百度已配置就一定能用；否则才看系统有没有识别服务 */
+    fun isAvailable(): Boolean = cloud() != null || runCatching {
         SpeechRecognizer.isRecognitionAvailable(context)
     }.getOrDefault(false)
+
+    private fun cloud(): VoiceRecognitionEngine? = cloudEngine?.takeIf { it.isConfigured() }
 
     /** 开始识别；重复点击不会创建第二个会话 */
     fun start(languageTag: String, allowLanguageRetry: Boolean = true) {
         if (released) return
         if (listening) return
+
+        // 首选云端实时识别（百度）：WebSocket 边录边发
+        val engine = cloud()
+        if (engine != null) {
+            listening = true
+            engine.onEvent = { event -> onEngineEvent(event) }
+            emit(VoiceState.LISTENING, "")
+            runCatching {
+                engine.start(VoiceLanguage.forChineseMode(languageTag.startsWith("zh")))
+            }.onFailure {
+                listening = false
+                emit(VoiceState.ERROR, "无法启动语音识别")
+            }
+            return
+        }
+
         if (!isAvailable()) {
             emit(VoiceState.ERROR, "此设备没有可用的语音识别服务")
             return
         }
-        val engine = ensureRecognizer() ?: return
+        val systemEngine = ensureRecognizer() ?: return
         this.languageTag = languageTag
         languageRetried = !allowLanguageRetry
         val intent = buildIntent(languageTag)
         listening = true
         emit(VoiceState.LISTENING, "")
-        runCatching { engine.startListening(intent) }.onFailure {
+        runCatching { systemEngine.startListening(intent) }.onFailure {
             listening = false
             emit(VoiceState.ERROR, "无法启动语音识别")
         }
@@ -78,12 +106,14 @@ class VoiceInputController(private val context: Context) {
     /** 用户点“结束”：停止收音，已返回的结果照常回调 */
     fun stop() {
         if (!listening) return
+        runCatching { cloudEngine?.stop() }
         runCatching { recognizer?.stopListening() }
     }
 
     /** 取消（丢弃结果） */
     fun cancel() {
         listening = false
+        runCatching { cloudEngine?.cancel() }
         runCatching { recognizer?.cancel() }
     }
 
@@ -94,9 +124,29 @@ class VoiceInputController(private val context: Context) {
             runCatching { recognizer?.cancel() }
         }
         listening = false
+        runCatching { cloudEngine?.cancel() }
+        runCatching { cloudEngine?.release() }
         runCatching { recognizer?.destroy() }
         recognizer = null
         onState = null
+    }
+
+    /**
+     * 云端引擎事件 → 现有 UI 状态。
+     *
+     * partial 只更新面板；final 变成 RESULT，等用户点文本才上屏 —— 与 Phase 2.2 完全一致。
+     */
+    private fun onEngineEvent(event: VoiceRecognitionEvent) {
+        when (event) {
+            is VoiceRecognitionEvent.Partial -> emit(VoiceState.LISTENING, event.text)
+
+            is VoiceRecognitionEvent.Final -> emit(VoiceState.RESULT, event.text)
+
+            is VoiceRecognitionEvent.Failed -> {
+                listening = false
+                emit(VoiceState.ERROR, event.failure.message)
+            }
+        }
     }
 
     private fun buildIntent(tag: String): Intent =
@@ -213,7 +263,12 @@ class VoiceInputController(private val context: Context) {
  *
  * 这样服务侧几乎不增加逻辑，也不会碰到 Rime / Clipboard / 存储等无关模块。
  */
-class VoiceInputSession(private val context: Context, private val host: Host) {
+class VoiceInputSession(
+    private val context: Context,
+    private val host: Host,
+    /** 云端实时识别引擎（默认百度）；未配置时内部回退到系统 SpeechRecognizer */
+    cloudEngine: VoiceRecognitionEngine? = null,
+) {
 
     interface Host {
         /** 当前是否中文输入（决定 zh-CN / en-US） */
@@ -238,7 +293,7 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
         fun showVoicePrivacyInfo()
     }
 
-    private val controller = VoiceInputController(context)
+    private val controller = VoiceInputController(context, cloudEngine)
     private var state: VoiceState = VoiceState.IDLE
 
     /** 最终识别文本；只有用户点击才提交，返回则丢弃 */
@@ -366,7 +421,7 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
 
         /** 无服务 / 无权限：面板上两行说明（不依赖 Toast、不依赖通知权限） */
         const val UNAVAILABLE_MESSAGE =
-            "当前设备没有可用的语音识别服务\n请安装支持语音识别的服务后重试"
+            "没有可用的语音识别服务\n请在「设置 → 语音」配置百度的 AppID / API Key"
         const val PERMISSION_MESSAGE =
             "需要麦克风权限才能使用语音输入\n可再次点击语音按钮授权"
 

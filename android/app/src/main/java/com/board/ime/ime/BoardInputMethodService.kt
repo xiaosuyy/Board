@@ -99,6 +99,21 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private var voiceSession: VoiceInputSession? = null
 
     /**
+     * 语音识别凭据（百度智能云语音服务的 AppID + API Key）。
+     * **与翻译凭据完全分开存**（官方两套服务不是同一套凭据，混用会鉴权失败）。
+     */
+    private val voiceCredentials by lazy {
+        com.board.ime.voice.VoiceCredentialStore(this)
+    }
+
+    /** 默认语音引擎：百度实时语音识别（WebSocket，边录边发） */
+    private val voiceEngine: com.board.ime.voice.VoiceRecognitionEngine by lazy {
+        com.board.ime.voice.BaiduRealtimeVoiceRecognitionProvider(
+            credentialsProvider = { voiceCredentials.load() },
+        )
+    }
+
+    /**
      * 语音流程与输入法之间的桥。只暴露最小接口，
      * 不把 SpeechRecognizer 细节泄漏进服务，也不碰 Rime / Clipboard / 存储。
      */
@@ -155,7 +170,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     /** 语音工具入口：点一次开始；识别中再点一次 = 结束收音（结果照常上屏） */
     private fun onVoiceTool() {
-        val session = voiceSession ?: VoiceInputSession(this, voiceHost).also { voiceSession = it }
+        val session = voiceSession
+            ?: VoiceInputSession(this, voiceHost, voiceEngine).also { voiceSession = it }
         session.toggle()
     }
 
@@ -168,10 +184,23 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         if (voicePrivacyCard != null) return
         val root = window?.window?.decorView as? android.view.ViewGroup ?: return
         val card = com.board.ime.ui.panel.VoicePrivacyCard(this)
+        val cloud = voiceEngine.isConfigured()
         card.bind(
             KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize),
             resolveVoiceServiceLabel(),
             consent,
+            title = if (cloud) {
+                "使用百度实时语音识别"
+            } else {
+                "使用系统语音识别"
+            },
+            body = if (cloud) {
+                "语音会通过加密连接发送给百度语音服务处理。Board 不保存录音或识别结果。" +
+                    "数据处理及留存以百度相关服务协议和隐私政策为准。"
+            } else {
+                "语音会交给设备提供的系统语音识别服务处理，可能联网发送给该服务。" +
+                    "Board 不保存录音或识别结果。数据处理及留存以该服务提供方的政策为准。"
+            },
         )
         if (consent) {
             card.onAccept = {
@@ -224,7 +253,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
      *
      * 取不到（不少 ROM 都取不到）就返回 `null` —— **不猜名字**，UI 直接不显示这一行。
      */
-    private fun resolveVoiceServiceLabel(): String? = runCatching {
+    private fun resolveVoiceServiceLabel(): String? {
+        // 用了百度实时语音识别时，服务方是确定的，直接如实标注
+        if (voiceEngine.isConfigured()) return "百度智能云语音服务"
+        return runCatching {
         val component = android.provider.Settings.Secure.getString(
             contentResolver,
             "voice_recognition_service",
@@ -233,7 +265,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         if (servicePackage == null) return null
         val info = packageManager.getApplicationInfo(servicePackage, 0)
         packageManager.getApplicationLabel(info).toString().takeIf { it.isNotBlank() }
-    }.getOrNull()
+        }.getOrNull()
+    }
 
     // ---------------------------------------------------------------- 翻译（v1.2 Phase 3）
 
