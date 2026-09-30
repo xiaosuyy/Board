@@ -39,7 +39,7 @@ namespace BoardCompanion
 
             icon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = LoadIcon(),
                 Text = "Board",
                 Visible = true,
                 ContextMenuStrip = menu,
@@ -53,6 +53,24 @@ namespace BoardCompanion
 
             engine.StateChanged += (s, e) => UpdateState();
             UpdateState();
+        }
+
+        /// <summary>
+        /// 取托盘图标：优先用**嵌在 exe 里的 Board 图标**（与桌面快捷方式/任务栏一致），
+        /// 取不到才退回系统默认图标（不让图标问题影响功能）。
+        /// </summary>
+        private static System.Drawing.Icon LoadIcon()
+        {
+            try
+            {
+                var own = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (own != null) return own;
+            }
+            catch (Exception)
+            {
+                // 忽略，退回默认
+            }
+            return SystemIcons.Application;
         }
 
         public void UpdateState()

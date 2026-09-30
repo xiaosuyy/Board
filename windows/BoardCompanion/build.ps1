@@ -35,7 +35,7 @@ $common = @('/nologo', '/platform:anycpu', '/optimize+')
 
 # 3) main app：**WinExe**（启动不出现控制台黑窗口），后台托盘运行
 $mainOut = Join-Path $build 'BoardCompanion.exe'
-& $csc '/target:winexe' @common @refs "/out:$mainOut" `
+& $csc '/target:winexe' @common @refs "/win32icon:$root\app.ico" "/out:$mainOut" `
     "$root\Program.cs" `
     "$root\ClipboardHasher.cs" `
     "$root\ClipboardPayload.cs" `
