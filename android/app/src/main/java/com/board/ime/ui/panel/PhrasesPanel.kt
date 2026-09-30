@@ -149,7 +149,12 @@ class PhrasesPanel @JvmOverloads constructor(
         var startY = 0f
         var longPressed = false
         var moved = false
-        val longPress = Runnable { onLongPress(entry) }
+        val longPress = Runnable {
+            // 关键：标记已进入长按状态。
+            // 否则抬手时会被当成普通点击（误上屏），而且拖动排序永远不会生效。
+            longPressed = true
+            onLongPress(entry)
+        }
 
         return OnTouchListener { view, event ->
             when (event.actionMasked) {
