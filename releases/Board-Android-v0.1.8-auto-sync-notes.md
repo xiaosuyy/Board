@@ -38,9 +38,9 @@
 | 9 | 打开面板自动补抓 + Pull | **PASS（补抓）** | 每次都有 `剪贴板内容已存在（hash=…）刷新时间`；Pull 因当时断网未完成 |
 | 10 | 云端筛选出现当前服务器内容 | **PASS（日志证据）** | `本机已上传，标记为云端当前内容 id=28` + 再次 Pull 命中同 hash；筛选读 `remoteCurrent` |
 | 11 | 断网 → 复制 → 任务不丢 | **PASS** | `state=FAILED error=连接超时 · retry=true`，未 complete 任务，后续持续重试 |
-| 12 | 失败后**自动重试**（无需用户操作） | **PASS** | 真实断网实测：`11:25:43 FAILED` → 无人干预自动重试 `11:26:13 / 11:27:06 / 11:28:14`，间隔递增 30s→45s→60s（指数退避）；另用不可达地址复现过一遍 |
-| 13 | 恢复网络后继续重试 | **PASS** | 网络恢复（`Active default network: 156`）后重试仍在触发 |
-| 14 | 重试最终 SYNCED | **PASS** | `11:31:40 clipboard push started=true http=2xx success=true hash=880cfc5f` + `clipboard state=SYNCED hash=880cfc5f`，且与本地计算值逐字符一致；随后 Pull 返回同 hash |
+| 12 | 失败后**自动重试**（无需用户操作） | **PASS** | 真实断网实测：`attempt=2 wait=30000` → `attempt=3 wait=45000` → `attempt=4 wait=60000` → `attempt=5 wait=75000`，全部 `retry=true`；完成任务不丢 |
+| 13 | 恢复网络后继续重试 | **PASS** | `11:31:06 SYNC_RETRY 网络恢复，自动重试剪贴板同步 retry=true` —— `ConnectivityManager.NetworkCallback` **确实生效**（更正：早前"回调失效"的判断有误，当时状态不在 FAILED） |
+| 14 | 重试最终 SYNCED | **PASS** | 断网期间复制的那条 `hash=0d7b3012` 在网络恢复后自动补传：`clipboard push started=true http=2xx success=true hash=0d7b3012` + `state=SYNCED`，hash 与本地计算值一致 |
 | 15–16 | Pull 不产生 Push 回环 | **PASS** | 末次同步只有 `SYNC_SKIP_SAME_HASH` + `state=IDLE`，无再次上传 |
 | 17–18 | 词库同步运行时复制不被阻塞 | **PASS（模拟器证据）** | 剪贴板通道约 1s 内 `SYNCING→IDLE`，同期词库阶段仍在跑 |
 
