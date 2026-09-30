@@ -279,6 +279,14 @@ class CandidateBar @JvmOverloads constructor(
 
     private companion object {
         /** librime 一页最多 9 个，这里留足余量；多出来的隐藏复用 */
-        const val MAX_CANDIDATES = 12
+        /**
+         * 候选栏**最多渲染多少个候选**（可横向滑动的总数，不是屏幕上同时可见的数量）。
+         *
+         * 可见数量由屏幕宽度决定（约 6～8 个），这里决定的是"滑一滑还能看到多少"。
+         * 底层由 Rime 的 `menu/page_size` 提供候选（App 生成的 patch 里设为 30），
+         * 所以这里保持一致：把整页候选都渲染出来，用户横向滑动即可看全，
+         * 不再出现"底层有 30 个、UI 只放出 12 个"的截断。
+         */
+        const val MAX_CANDIDATES = 30
     }
 }
