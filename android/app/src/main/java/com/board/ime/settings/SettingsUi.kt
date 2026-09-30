@@ -3,6 +3,7 @@ package com.board.ime.settings
 import android.content.Context
 import android.graphics.Typeface
 import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -241,6 +242,20 @@ object SettingsUi {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(context, 8f) }
             addView(edit)
+            if (password) {
+                // 默认打码（真机上出现过「一打开页面密码就是明文」）。
+                //
+                // 实测：Material 的密码可见性 delegate 会在**挂载/首次布局**时把「可见」写进
+                // EditText，所以我们这里 post 到消息队列尾部，保证打码是最后生效的那次；
+                // 再让它以「已打码」的状态重新初始化一次，使内部状态与真实状态一致
+                // （否则第一次点眼睛会出现「点了没反应」）。
+                // 之后显示/隐藏仍由 Material 自己的 toggle 处理，行为标准。
+                edit.post {
+                    edit.transformationMethod = PasswordTransformationMethod.getInstance()
+                    endIconMode = TextInputLayout.END_ICON_NONE
+                    endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
+                }
+            }
         }
         return layout to edit
     }

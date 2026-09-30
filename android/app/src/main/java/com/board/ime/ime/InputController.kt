@@ -1,6 +1,7 @@
 package com.board.ime.ime
 
 import android.os.SystemClock
+import android.text.InputType
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -97,9 +98,26 @@ class InputController(
         clearModifiers()
         // 重新进入输入框时回到字母层，数字 / 符号层不跨输入框保留
         symbolPage = 0
-        if (!mode.isLetterMode) mode = letterMode
+        // 一律回到「用户偏好的字母层」：上一个输入框可能是密码框（被临时切成了英文），
+        // 那个临时状态不能被带到下一个普通输入框。
+        mode = letterMode
+        // 密码 / 验证码输入框：**本次会话**强制英文，不写回用户偏好。
+        // 默认中文之后必须这么做，否则会在密码框里组拼音、甚至把中文当密码上屏。
+        if (info != null && isPasswordEditor(info)) mode = InputMode.ENGLISH
         engine.mode = mode
         notifyStateChanged()
+    }
+
+    /** 密码 / 验证码类输入框（按 EditorInfo.inputType 判定） */
+    private fun isPasswordEditor(info: EditorInfo): Boolean {
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        return when (info.inputType and InputType.TYPE_MASK_CLASS) {
+            InputType.TYPE_CLASS_TEXT -> variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+                variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+            InputType.TYPE_CLASS_NUMBER -> variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            else -> false
+        }
     }
 
     fun onFinishInput() {

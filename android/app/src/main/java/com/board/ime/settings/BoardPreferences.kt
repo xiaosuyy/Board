@@ -14,13 +14,41 @@ import com.board.ime.sync.SyncContentGate
  */
 class BoardPreferences(context: Context) : SyncContentGate {
 
-    private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+    private val appContext: Context = context.applicationContext
 
-    /** 当前输入模式（中文 / 英文） */
+    private val prefs: SharedPreferences =
+        appContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+
+    /**
+     * 当前输入模式（中文 / 英文）。
+     *
+     * 取值优先级：
+     * 1. **用户显式选择过**（`input_mode` 已落盘）→ 就用用户的（升级、重启都不会被覆盖）；
+     * 2. 没有任何偏好 + **全新安装** → 默认**中文**（老版本默认是英文，正是这次要修的体验问题）；
+     * 3. 没有任何偏好 + **覆盖升级** → 沿用老默认英文，避免把老用户的语言悄悄切走。
+     *
+     * 注意：只在「读取默认值」时判断，写入永远只发生在用户主动切换时
+     * （见 `BoardInputMethodService.persistLetterMode`）。
+     */
     var mode: InputMode
-        get() = InputMode.fromName(prefs.getString(KEY_MODE, null))
+        get() {
+            val saved = prefs.getString(KEY_MODE, null)
+            if (saved != null) return InputMode.fromName(saved)
+            return if (isUpgradeInstall()) InputMode.ENGLISH else DEFAULT_MODE_FRESH_INSTALL
+        }
         set(value) = prefs.edit().putString(KEY_MODE, value.name).apply()
+
+    /**
+     * 是否属于「覆盖升级」安装（这台设备上装过更早的 Board）。
+     *
+     * 只用于上面那个默认值判断：`firstInstallTime == lastUpdateTime` 表示全新安装。
+     * 读不到包信息时按全新安装处理（宁可给中文默认，也不给老用户乱切）。
+     */
+    @Suppress("DEPRECATION")
+    private fun isUpgradeInstall(): Boolean = runCatching {
+        val info = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+        info.lastUpdateTime > info.firstInstallTime
+    }.getOrDefault(false)
 
     /** 键盘外观 */
     var themeMode: ThemeMode
@@ -81,6 +109,9 @@ class BoardPreferences(context: Context) : SyncContentGate {
     private companion object {
         const val FILE_NAME = "board_settings"
         const val KEY_MODE = "input_mode"
+
+        /** 全新安装、且用户还没有任何偏好时的默认语言：中文 */
+        val DEFAULT_MODE_FRESH_INSTALL = InputMode.CHINESE
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_SOUND = "sound_enabled"
         const val KEY_VIBRATE = "vibrate_enabled"
