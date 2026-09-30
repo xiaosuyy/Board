@@ -112,7 +112,7 @@ object RimeDictionaryBridge {
                                 return@forEachLine
                             }
                             if (line.isNotBlank()) {
-                                writer.write(line)
+                                writer.write(normalizeEntry(line))
                                 writer.write("\n")
                                 entries++
                             }
@@ -136,6 +136,30 @@ object RimeDictionaryBridge {
         }
     }
 
+    /**
+     * 把原始词库行规整成 Rime 需要的 `词条 <TAB> 编码 <TAB> 词频`。
+     *
+     * 真机实测：导入进来的词库有两种排布
+     *   · `词条\t编码\t词频`（Board 自己导出的）
+     *   · `编码\t词条\tzh-CN\t\t词频`（外部词库：编码在前，还多一个语言列）
+     * 如果部署时只改头部、正文照抄，Rime 会把拉丁拼音当成"词条"、中文当成"编码"，
+     * 整份词典作废 —— 表现为 deploy 报成功但 build/ 里**没有任何产物**。
+     * 所以这里按内容判断列序并归一化（已存的 gz 因此不用重新导入即可生效）。
+     */
+    private fun normalizeEntry(line: String): String {
+        val fields = line.split('\t')
+        if (fields.size < 3) return line
+        val first = fields[0].trim()
+        val second = fields[1].trim()
+        val firstIsCjk = first.any { it.code in 0x4E00..0x9FFF }
+        val secondIsCjk = second.any { it.code in 0x4E00..0x9FFF }
+        // 编码在前（第一个字段不是汉字、第二个是汉字）→ 交换
+        val text = if (!firstIsCjk && secondIsCjk) second else first
+        val code = if (!firstIsCjk && secondIsCjk) first else second
+        // 词频取最后一个能解析成整数的字段（避开 zh-CN 之类的列）
+        val weight = fields.lastOrNull { it.trim().toIntOrNull() != null }?.trim() ?: "0"
+        return "$text\t$code\t$weight"
+    }
     /** 清理临时解压出来的工作文件（**gz 保留**） */
     fun removeStaged(userDir: File, source: DictionarySource) {
         val target = rimeDictFile(userDir, source)
@@ -186,6 +210,14 @@ object RimeDictionaryBridge {
                 append("  \"engine/translators/+\":\n")
                 sources.forEach { source ->
                     append("    - script_translator@").append(translatorName(source)).append('\n')
+                }
+                // **关键**：把词典列进 schema.dependencies —— 这是 Rime「部署阶段预编译词典」的官方机制。
+                // 只写 translator.dictionary 时，Rime 不会在 deploy 里为它建 table.bin
+                // （真机实测：patch 生效、schema 被重编译、deploy 返回成功，但 build/ 里
+                //   没有任何 board_import_*.table.bin，词库等于没生效）。
+                append("  \"schema/dependencies/+\":\n")
+                sources.forEach { source ->
+                    append("    - ").append(logicalDictionaryName(source)).append('\n')
                 }
                 sources.forEach { source ->
                     append("  ").append(translatorName(source)).append(":\n")

@@ -508,7 +508,25 @@ class DictionaryRepository(
 
             // 3) full deploy：schema 变了必须整体重建
             val started = System.currentTimeMillis()
-            val deployed = RimeRuntime.deploy(fullCheck = true)
+            var deployed = RimeRuntime.deploy(fullCheck = true)
+            // ★ 关键：librime 的维护可能是**异步**的（真机实测 deploy 150ms 就返回）。
+            // 如果紧接着删掉临时 .dict.yaml，Rime 的 worker 去读时文件已经不在了，
+            // 于是永远建不出 table.bin（表现：deploy=true 但 build/ 里什么都没有）。
+            // 所以这里先**轮询等产物出现**，超时后再补一次 deploy，最后才清理临时文件。
+            var waited = 0L
+            while (waited < DEPLOY_WAIT_MS && !allTablesReady(dir, list)) {
+                Thread.sleep(DEPLOY_POLL_MS)
+                waited += DEPLOY_POLL_MS
+            }
+            if (!allTablesReady(dir, list)) {
+                Log.i(TAG, "首次部署未生成产物（已等 ${waited}ms），补一次 deploy")
+                deployed = RimeRuntime.deploy(fullCheck = true) || deployed
+                waited = 0L
+                while (waited < DEPLOY_WAIT_MS && !allTablesReady(dir, list)) {
+                    Thread.sleep(DEPLOY_POLL_MS)
+                    waited += DEPLOY_POLL_MS
+                }
+            }
             val cost = System.currentTimeMillis() - started
 
             // 4) 只有 table.bin 真的生成才算成功
@@ -539,6 +557,11 @@ class DictionaryRepository(
     }
 
     /** 长期存储目录：`files/rime/user/imported` */
+    /** 所有数据源的 Rime 部署产物（table.bin）是否都已生成 */
+    private fun allTablesReady(dir: File, list: List<DictionarySource>): Boolean = list.all { source ->
+        val table = RimeDictionaryBridge.tableFile(dir, source)
+        table.isFile && table.length() > 0L
+    }
     fun importedDir(): File? = userDir()?.let { File(it, "imported") }
 
     /** 由名字派生稳定 sourceId（sha256 前 16 位） */
@@ -950,6 +973,10 @@ class DictionaryRepository(
 
         /** 单次合并允许的最大记录数：超出基本可以断定同步文件异常 */
         const val MAX_MERGE_RECORDS = 5_000
+
+        /** 部署后等产物的总时长 / 轮询间隔（librime 维护是异步的，必须等产物出现） */
+        private const val DEPLOY_WAIT_MS = 120_000L
+        private const val DEPLOY_POLL_MS = 1_500L
 
         /** 参与同步的类型（学习词单独走 librime 用户词典合并） */
         val SYNC_TYPES = listOf(
