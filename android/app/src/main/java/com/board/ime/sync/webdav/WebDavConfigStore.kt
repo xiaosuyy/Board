@@ -123,6 +123,10 @@ class WebDavConfigStore(context: Context) {
                 .putString(KEY_PART_CLIPBOARD_DETAIL, result.clipboard.detail.orEmpty())
                 .putString(KEY_PART_DICTIONARY, result.dictionary.state.name)
                 .putString(KEY_PART_DICTIONARY_DETAIL, result.dictionary.detail.orEmpty())
+                .putString(KEY_CLIP_STATE, result.clipboardState.name)
+                .putString(KEY_CLIP_ERROR, result.clipboardError.orEmpty())
+                .putString(KEY_LAST_PUSHED_HASH, result.lastPushedHash.orEmpty())
+                .putLong(KEY_LAST_PUSHED_AT, result.lastPushedAt ?: 0L)
                 .apply()
         }
     }
@@ -133,6 +137,23 @@ class WebDavConfigStore(context: Context) {
         val error = plain.getString(KEY_LAST_ERROR, "").orEmpty().ifBlank { null }
         Triple(at, summary, error)
     }.getOrDefault(Triple(null, null, null))
+
+    /**
+     * 剪贴板通道的持久化扩展：5 态 + 最近一次真实上传成功的 hash/时间。
+     * **只有真实 HTTP 2xx 才会写入 lastPushedHash**，所以重启后它依然可信。
+     */
+    fun loadClipboardExtras(): Triple<com.board.ime.sync.ClipboardSyncState, String?, Long?> = runCatching {
+        val state = plain.getString(KEY_CLIP_STATE, null)
+            ?.let { runCatching { com.board.ime.sync.ClipboardSyncState.valueOf(it) }.getOrNull() }
+            ?: com.board.ime.sync.ClipboardSyncState.IDLE
+        val hash = plain.getString(KEY_LAST_PUSHED_HASH, "").orEmpty().ifBlank { null }
+        val at = plain.getLong(KEY_LAST_PUSHED_AT, 0L).takeIf { it > 0L }
+        Triple(state, hash, at)
+    }.getOrDefault(Triple(com.board.ime.sync.ClipboardSyncState.IDLE, null, null))
+
+    /** 剪贴板通道的失败原因（不含正文） */
+    fun loadClipboardError(): String? =
+        runCatching { plain.getString(KEY_CLIP_ERROR, "").orEmpty().ifBlank { null } }.getOrNull()
 
     /** 上次各通道的结束状态（重启设置页后仍然显示「剪贴板 ✓ 已同步」） */
     fun loadLastParts(): Pair<SyncPart, SyncPart> = runCatching {
@@ -170,5 +191,9 @@ class WebDavConfigStore(context: Context) {
         const val KEY_PART_CLIPBOARD_DETAIL = "last_part_clipboard_detail"
         const val KEY_PART_DICTIONARY = "last_part_dictionary"
         const val KEY_PART_DICTIONARY_DETAIL = "last_part_dictionary_detail"
+        const val KEY_CLIP_STATE = "clipboard_state"
+        const val KEY_CLIP_ERROR = "clipboard_error"
+        const val KEY_LAST_PUSHED_HASH = "last_pushed_hash"
+        const val KEY_LAST_PUSHED_AT = "last_pushed_at"
     }
 }

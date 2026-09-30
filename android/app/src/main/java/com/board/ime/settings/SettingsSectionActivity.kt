@@ -561,6 +561,18 @@ class SettingsSectionActivity : AppCompatActivity() {
             render()
         }
     }
+    /** 剪贴板通道的 5 态文案：**只有真实 HTTP 2xx 才显示「已同步」** */
+    private fun clipboardStateText(status: com.board.ime.sync.SyncStatus): String =
+        when (status.clipboardState) {
+            com.board.ime.sync.ClipboardSyncState.IDLE -> "无需同步"
+            com.board.ime.sync.ClipboardSyncState.PENDING -> "待同步"
+            com.board.ime.sync.ClipboardSyncState.SYNCING -> "同步中…"
+            com.board.ime.sync.ClipboardSyncState.SYNCED ->
+                "已同步" + (status.lastPushedHash?.take(8)?.let { " · $it" } ?: "")
+
+            com.board.ime.sync.ClipboardSyncState.FAILED ->
+                "同步失败" + (status.clipboardError?.let { " · $it" } ?: "")
+        }
     private fun storageManager() = com.board.ime.storage.StorageManager(
         this,
         boardDatabase.dictionarySourceDao(),
@@ -1193,7 +1205,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         val clipboardRow = SettingsUi.statusRow(
             this,
             "剪贴板",
-            status.clipboard.label,
+            clipboardStateText(status),
             status.clipboard.ok,
         )
         val dictionaryRow = SettingsUi.statusRow(
@@ -1219,7 +1231,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                     SyncStatusKind.SUCCESS -> "刚刚同步"
                     SyncStatusKind.FAILED -> "同步失败"
                 }
-                clipboardValue.text = partText(live.clipboard)
+                clipboardValue.text = clipboardStateText(live)
                 dictionaryValue.text = partText(live.dictionary)
             }
         }

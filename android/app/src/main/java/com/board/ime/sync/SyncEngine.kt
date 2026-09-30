@@ -26,6 +26,13 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -77,6 +84,29 @@ class SyncEngine(
 
     private val syncMutex = Mutex()
 
+    // ---------------------------------------------------------------- 剪贴板专用通道
+
+    /**
+     * 剪贴板**独立**锁：复制触发的自动同步走这条通道，
+     * **不等待**词库上传 / 学习词合并，也不会被它们阻塞。
+     */
+    private val clipboardMutex = Mutex()
+
+    /**
+     * 剪贴板同步请求。用 `conflate()` 实现 **trailing-edge 合并**：
+     * 窗口内来多少次都只保留一次，且**窗口结束一定执行**（不会像前沿去抖那样永久 SKIPPED）。
+     */
+    private val clipboardRequests = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** 本次同步里真正上传成功的 hash（用于状态判定） */
+    @Volatile
+    private var pushedHashThisRun: String? = null
+
     @Volatile
     private var lastTriggeredAt = 0L
 
@@ -84,6 +114,8 @@ class SyncEngine(
         // 恢复「最近同步时间 / 摘要 / 错误 / 各通道结束状态」，重启设置页不会变成空白
         val (at, summary, error) = configStore.loadLastSync()
         val (clipboardPart, dictionaryPart) = configStore.loadLastParts()
+        val (clipState, pushedHash, pushedAt) = configStore.loadClipboardExtras()
+        val clipError = configStore.loadClipboardError()
         _status.value = SyncStatus(
             kind = if (configStore.load().isConfigured) SyncStatusKind.CONNECTED else SyncStatusKind.NOT_CONFIGURED,
             lastSyncAt = at,
@@ -91,7 +123,34 @@ class SyncEngine(
             lastError = error,
             clipboard = clipboardPart,
             dictionary = dictionaryPart,
+            clipboardState = clipState,
+            lastPushedHash = pushedHash,
+            lastPushedAt = pushedAt,
+            clipboardError = clipError,
         )
+        // 剪贴板同步通道：合并窗口结束后的那次一定执行（trailing edge，不会永久丢任务）
+        engineScope.launch {
+            clipboardRequests.conflate().collect {
+                delay(DEBOUNCE_MS)
+                runCatching { syncClipboardOnly() }
+            }
+        }
+    }
+
+    /**
+     * 请求一次「剪贴板同步」（复制后 / 打开剪贴板面板时调用）。
+     *
+     * trailing-edge 合并：这里只登记"还需要同步一次"，窗口结束一定会执行最新一次。
+     */
+    fun requestClipboardSync() {
+        val accepted = clipboardRequests.tryEmit(Unit)
+        SyncLog.event(
+            SyncEvent.DONE,
+            "clipboard auto trigger source=AFTER_CLIPBOARD_CHANGE debounce scheduled=true coalesced=${!accepted}",
+        )
+        if (_status.value.clipboardState != ClipboardSyncState.SYNCED) {
+            publishClipboardState(ClipboardSyncState.PENDING)
+        }
     }
 
     private fun publish(status: SyncStatus) {
@@ -251,7 +310,13 @@ class SyncEngine(
             val conflicts = (pull as? PullOutcome.Applied)?.conflicts ?: 0
             val skipped = (pull as? PullOutcome.Applied)?.skipped ?: 0
             // 剪贴板阶段到此结束：大型词库再慢也不会让这一行显示「同步中」
-            publish(_status.value.copy(clipboard = SyncPart(SyncPartState.SUCCESS, "上传 $pushCount · 下载 $downloaded")))
+            // 剪贴板阶段结束：只有真的推上去了才 SYNCED，否则 IDLE（不许虚报「已同步」）
+            val pushedNow = pushedHashThisRun
+            if (pushCount > 0 && pushedNow != null) {
+                publishClipboardState(ClipboardSyncState.SYNCED, hash = pushedNow)
+            } else {
+                publishClipboardState(ClipboardSyncState.IDLE)
+            }
             SyncLog.event(
                 SyncEvent.DONE,
                 "剪贴板阶段完成 上传=$pushCount 下载=$downloaded 冲突=$conflicts 跳过=$skipped " +
@@ -328,6 +393,7 @@ class SyncEngine(
     /** @return 非 null 表示同步应当在这里失败返回 */
     private suspend fun pushLocal(client: WebDavClient): SyncResult? {
         pushCount = 0
+        pushedHashThisRun = null
         val pending = syncOperationDao.findByStatus(SyncOperationStatus.PENDING, QUEUE_LIMIT) +
             syncOperationDao.findByStatus(SyncOperationStatus.FAILED, QUEUE_LIMIT)
 
@@ -386,6 +452,7 @@ class SyncEngine(
             response.isOk -> {
                 complete(operation)
                 pushCount = 1
+                pushedHashThisRun = payload.hash
                 // 本机成功上传 → 本地这条就是「服务器当前内容」，立即打标记（不必等下一次 pull）
                 clipboardRepository.markRemoteCurrentById(item.id)
                 SyncLog.event(
@@ -808,6 +875,110 @@ class SyncEngine(
         data class Failed(val result: SyncResult) : PullOutcome
     }
 
+    /**
+     * 发布剪贴板通道的 5 态。
+     *
+     * **只有 [ClipboardSyncState.SYNCED] 且带 hash 时才写 lastPushedHash/lastPushedAt**，
+     * 这是「服务端已经收到」的唯一凭据；本地入库 / markRemoteCurrent 都不会碰它。
+     */
+    private fun publishClipboardState(
+        state: ClipboardSyncState,
+        hash: String? = null,
+        error: String? = null,
+    ) {
+        val current = _status.value
+        val synced = state == ClipboardSyncState.SYNCED && !hash.isNullOrBlank()
+        publish(
+            current.copy(
+                clipboardState = state,
+                clipboardError = if (state == ClipboardSyncState.FAILED) error else null,
+                lastPushedHash = if (synced) hash else current.lastPushedHash,
+                lastPushedAt = if (synced) System.currentTimeMillis() else current.lastPushedAt,
+            ),
+        )
+        SyncLog.event(
+            SyncEvent.DONE,
+            "clipboard state=${state.name}" +
+                (if (synced) " hash=${SyncLog.shortHash(hash!!)}" else "") +
+                (if (state == ClipboardSyncState.FAILED) " error=${error ?: "未知"} retry=true" else ""),
+        )
+    }
+
+    /**
+     * **只同步剪贴板**：复制后的自动同步走这条独立通道。
+     *
+     * 与词库 / 学习词彻底解耦：
+     * - 用独立的 [clipboardMutex]，不参与 `syncMutex`（词库上传几十秒也不会阻塞它）
+     * - 不做词库、不做学习词、不做 schema 部署
+     * - 上传成功（HTTP 2xx）才 → SYNCED 并记录 lastPushedHash
+     * - 没有待上传任务 → IDLE（UI 显示「无需同步」，**不显示已同步**）
+     */
+    suspend fun syncClipboardOnly(
+        trigger: SyncTrigger = SyncTrigger.AFTER_CLIPBOARD_CHANGE,
+    ): SyncResult {
+        val config = loadConfig()
+        if (!config.isConfigured) {
+            publishClipboardState(ClipboardSyncState.FAILED, error = "未配置 WebDAV")
+            return SyncResult(SyncOutcome.SKIPPED, _status.value)
+        }
+        if (!config.hasValidScheme) {
+            publishClipboardState(ClipboardSyncState.FAILED, error = "WebDAV 地址非法")
+            return SyncResult(SyncOutcome.CONFIG_ERROR, _status.value)
+        }
+        return clipboardMutex.withLock {
+            publishClipboardState(ClipboardSyncState.SYNCING)
+            try {
+                val client = clientFactory(config)
+                val ensure = client.ensureDirectory(config.normalizedDir)
+                if (!ensure.isOk && ensure.error != WebDavError.CONFLICT) {
+                    SyncLog.warn(SyncEvent.NETWORK_ERROR, "剪贴板同步：目录不可达（任务保留，稍后重试）")
+                    publishClipboardState(
+                        ClipboardSyncState.FAILED,
+                        error = describe(ensure.error, ensure.message),
+                    )
+                    return@withLock SyncResult(SyncOutcome.RETRYABLE_ERROR, _status.value)
+                }
+
+                val push = pushLocal(client)
+                if (push != null) {
+                    // 任务没有被 complete，仍是 FAILED/PENDING，下次会重试
+                    publishClipboardState(
+                        ClipboardSyncState.FAILED,
+                        error = push.status.lastError ?: "上传失败",
+                    )
+                    return@withLock push
+                }
+
+                val pull = pullRemote(client)
+                if (pull is PullOutcome.Failed) {
+                    publishClipboardState(
+                        ClipboardSyncState.FAILED,
+                        error = pull.result.status.lastError ?: "拉取失败",
+                    )
+                    return@withLock pull.result
+                }
+
+                val pushed = pushedHashThisRun
+                if (pushCount > 0 && pushed != null) {
+                    publishClipboardState(ClipboardSyncState.SYNCED, hash = pushed)
+                    SyncLog.event(
+                        SyncEvent.UPLOAD,
+                        "clipboard push started=true http=2xx success=true hash=${SyncLog.shortHash(pushed)}",
+                    )
+                } else {
+                    publishClipboardState(ClipboardSyncState.IDLE)
+                }
+                SyncResult(SyncOutcome.SUCCESS, _status.value, uploaded = pushCount)
+            } catch (throwable: Throwable) {
+                SyncLog.warn(
+                    SyncEvent.NETWORK_ERROR,
+                    "剪贴板同步异常：${throwable.javaClass.simpleName}（任务保留，稍后重试）",
+                )
+                publishClipboardState(ClipboardSyncState.FAILED, error = throwable.javaClass.simpleName)
+                SyncResult(SyncOutcome.RETRYABLE_ERROR, _status.value)
+            }
+        }
+    }
     private suspend fun complete(operation: SyncOperation) {
         syncOperationDao.update(
             operation.copy(status = SyncOperationStatus.COMPLETED, updatedAt = System.currentTimeMillis()),

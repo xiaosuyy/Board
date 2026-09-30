@@ -83,6 +83,29 @@ data class SyncPart(
         get() = state == SyncPartState.SUCCESS || state == SyncPartState.SKIPPED
 }
 
+/**
+ * **剪贴板同步状态**（独立于词库/学习词的通道）。
+ *
+ * 语义严格：只有真实 HTTP Push 拿到 2xx 才允许进入 [SYNCED]。
+ * 本地入库 / 生成同步任务 / `markRemoteCurrent` 都**不能**提前置为 SYNCED。
+ */
+enum class ClipboardSyncState {
+    /** 没有待同步内容，不需要上传 */
+    IDLE,
+
+    /** 有新内容，等待上传 */
+    PENDING,
+
+    /** 正在上传 / 拉取 */
+    SYNCING,
+
+    /** 上传成功（HTTP 2xx），并且记录了 lastPushedHash */
+    SYNCED,
+
+    /** 上传失败，任务仍保留，稍后重试 */
+    FAILED,
+}
+
 /** 同步状态 + 最近一次同步时间 */
 data class SyncStatus(
     val kind: SyncStatusKind = SyncStatusKind.NOT_CONFIGURED,
@@ -94,6 +117,14 @@ data class SyncStatus(
     val clipboard: SyncPart = SyncPart(),
     /** 导入词库（大型数据源文件）通道的独立状态 */
     val dictionary: SyncPart = SyncPart(),
+    /** 剪贴板通道的 5 态（UI 只看它，不再看 clipboard SyncPart） */
+    val clipboardState: ClipboardSyncState = ClipboardSyncState.IDLE,
+    /** 最近一次**真实上传成功**的内容 hash（服务端已收到的凭据） */
+    val lastPushedHash: String? = null,
+    /** 最近一次上传成功的时间 */
+    val lastPushedAt: Long? = null,
+    /** 剪贴板通道的失败原因（不含正文） */
+    val clipboardError: String? = null,
 ) {
     val label: String
         get() = when (kind) {

@@ -30,6 +30,12 @@ class ClipboardShareActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         lifecycleScope.launch {
             val outcome = withContext(Dispatchers.IO) { runCatching { receive(intent) } }
+            // 分享进来的内容等同于「复制了新内容」→ 走剪贴板自动同步通道
+            if (outcome.getOrNull() == ClipboardCaptureResult.INSERTED ||
+                outcome.getOrNull() == ClipboardCaptureResult.UPDATED
+            ) {
+                runCatching { com.board.ime.sync.SyncEngineHolder.get(this@ClipboardShareActivity).requestClipboardSync() }
+            }
             val message = outcome.fold(
                 onSuccess = { result ->
                     when (result) {

@@ -45,6 +45,7 @@ import com.board.ime.settings.KeyboardScope
 import com.board.ime.settings.LayoutMode
 import com.board.ime.settings.SettingsRepository
 import com.board.ime.settings.ThemeMode
+import com.board.ime.sync.ClipboardSyncState
 import com.board.ime.sync.SyncEngine
 import com.board.ime.sync.SyncEngineHolder
 import com.board.ime.sync.SyncScheduler
@@ -108,6 +109,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private var clipboardManager: ClipboardManager? = null
     private var clipboardObserver: Job? = null
     private var syncEngine: SyncEngine? = null
+
+    /** 网络恢复回调：Push 失败后自动补一次剪贴板同步（不必用户进设置页） */
+    private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
 
     private val preferenceListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> applyPreferences() }
@@ -256,6 +260,13 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     override fun onDestroy() {
         if (active === this) active = null
+        networkCallback?.let { cb ->
+            runCatching {
+                getSystemService(android.net.ConnectivityManager::class.java)
+                    ?.unregisterNetworkCallback(cb)
+            }
+        }
+        networkCallback = null
         runCatching {
             preferences.unregisterListener(preferenceListener)
             settingsRepository.unregisterListener(uiSettingsListener)
@@ -324,7 +335,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     /** 打开剪贴板：同步一次系统剪贴板并开始观察 Room 数据 */
     private fun onClipboardOpened() {
+        // 1) 立即抓一次系统剪贴板（listener 之前不在时也能补抓）
         captureClipboard()
+        // 2) 后台自动 Pull 当前云端内容（不阻塞本地列表显示）
+        syncEngine?.requestClipboardSync()
         observeClipboard(panelController?.searchQuery.orEmpty(), panelController?.isRemoteOnly == true)
     }
 
@@ -458,14 +472,30 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val config = engine.loadConfig()
         SyncScheduler.applyAutoSync(this, config.autoSync)
 
+        // 网络恢复 → 若上次剪贴板同步失败，自动重试（WorkManager 只是兜底，不做实时触发源）
+        runCatching {
+            if (networkCallback != null) return@runCatching
+            val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    val engine = syncEngine ?: return
+                    if (engine.status.value.clipboardState == ClipboardSyncState.FAILED) {
+                        com.board.ime.sync.SyncLog.event(com.board.ime.sync.SyncEvent.RETRY, "网络恢复，自动重试剪贴板同步 retry=true")
+                        engine.requestClipboardSync()
+                    }
+                }
+            }
+            networkCallback = callback
+            getSystemService(android.net.ConnectivityManager::class.java)
+                ?.registerDefaultNetworkCallback(callback)
+        }.onFailure { Log.w(TAG, "注册网络回调失败：${it.message}") }
+
         serviceScope.launch {
             engine.applied.collect { content -> mainHandler.post { applyRemoteToClipboard(content) } }
         }
 
         if (config.isConfigured && config.autoSync) {
-            serviceScope.launch {
-                runCatching { engine.syncNow(SyncTrigger.IME_START, debounce = true) }
-            }
+            // 输入法启动时补一次剪贴板同步（trailing-edge 合并，绝不会丢）
+            engine.requestClipboardSync()
         }
     }
 
@@ -474,9 +504,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val engine = syncEngine ?: return
         val config = engine.loadConfig()
         if (!config.isConfigured || !config.autoSync) return
-        serviceScope.launch {
-            runCatching { engine.syncNow(SyncTrigger.AFTER_CLIPBOARD_CHANGE, debounce = true) }
-        }
+        // 复制后：只走剪贴板独立通道，不等词库 / 学习词
+        engine.requestClipboardSync()
     }
 
     /**
