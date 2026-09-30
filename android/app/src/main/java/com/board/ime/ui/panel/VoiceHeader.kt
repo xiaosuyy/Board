@@ -77,9 +77,13 @@ class VoiceHeader @JvmOverloads constructor(
     fun applyTheme(theme: KeyboardTheme) {
         this.theme = theme
         setBackgroundColor(theme.panelBackground)
-        titleView.textSize = theme.moreLabelSize * 1.15f
+        // 显式用 sp：直接赋值 textSize 是 px，会让文字远大于预期并溢出 56dp 面板
+        titleView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, TITLE_SP)
         titleView.setTypeface(Typeface.DEFAULT, Typeface.NORMAL)
-        previewView.textSize = theme.moreLabelSize
+        previewView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, BODY_SP)
+        // 面板内裁切：任何排版意外都只影响面板内部，绝不压到键盘上
+        clipChildren = true
+        clipToPadding = true
         backSlot.applyTheme(theme)
         finishSlot.applyTheme(theme)
         render(lastState, lastText)
@@ -105,5 +109,11 @@ class VoiceHeader @JvmOverloads constructor(
         previewView.visibility = if (text.isEmpty()) GONE else VISIBLE
         // 结束按钮在“正在识别”时才可点（避免 IDLE 下误触）
         finishSlot.setTint(if (listening) theme.iconColor else theme.candidateMutedText)
+    }
+
+    private companion object {
+        /** 面板只有 56dp 高：字号必须足够克制，标题/正文都按 sp 明确指定 */
+        const val TITLE_SP = 11f
+        const val BODY_SP = 10f
     }
 }
