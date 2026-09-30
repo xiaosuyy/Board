@@ -106,10 +106,16 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         com.board.ime.voice.VoiceCredentialStore(this)
     }
 
-    /** 默认语音引擎：百度实时语音识别（WebSocket，边录边发） */
+    /**
+     * 当前语音引擎：**百度翻译开放平台「语音翻译」**（`/api/trans/v2/voicetrans`）。
+     *
+     * 它复用用户**已有的翻译凭据**（APPID + 密钥），不需要另开智能云账号。
+     * 备选：`BaiduRealtimeVoiceRecognitionProvider`（智能云实时语音识别，需要另一套
+     * AppID + API Key，边说边出字但要求额外开通服务）—— 需要时改这一行即可切换。
+     */
     private val voiceEngine: com.board.ime.voice.VoiceRecognitionEngine by lazy {
-        com.board.ime.voice.BaiduRealtimeVoiceRecognitionProvider(
-            credentialsProvider = { voiceCredentials.load() },
+        com.board.ime.voice.BaiduVoiceTranslateEngine(
+            credentialsProvider = { translationCredentials.load() },
         )
     }
 
@@ -264,7 +270,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
      */
     private fun resolveVoiceServiceLabel(): String? {
         // 用了百度实时语音识别时，服务方是确定的，直接如实标注
-        if (voiceEngine.isConfigured()) return "百度智能云语音服务"
+        if (voiceEngine.isConfigured()) return voiceEngine.displayName
         return runCatching {
         val component = android.provider.Settings.Secure.getString(
             contentResolver,

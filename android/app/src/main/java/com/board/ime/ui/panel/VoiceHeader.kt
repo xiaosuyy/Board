@@ -214,7 +214,7 @@ class VoiceHeader @JvmOverloads constructor(
         const val MAX_TEXT_SP = 19f
 
         /** 底部常驻隐私说明（不占用结果区） */
-        const val HINT_TEXT = "系统语音识别 · 可能联网"
+        const val HINT_TEXT = "语音内容会发送给识别服务 · 点此了解"
         const val HINT_SP = 9f
     }
 }

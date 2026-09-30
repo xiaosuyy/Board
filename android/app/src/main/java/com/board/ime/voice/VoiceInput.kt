@@ -60,6 +60,9 @@ class VoiceInputController(
     private var languageRetried = false
     private var languageTag: String = ""
 
+    /** 云端引擎的回调在工作线程上，统一 post 回主线程 */
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     /** 百度已配置就一定能用；否则才看系统有没有识别服务 */
     fun isAvailable(): Boolean = cloud() != null || runCatching {
         SpeechRecognizer.isRecognitionAvailable(context)
@@ -137,14 +140,17 @@ class VoiceInputController(
      * partial 只更新面板；final 变成 RESULT，等用户点文本才上屏 —— 与 Phase 2.2 完全一致。
      */
     private fun onEngineEvent(event: VoiceRecognitionEvent) {
-        when (event) {
-            is VoiceRecognitionEvent.Partial -> emit(VoiceState.LISTENING, event.text)
+        // 云端引擎的回调发生在 OkHttp / 录音工作线程上：**必须切回主线程**再动 UI
+        mainHandler.post {
+            when (event) {
+                is VoiceRecognitionEvent.Partial -> emit(VoiceState.LISTENING, event.text)
 
-            is VoiceRecognitionEvent.Final -> emit(VoiceState.RESULT, event.text)
+                is VoiceRecognitionEvent.Final -> emit(VoiceState.RESULT, event.text)
 
-            is VoiceRecognitionEvent.Failed -> {
-                listening = false
-                emit(VoiceState.ERROR, event.failure.message)
+                is VoiceRecognitionEvent.Failed -> {
+                    listening = false
+                    emit(VoiceState.ERROR, event.failure.message)
+                }
             }
         }
     }
