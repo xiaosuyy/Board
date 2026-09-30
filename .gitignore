@@ -26,3 +26,8 @@ backup-before-dictionary-fix/
 _*.log
 _webdav/
 
+# 调试截图 / UI dump：可能含账号、口令等敏感内容，一律不入库
+_probe/*.png
+_probe/*.xml
+_probe/*.gz
+_probe/*.txt
