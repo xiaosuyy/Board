@@ -184,6 +184,14 @@ class ClipboardRepository(
         content: String,
         sourceDeviceId: String? = null,
         source: ClipboardCaptureSource = ClipboardCaptureSource.LOCAL,
+        /**
+         * 是否允许因为这次抓取而产生上传。
+         *
+         * 打开剪贴板面板时会"顺手读一次系统剪贴板"补抓 —— 那不是用户复制，
+         * **绝不能因此产生上传**：否则每次打开面板都会把自己的内容推到云端、
+         * 把另一台设备的内容覆盖掉，导致"拉不到对方的内容"（真机+模拟器实测）。
+         */
+        enqueuePush: Boolean = true,
     ): ClipboardCaptureResult {
         val text = content.trim()
         if (text.isEmpty()) return ClipboardCaptureResult.SKIPPED_EMPTY
@@ -227,7 +235,7 @@ class ClipboardRepository(
                     runCatching { dao.updateSearchText(existing.id, text.take(SEARCH_INDEX_CHARS)) }
                 }
                 Log.i(TAG, "剪贴板内容已存在（hash=${SyncLog.shortHash(hash)}），刷新时间")
-                if (!fromSync) enqueueClipboardPush(existing.id)
+                if (!fromSync && enqueuePush) enqueueClipboardPush(existing.id)
                 return@withLock ClipboardCaptureResult.UPDATED
             }
 
@@ -247,7 +255,7 @@ class ClipboardRepository(
                     searchText = stored.searchText,
                 ),
             )
-            if (!fromSync) {
+            if (!fromSync && enqueuePush) {
                 enqueueClipboardPush(id)
             } else {
                 SyncLog.event(SyncEvent.SUPPRESS_LOOP, "hash=${SyncLog.shortHash(hash)} 来自同步，不上传")

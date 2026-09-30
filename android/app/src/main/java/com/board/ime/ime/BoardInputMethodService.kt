@@ -336,7 +336,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     /** 打开剪贴板：同步一次系统剪贴板并开始观察 Room 数据 */
     private fun onClipboardOpened() {
         // 1) 立即抓一次系统剪贴板（listener 之前不在时也能补抓）
-        captureClipboard()
+        //    pushToCloud=false：补抓只入库，**不能**因此上传，否则会把云端覆盖成自己的内容
+        captureClipboard(pushToCloud = false)
         // 2) 后台自动 Pull 当前云端内容（不阻塞本地列表显示）
         syncEngine?.requestClipboardSync()
         observeClipboard(panelController?.searchQuery.orEmpty(), panelController?.isRemoteOnly == true)
@@ -433,7 +434,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     }
 
     /** 把系统剪贴板里的文本记录到 Room（按内容哈希去重、敏感内容不入库） */
-    private fun captureClipboard() {
+    /** @param pushToCloud 打开面板时的补抓要传 false：只入库，不产生上传 */
+    private fun captureClipboard(pushToCloud: Boolean = true) {
         val manager = clipboardManager ?: return
         val clip = runCatching { manager.primaryClip }.getOrNull() ?: return
         if (clip.itemCount == 0) return
@@ -443,7 +445,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             .orEmpty()
         if (text.isEmpty()) return
         serviceScope.launch {
-            val result = clipboardRepository?.capture(text)
+            val result = clipboardRepository?.capture(text, enqueuePush = pushToCloud)
             if (result == ClipboardCaptureResult.SKIPPED_SENSITIVE) {
                 mainHandler.post {
                     Toast.makeText(
