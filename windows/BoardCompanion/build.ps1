@@ -42,12 +42,20 @@ $mainOut = Join-Path $build 'BoardCompanion.exe'
     "$root\SyncClipboardProvider.cs" `
     "$root\WebDavUrlPolicy.cs" `
     "$root\WebDavClient.cs" `
-    "$root\CredentialStore.cs"
+    "$root\CredentialStore.cs" `
+    "$root\ClipboardMonitor.cs" `
+    "$root\ClipboardSyncEngine.cs" `
+    "$root\TrayController.cs" `
+    "$root\SettingsForm.cs"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: main build failed (exit=$LASTEXITCODE)"
     exit 1
 }
+$size = (Get-Item $mainOut).Length
+$sha = (Get-FileHash $mainOut -Algorithm SHA256).Hash.ToLower()
 Write-Host "built: $mainOut"
+Write-Host ("size: {0:N0} bytes" -f $size)
+Write-Host "sha256: $sha"
 
 # 4) tests (reference the main exe instead of recompiling the sources)
 $testOut = Join-Path $build 'BoardCompanion.Tests.exe'
