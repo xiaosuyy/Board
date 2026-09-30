@@ -14,6 +14,13 @@ data class WebDavConfig(
     val syncDir: String = DEFAULT_DIR,
     /** 自动同步开关（WorkManager 周期 + 输入法启动检查） */
     val autoSync: Boolean = false,
+    /**
+     * 用户是否**明确允许**未加密 HTTP（默认否）。
+     *
+     * 隐私基线：默认只允许 HTTPS；开启后也仅对**可信局域网**地址放行，公网 HTTP 一律拒绝
+     * （见 [WebDavUrlPolicy]）。
+     */
+    val allowCleartextHttp: Boolean = false,
 ) {
 
     /** 只要填了地址就算「配置过」，能否用还要看测试连接 */
@@ -33,6 +40,18 @@ data class WebDavConfig(
             return url.startsWith("http://", ignoreCase = true) ||
                 url.startsWith("https://", ignoreCase = true)
         }
+
+    /**
+     * 传输安全裁决（HTTPS 放行；HTTP 需用户明确开启且仅限可信局域网）。
+     *
+     * 注意：判定 HTTP 地址时需要做一次**地址解析**，不要在 UI 主线程反复调用。
+     */
+    fun securityVerdict(): WebDavUrlPolicy.Verdict =
+        WebDavUrlPolicy.evaluate(baseUrl, allowCleartextHttp)
+
+    /** 传输安全层面的拦截原因；`null` 表示放行 */
+    fun securityProblem(): String? =
+        (securityVerdict() as? WebDavUrlPolicy.Verdict.Blocked)?.message
 
     /** 配置是否「可以尝试同步」 */
     val isUsable: Boolean

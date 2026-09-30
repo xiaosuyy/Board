@@ -227,6 +227,15 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
         /** 引导用户去授权（打开设置页请求权限 / 系统设置） */
         fun requestMicPermission()
         fun notify(message: String)
+
+        /** 是否已确认过语音隐私说明（只存一个布尔，绝不存语音内容/识别文本） */
+        val voicePrivacyAcknowledged: Boolean
+
+        /** 首次使用时展示隐私说明；用户点「继续」后由实现方回调 [onPrivacyAccepted] */
+        fun requestVoicePrivacyConsent()
+
+        /** 展示完整隐私说明（语音面板底部说明的入口） */
+        fun showVoicePrivacyInfo()
     }
 
     private val controller = VoiceInputController(context)
@@ -287,6 +296,13 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
         controller.release()
     }
 
+    /**
+     * 用户已确认隐私说明：**这时才真正开始识别**（此前不碰麦克风）。
+     */
+    fun onPrivacyAccepted() {
+        start()
+    }
+
     private fun start() {
         if (!controller.isAvailable()) {
             // 面板**留在原地**并把原因写清楚：只弹一条瞬时 Toast 用户会以为“点了没反应”
@@ -300,6 +316,12 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
             state = VoiceState.IDLE
             host.showVoicePanel()
             host.updateVoicePanel(VoiceState.ERROR, PERMISSION_MESSAGE)
+            return
+        }
+        // 真正启动录音之前，先让用户明确知道这是系统语音识别（可能联网）——
+        // 未经确认绝不调用 startListening()。
+        if (!host.voicePrivacyAcknowledged) {
+            host.requestVoicePrivacyConsent()
             return
         }
         state = VoiceState.LISTENING

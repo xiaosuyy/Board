@@ -137,6 +137,20 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         override fun notify(message: String) {
             Toast.makeText(this@BoardInputMethodService, message, Toast.LENGTH_SHORT).show()
         }
+
+        /** 是否已确认过语音隐私说明（只存一个布尔，不存任何语音内容） */
+        override val voicePrivacyAcknowledged: Boolean
+            get() = preferences.voicePrivacyAcknowledged
+
+        /** 第一次点语音：先把"这是系统语音识别（可能联网）"讲清楚，点继续才真正开始 */
+        override fun requestVoicePrivacyConsent() {
+            showVoicePrivacyCard(consent = true)
+        }
+
+        /** 面板底部说明的入口：看完整说明，不影响当前识别 */
+        override fun showVoicePrivacyInfo() {
+            showVoicePrivacyCard(consent = false)
+        }
     }
 
     /** 语音工具入口：点一次开始；识别中再点一次 = 结束收音（结果照常上屏） */
@@ -144,6 +158,60 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val session = voiceSession ?: VoiceInputSession(this, voiceHost).also { voiceSession = it }
         session.toggle()
     }
+
+    // ---------------------------------------------------------------- 语音隐私说明
+
+    /** 隐私说明卡片：直接盖在输入法自己的窗口上，不依赖弹窗权限、不依赖 Toast */
+    private var voicePrivacyCard: com.board.ime.ui.panel.VoicePrivacyCard? = null
+
+    private fun showVoicePrivacyCard(consent: Boolean) {
+        if (voicePrivacyCard != null) return
+        val root = window?.window?.decorView as? android.view.ViewGroup ?: return
+        val card = com.board.ime.ui.panel.VoicePrivacyCard(this)
+        card.bind(
+            KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize),
+            resolveVoiceServiceLabel(),
+            consent,
+        )
+        if (consent) {
+            card.onAccept = {
+                // 用户明确点「继续」才写入确认标志，然后才真正开始识别
+                preferences.voicePrivacyAcknowledged = true
+                dismissVoicePrivacyCard()
+                voiceSession?.onPrivacyAccepted()
+            }
+        }
+        card.onDismiss = { dismissVoicePrivacyCard() }
+        root.addView(
+            card,
+            android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        voicePrivacyCard = card
+    }
+
+    private fun dismissVoicePrivacyCard() {
+        voicePrivacyCard?.let { card -> (card.parent as? android.view.ViewGroup)?.removeView(card) }
+        voicePrivacyCard = null
+    }
+
+    /**
+     * 尝试取「系统语音识别」对应的应用名。
+     *
+     * 取不到（不少 ROM 都取不到）就返回 `null` —— **不猜名字**，UI 直接不显示这一行。
+     */
+    private fun resolveVoiceServiceLabel(): String? = runCatching {
+        val component = android.provider.Settings.Secure.getString(
+            contentResolver,
+            "voice_recognition_service",
+        )
+        val servicePackage = component?.substringBefore('/')?.takeIf { it.isNotBlank() }
+        if (servicePackage == null) return null
+        val info = packageManager.getApplicationInfo(servicePackage, 0)
+        packageManager.getApplicationLabel(info).toString().takeIf { it.isNotBlank() }
+    }.getOrNull()
     private var rimeEngine: RimeEngine? = null
     private var controller = InputController(engine)
     private var appliedEngineKind: EngineKind? = null
@@ -265,6 +333,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onCollapseKeyboard = { collapseKeyboard() }
         panel.onVoiceCancel = { voiceSession?.cancel() }
         panel.onVoiceStop = { voiceSession?.toggle() }
+        panel.onVoiceInfo = { showVoicePrivacyCard(consent = false) }
         panel.onToolLayoutChanged = { layout ->
             // 复用现有 SharedPreferences（不新增数据库 / 表）
             preferences.toolbarTools = layout.encodeToolbar()
@@ -348,6 +417,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         stopClipboardObservation()
         serviceScope.cancel()
         // 语音识别必须先于其它资源释放：停止收音 → destroy → 置空（避免麦克风/监听器泄漏）
+        dismissVoicePrivacyCard()
         voiceSession?.release()
         voiceSession = null
         RimeRuntime.close()

@@ -83,6 +83,9 @@ class TopPanelController(
     /** 语音面板里的「✓」：结束收音（已返回的结果照常上屏） */
     var onVoiceStop: (() -> Unit)? = null
 
+    /** 语音面板底部「系统语音识别 · 可能联网」被点击：查看完整隐私说明 */
+    var onVoiceInfo: (() -> Unit)? = null
+
     /** 打开语音面板（与其它状态共用同一个固定高度） */
     fun showVoice() {
         state = TopPanelState.VOICE
@@ -196,6 +199,7 @@ class TopPanelController(
         clipboardHeader.onBack = { handleClipboardBack() }
         voiceHeader.onBack = { onVoiceCancel?.invoke() }
         voiceHeader.onPrimary = { onVoiceStop?.invoke() }
+        voiceHeader.onInfo = { onVoiceInfo?.invoke() }
         clipboardHeader.onToggleEdit = { toggleClipboardEdit() }
         clipboardHeader.onToggleSearch = { toggleSearch() }
         clipboardHeader.onClearSearch = { stopSearch() }

@@ -58,6 +58,8 @@ class WebDavConfigStore(context: Context) {
         val username = readString(plain, KEY_USERNAME).orEmpty()
         val syncDir = readString(plain, KEY_SYNC_DIR).orEmpty().ifBlank { WebDavConfig.DEFAULT_DIR }
         val autoSync = runCatching { plain.getBoolean(KEY_AUTO_SYNC, false) }.getOrDefault(false)
+        val allowCleartext = runCatching { plain.getBoolean(KEY_ALLOW_CLEARTEXT, false) }
+            .getOrDefault(false)
         val password = readString(securePrefs, KEY_PASSWORD) ?: memoryPassword
         return WebDavConfig(
             baseUrl = baseUrl,
@@ -65,6 +67,7 @@ class WebDavConfigStore(context: Context) {
             password = password,
             syncDir = syncDir,
             autoSync = autoSync,
+            allowCleartextHttp = allowCleartext,
         )
     }
 
@@ -99,6 +102,7 @@ class WebDavConfigStore(context: Context) {
                 .putString(KEY_USERNAME, config.username.trim())
                 .putString(KEY_SYNC_DIR, config.syncDir.trim())
                 .putBoolean(KEY_AUTO_SYNC, config.autoSync)
+                .putBoolean(KEY_ALLOW_CLEARTEXT, config.allowCleartextHttp)
                 .apply()
         }.onFailure { Log.e(TAG, "写入 WebDAV 配置失败", it) }
 
@@ -184,6 +188,7 @@ class WebDavConfigStore(context: Context) {
         const val KEY_PASSWORD = "password"
         const val KEY_SYNC_DIR = "sync_dir"
         const val KEY_AUTO_SYNC = "auto_sync"
+        const val KEY_ALLOW_CLEARTEXT = "allow_cleartext_http"
         const val KEY_LAST_SYNC_AT = "last_sync_at"
         const val KEY_LAST_SUMMARY = "last_sync_summary"
         const val KEY_LAST_ERROR = "last_sync_error"

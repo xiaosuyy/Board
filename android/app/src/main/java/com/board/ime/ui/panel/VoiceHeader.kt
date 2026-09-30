@@ -8,8 +8,6 @@ import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
-import android.view.View
-import android.view.ViewConfiguration
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.board.ime.ui.KeyboardTheme
@@ -20,12 +18,13 @@ import com.board.ime.voice.VoiceState
  *
  * ```
  * [←]  今天天气怎么样
+ *      系统语音识别 · 可能联网
  * ```
  * - **左侧固定返回**；右侧**没有**确认按钮（避免"确认/提交"语义）
  * - 中间整块区域就是状态/识别文本，**整块可点**（不是只有文字像素）
  * - 成功时直接显示识别文本（不显示"识别成功/已识别/完成"等多余文字）
- * - 字号**自适应**：10sp～19sp 之间自动缩放，最多两行，任何情况下不超出 56dp、不遮挡返回键
- * - 视觉沿用 Board 现有黑白灰 + 轻量按压反馈，无渐变/发光/大色块
+ * - 字号**自适应**：10sp～19sp 之间自动缩放，最多两行，任何情况下不超出面板、不遮挡返回键
+ * - 底部**常驻一行隐私说明**（不占用结果区），点它打开完整说明
  */
 class VoiceHeader @JvmOverloads constructor(
     context: Context,
@@ -42,6 +41,9 @@ class VoiceHeader @JvmOverloads constructor(
      */
     var onPrimary: (() -> Unit)? = null
 
+    /** 点击底部「系统语音识别 · 可能联网」：查看完整隐私说明 */
+    var onInfo: (() -> Unit)? = null
+
     private var theme: KeyboardTheme = KeyboardTheme.from(
         context,
         com.board.ime.settings.ThemeMode.SYSTEM,
@@ -49,6 +51,8 @@ class VoiceHeader @JvmOverloads constructor(
 
     private val backSlot = PanelIconSlot(context, PanelIcon.BACK)
     private val textView = TextView(context)
+    private val hintView = TextView(context)
+    private val column = LinearLayout(context)
     private val pressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
     private var pressed = false
@@ -69,13 +73,13 @@ class VoiceHeader @JvmOverloads constructor(
 
         textView.apply {
             // 关键：setSingleLine(false) 内部会调用 setMaxLines(MAX_VALUE)，会覆盖前面设的 maxLines，
-            // 所以必须先设 SingleLine 再设 maxLines，否则两行限制失效，长文本无限换行溢出 56dp。
+            // 所以必须先设 SingleLine 再设 maxLines，否则两行限制失效，长文本无限换行溢出面板。
             isSingleLine = false
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             includeFontPadding = false
-            // Android 原生自适应字号：在 56dp 内自动缩放到刚好放得下
+            // Android 原生自适应字号：在可用空间内自动缩放到刚好放得下
             setAutoSizeTextTypeUniformWithConfiguration(
                 MIN_TEXT_SP.toInt(),
                 MAX_TEXT_SP.toInt(),
@@ -83,9 +87,28 @@ class VoiceHeader @JvmOverloads constructor(
                 TypedValue.COMPLEX_UNIT_SP,
             )
         }
-        addView(textView, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+
+        hintView.apply {
+            text = HINT_TEXT
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            includeFontPadding = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, HINT_SP)
+            // 提示可点（这是查看完整隐私说明的入口）
+            paint.isUnderlineText = true
+        }
+
+        column.apply {
+            orientation = VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(textView, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(hintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        }
+        addView(column, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
 
         backSlot.onSlotClick = { onBack?.invoke() }
+        hintView.setOnClickListener { onInfo?.invoke() }
 
         textView.setOnTouchListener { _, event ->
             when (event.actionMasked) {
@@ -136,6 +159,7 @@ class VoiceHeader @JvmOverloads constructor(
     fun applyTheme(theme: KeyboardTheme) {
         this.theme = theme
         setBackgroundColor(theme.panelBackground)
+        hintView.setTextColor(theme.candidateMutedText)
         backSlot.applyTheme(theme)
         render(lastState, lastText)
         requestLayout()
@@ -149,13 +173,14 @@ class VoiceHeader @JvmOverloads constructor(
         // 整块文字区域的轻量按压反馈（复用现有按压色，不引入新样式）
         if (pressed) {
             pressPaint.color = theme.panelSurfacePressed
+            val radius = theme.radiusSmall * 2f
             canvas.drawRoundRect(
-                textView.left.toFloat(),
-                0f,
-                textView.right.toFloat(),
-                height.toFloat(),
-                theme.radiusSmall * 2f,
-                theme.radiusSmall * 2f,
+                column.left.toFloat(),
+                column.top.toFloat(),
+                column.right.toFloat(),
+                (column.top + textView.bottom).toFloat(),
+                radius,
+                radius,
                 pressPaint,
             )
         }
@@ -187,5 +212,9 @@ class VoiceHeader @JvmOverloads constructor(
         /** 自适应字号范围：短文本明显更大，长文本自动缩小 */
         const val MIN_TEXT_SP = 10f
         const val MAX_TEXT_SP = 19f
+
+        /** 底部常驻隐私说明（不占用结果区） */
+        const val HINT_TEXT = "系统语音识别 · 可能联网"
+        const val HINT_SP = 9f
     }
 }

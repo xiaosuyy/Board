@@ -85,6 +85,15 @@ class BoardPreferences(context: Context) : SyncContentGate {
         get() = prefs.getBoolean(KEY_SKIP_SENSITIVE, true)
         set(value) = prefs.edit().putBoolean(KEY_SKIP_SENSITIVE, value).apply()
 
+    /**
+     * 语音隐私说明是否已被用户确认（第一次点语音时弹一次）。
+     *
+     * **只存这一个布尔值**；绝不保存语音内容、识别文本或识别历史。
+     */
+    var voicePrivacyAcknowledged: Boolean
+        get() = prefs.getBoolean(KEY_VOICE_PRIVACY_ACK, false)
+        set(value) = prefs.edit().putBoolean(KEY_VOICE_PRIVACY_ACK, value).apply()
+
     /** 开发者模式：连续点版本号 5 次才打开，日志入口只在这个模式下出现 */
     var developerMode: Boolean
         get() = prefs.getBoolean(KEY_DEVELOPER, false)
@@ -133,6 +142,7 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_LAYOUT = "layout_mode"
         const val KEY_CANDIDATE_SIZE = "candidate_text_size"
         const val KEY_SKIP_SENSITIVE = "skip_sensitive_clipboard"
+        const val KEY_VOICE_PRIVACY_ACK = "voice_privacy_acknowledged"
         const val KEY_DEVELOPER = "developer_mode"
         const val KEY_TOOLBAR_TOOLS = "toolbar_tools"
         const val KEY_MORE_TOOLS = "more_tools"

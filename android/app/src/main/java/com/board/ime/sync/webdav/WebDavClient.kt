@@ -277,15 +277,15 @@ class OkHttpWebDavClient(
 
     // ---------------------------------------------------------------- 内部
 
-    /** 地址 scheme 不合法时的统一提示（OkHttp 会抛 IllegalArgumentException，这里提前挡住） */
-    private fun urlProblem(): String? = if (config.hasValidScheme) {
-        null
-    } else {
-        "WebDAV 地址必须以 http:// 或 https:// 开头"
-    }
+    /**
+     * 地址层面的统一拦截原因（scheme 拼错 / HTTP 未开启 / 公网 HTTP…）。
+     *
+     * **只在构造时算一次**：其中的 HTTP 判定需要做地址解析，不能每个请求都做一遍。
+     */
+    private val urlProblem: String? = config.securityProblem()
 
     private fun <T> invalidUrl(): WebDavResponse<T>? =
-        urlProblem()?.let { WebDavResponse.fail(WebDavError.PROTOCOL, message = it) }
+        urlProblem?.let { WebDavResponse.fail(WebDavError.PROTOCOL, message = it) }
 
     private fun executeUnit(request: Request): WebDavResponse<Unit> {
         val response = execute(request)

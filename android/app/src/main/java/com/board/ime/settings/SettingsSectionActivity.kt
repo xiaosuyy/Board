@@ -1275,6 +1275,29 @@ class SettingsSectionActivity : AppCompatActivity() {
                 }
             },
         )
+        configCard.addView(
+            SettingsUi.switchRow(
+                this,
+                "允许未加密的 HTTP（仅限可信局域网）",
+                config.allowCleartextHttp,
+            ) { checked ->
+                saveSync(
+                    urlEdit,
+                    userEdit,
+                    passEdit,
+                    dirEdit,
+                    allowCleartextHttp = checked,
+                    toast = false,
+                )
+            },
+        )
+        configCard.addView(
+            SettingsUi.hint(
+                this,
+                "HTTP 未加密，仅建议用于可信的局域网环境（例如自建 NAS）。" +
+                    "默认只允许 https://；公网 HTTP 地址会被直接拒绝。",
+            ),
+        )
         content.addView(SettingsUi.cardView(this, configCard))
 
         // 同步内容：用户单独勾选
@@ -1300,12 +1323,14 @@ class SettingsSectionActivity : AppCompatActivity() {
         pass: EditText,
         dir: EditText,
         autoSync: Boolean = SyncEngineHolder.get(this).loadConfig().autoSync,
+        allowCleartextHttp: Boolean = SyncEngineHolder.get(this).loadConfig().allowCleartextHttp,
     ): WebDavConfig = WebDavConfig(
         baseUrl = url.text?.toString().orEmpty().trim(),
         username = user.text?.toString().orEmpty().trim(),
         password = pass.text?.toString().orEmpty(),
         syncDir = dir.text?.toString().orEmpty().trim().ifBlank { WebDavConfig.DEFAULT_DIR },
         autoSync = autoSync,
+        allowCleartextHttp = allowCleartextHttp,
     )
 
     private fun saveSync(
@@ -1314,9 +1339,10 @@ class SettingsSectionActivity : AppCompatActivity() {
         pass: EditText,
         dir: EditText,
         autoSync: Boolean = SyncEngineHolder.get(this).loadConfig().autoSync,
+        allowCleartextHttp: Boolean = SyncEngineHolder.get(this).loadConfig().allowCleartextHttp,
         toast: Boolean = true,
     ) {
-        val config = readConfig(url, user, pass, dir, autoSync)
+        val config = readConfig(url, user, pass, dir, autoSync, allowCleartextHttp)
         if (!config.isConfigured) {
             Toast.makeText(this, "请先填写 WebDAV 地址", Toast.LENGTH_SHORT).show()
             return

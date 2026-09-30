@@ -198,8 +198,8 @@ class SyncEngine(
         if (!config.isConfigured) {
             return WebDavResponse.fail(WebDavError.NOT_CONFIGURED, message = "未填写 WebDAV 地址")
         }
-        if (!config.hasValidScheme) {
-            val message = "WebDAV 地址必须以 http:// 或 https:// 开头"
+        // 传输安全：HTTPS 直接放行；HTTP 需用户明确开启且仅限可信局域网（公网 HTTP 一律拒绝）
+        config.securityProblem()?.let { message ->
             _status.value = _status.value.copy(kind = SyncStatusKind.FAILED, lastError = message)
             SyncLog.warn(SyncEvent.NETWORK_ERROR, "测试连接被拒绝：$message")
             return WebDavResponse.fail(WebDavError.PROTOCOL, message = message)
@@ -254,16 +254,15 @@ class SyncEngine(
             return SyncResult(SyncOutcome.SKIPPED, _status.value)
         }
 
-        // 地址 scheme 拼错（例如 htpps://）时不要走到 OkHttp —— 它会抛
-        // IllegalArgumentException，用户只会看到看不懂的异常名。这里提前给出人话。
-        if (!config.hasValidScheme) {
-            val message = "WebDAV 地址必须以 http:// 或 https:// 开头"
-            SyncLog.warn(SyncEvent.NETWORK_ERROR, "同步被拒绝：$message（地址非法）")
+        // 地址 scheme 拼错（例如 htpps://）或传输安全不允许（HTTP 未开启 / 公网 HTTP）时，
+        // 不要走到 OkHttp —— 它会抛 IllegalArgumentException，用户只会看到看不懂的异常名。
+        config.securityProblem()?.let { message ->
+            SyncLog.warn(SyncEvent.NETWORK_ERROR, "同步被拒绝：$message")
             val failed = _status.value.copy(
                 kind = SyncStatusKind.FAILED,
                 lastError = message,
-                clipboard = SyncPart(SyncPartState.FAILED, "地址非法"),
-                dictionary = SyncPart(SyncPartState.SKIPPED, "地址非法"),
+                clipboard = SyncPart(SyncPartState.FAILED, "传输安全策略拒绝"),
+                dictionary = SyncPart(SyncPartState.SKIPPED, "传输安全策略拒绝"),
             )
             publish(failed)
             return SyncResult(outcome = SyncOutcome.CONFIG_ERROR, status = failed)

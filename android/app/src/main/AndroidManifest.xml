@@ -18,8 +18,15 @@
         android:theme="@style/Theme.Board"
         android:usesCleartextTraffic="true">
         <!--
-          usesCleartextTraffic：用户可能自建 http:// 的 WebDAV（例如同机 NAS）；
-          是否用 https 由用户填写的地址决定，这里不替用户做限制。
+          明文 HTTP：**默认拒绝**，且全 App 只在 WebDAV 客户端一处可能放行。
+          Android 的 network-security-config 无法为用户**动态填写**的地址、也无法按 RFC1918
+          网段做例外（不支持 CIDR），因此这里保留平台开关，改由代码强制判定
+          （WebDavUrlPolicy，发起请求前拦截）：
+            · https:// 一律放行；
+            · http:// 必须用户在设置里显式开启「允许未加密 HTTP」，
+              且地址解析结果必须全部是本机 / 回环 / link-local / RFC1918 私网 / IPv6 ULA；
+            · 公网 HTTP 一律拒绝。
+          除 WebDAV 之外，不允许出现任何明文 HTTP。
         -->
 
         <!-- 设置页：用于启用输入法、切换输入法、试用键盘 -->
