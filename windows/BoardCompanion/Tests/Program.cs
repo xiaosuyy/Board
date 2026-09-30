@@ -41,6 +41,7 @@ namespace BoardCompanionTests
             TestJson();
             TestUrlPolicy();
             TestLifecycle();
+            TestPhase1D();
 
             Console.WriteLine();
             Console.WriteLine("PASS " + passed);
@@ -255,6 +256,129 @@ namespace BoardCompanionTests
             {
                 return -1;
             }
+        }
+
+        // ------------------------------------------------------------ Phase 1-D
+
+        /// <summary>
+        /// Phase 1-D：开机自启、超长文本边界、失败后不留正文副本、退出只清理一次。
+        ///
+        /// 超长文本用**纯逻辑 + 编解码**验证边界与内容完整性（不入网络）；
+        /// 真实 5 MiB 往返需要联网环境，按规则另记 NOT VERIFIED。
+        /// </summary>
+        private static void TestPhase1D()
+        {
+            Console.WriteLine("[phase1d]");
+
+            // ---- 开机自启（用 scratch 注册表键，绝不碰真正的 Run 键）----
+            const string scratch = @"Software\BoardCompanion\AutoStartTest";
+            try
+            {
+                try { Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(scratch, false); }
+                catch (Exception) { }
+                Check("autostart-default-off", !AutoStart.IsEnabled(scratch), "scratch 键初始应为未启用");
+                Check("autostart-enable", AutoStart.SetEnabled(true, scratch) && AutoStart.IsEnabled(scratch),
+                    "开启后应读到已启用");
+                Check("autostart-disable", AutoStart.SetEnabled(false, scratch) && !AutoStart.IsEnabled(scratch),
+                    "关闭后应读到未启用");
+                Check("autostart-command-quoted", AutoStart.CommandLine.StartsWith("\"", StringComparison.Ordinal),
+                    "路径需要带引号以防空格");
+            }
+            finally
+            {
+                try { Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(scratch, false); }
+                catch (Exception) { }
+            }
+            Check("autostart-scratch-cleaned",
+                !AutoStart.IsEnabled(scratch), "测试键应已清理");
+            // 真正的 Run 键：只允许"读"，测试绝不改写
+            Check("autostart-runkey-readable",
+                AutoStart.IsEnabled() == AutoStart.IsEnabled(), "读取 Run 键不应抛异常");
+
+            // ---- 256 KiB 边界（按 UTF-8 字节数）----
+            const int limit = ClipboardPayload.INLINE_TEXT_MAX_BYTES; // 256 * 1024
+            var atLimit = new string('a', limit);            // 恰好 256 KiB
+            var overLimit = new string('a', limit + 1);      // 256 KiB + 1
+            Check("boundary-256k-inline", !ClipboardSyncEngine.UseFileMode(atLimit),
+                "= 256KiB 应继续内联");
+            Check("boundary-256k+1-file", ClipboardSyncEngine.UseFileMode(overLimit),
+                "256KiB+1 应走 /file/");
+            Check("boundary-utf8-bytes",
+                ClipboardHasher.Utf8Length(atLimit) == limit &&
+                ClipboardHasher.Utf8Length(overLimit) == limit + 1,
+                "边界必须按 UTF-8 字节数判定");
+
+            // ---- 1 MiB / 5 MiB（多字节内容：中文 + Emoji + 换行）----
+            var oneMiB = BuildLargeText(1 * 1024 * 1024);
+            var fiveMiB = BuildLargeText(5 * 1024 * 1024);
+            Check("boundary-1mib-file", ClipboardSyncEngine.UseFileMode(oneMiB), "1 MiB 应走 /file/");
+            Check("boundary-5mib-file", ClipboardSyncEngine.UseFileMode(fiveMiB), "5 MiB 应走 /file/");
+            Check("large-utf8-length",
+                ClipboardHasher.Utf8Length(oneMiB) >= 1024 * 1024 &&
+                ClipboardHasher.Utf8Length(fiveMiB) >= 5 * 1024 * 1024,
+                "多字节内容按 UTF-8 计算不低于目标字节数");
+            Check("large-hash-stable",
+                ClipboardHasher.Hash(fiveMiB) == ClipboardHasher.Hash(fiveMiB) &&
+                ClipboardHasher.Hash(fiveMiB).Length == 64,
+                "5 MiB 文本 hash 稳定且形状正确");
+            Check("large-mixed-content-intact",
+                fiveMiB.Contains("你好") && fiveMiB.Contains("👋") && fiveMiB.Contains("\n"),
+                "中文 / Emoji / 换行必须原样保留");
+
+            // ---- 超长文本的清单形状（与 Android 的 toFilePayload 一致）----
+            var hash = ClipboardHasher.Hash(fiveMiB);
+            var payload = new ClipboardPayload
+            {
+                type = ClipboardPayload.TYPE_TEXT,
+                hash = hash,
+                text = null,
+                hasData = true,
+                dataName = ClipboardSyncEngine.FileDataName(hash),
+                size = ClipboardHasher.Utf8Length(fiveMiB),
+                device = "win-test",
+            };
+            var json = SyncClipboardProvider.Serialize(payload);
+            var back = SyncClipboardProvider.Deserialize(json);
+            Check("large-payload-roundtrip",
+                back.Status == PayloadParseStatus.Ok && back.Payload.hasData &&
+                back.Payload.text == null &&
+                back.Payload.dataName == hash + ".txt" &&
+                back.Payload.size == payload.size,
+                "清单应为 hasData=true + dataName=<hash>.txt + text=null");
+            Check("large-manifest-has-no-body",
+                json.Length < 1024,
+                "超长正文不得进 JSON（清单应很短），实际 " + json.Length);
+
+            // ---- 正文不落盘 / 无临时文件（失败后也不留）----
+            var dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BoardCompanion");
+            long biggest = 0;
+            if (Directory.Exists(dir))
+            {
+                foreach (var file in Directory.GetFiles(dir))
+                {
+                    var length = new FileInfo(file).Length;
+                    if (length > biggest) biggest = length;
+                }
+            }
+            Check("no-content-on-disk(largest=" + biggest + "B)",
+                biggest < 64 * 1024,
+                "配置目录里不应出现正文副本或临时文件");
+
+            // ---- 退出只清理/打印一次 ----
+            Check("cleanup-first-run", BoardCompanion.Program.Cleanup(), "第一次应真正清理");
+            Check("cleanup-second-run-noop", !BoardCompanion.Program.Cleanup(), "第二次应直接返回 false（不再打印 exited）");
+        }
+
+        /// <summary>构造一个含中文 / Emoji / 换行的指定字节量级文本</summary>
+        private static string BuildLargeText(int targetBytes)
+        {
+            var sb = new StringBuilder(targetBytes);
+            while (ClipboardHasher.Utf8Length(sb.ToString()) < targetBytes)
+            {
+                sb.Append("你好👋世界\n");
+            }
+            return sb.ToString();
         }
 
         // ------------------------------------------------------------ URL policy

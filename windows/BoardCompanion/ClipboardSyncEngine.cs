@@ -276,33 +276,76 @@ namespace BoardCompanion
                     }
                     else
                     {
-                        var payload = new ClipboardPayload
+                        var size = ClipboardHasher.Utf8Length(text);
+                        var fileMode = size > ClipboardPayload.INLINE_TEXT_MAX_BYTES;
+                        ClipboardPayload payload;
+                        var uploadOk = true;
+                        var uploadStatus = 0;
+
+                        if (fileMode)
                         {
-                            type = ClipboardPayload.TYPE_TEXT,
-                            hash = hash,
-                            text = text,
-                            hasData = false,
-                            dataName = string.Empty,
-                            size = ClipboardHasher.Utf8Length(text),
-                            device = DeviceId,
-                        };
-                        var put = client.PutText(
-                            ManifestPath(),
-                            SyncClipboardProvider.Serialize(payload),
-                            "application/json; charset=utf-8");
-                        if (put.IsOk)
-                        {
-                            localHash = hash;
-                            pendingText = null;
-                            PersistHash();
-                            Log.Info("push status=" + put.StatusCode + " chars=" + text.Length);
+                            // 超长：正文走 /file/{hash}.txt，清单里只留元信息（与 Android 的
+                            // toFilePayload 完全一致）。正文**只在内存与请求体里**，不落盘。
+                            var dataName = FileDataName(hash);
+                            var filePut = client.PutText(
+                                FilePath(dataName),
+                                text,
+                                "text/plain; charset=utf-8");
+                            if (!filePut.IsOk)
+                            {
+                                LastError = filePut.Error;
+                                Log.Warn("push file failed status=" + filePut.StatusCode +
+                                         " size=" + size + " kept_pending=true");
+                                lock (gate) { State = SyncState.Error; }
+                                uploadOk = false;
+                            }
+                            uploadStatus = filePut.StatusCode;
+                            payload = new ClipboardPayload
+                            {
+                                type = ClipboardPayload.TYPE_TEXT,
+                                hash = hash,
+                                text = null,
+                                hasData = true,
+                                dataName = dataName,
+                                size = size,
+                                device = DeviceId,
+                            };
                         }
                         else
                         {
-                            // 保留 pending 供下次重试（不高速重试）
-                            LastError = put.Error;
-                            Log.Warn("push failed status=" + put.StatusCode + " kept_pending=true");
-                            lock (gate) { State = SyncState.Error; }
+                            payload = new ClipboardPayload
+                            {
+                                type = ClipboardPayload.TYPE_TEXT,
+                                hash = hash,
+                                text = text,
+                                hasData = false,
+                                dataName = string.Empty,
+                                size = size,
+                                device = DeviceId,
+                            };
+                        }
+
+                        if (uploadOk)
+                        {
+                            var put = client.PutText(
+                                ManifestPath(),
+                                SyncClipboardProvider.Serialize(payload),
+                                "application/json; charset=utf-8");
+                            uploadStatus = put.StatusCode;
+                            if (put.IsOk)
+                            {
+                                localHash = hash;
+                                pendingText = null;
+                                PersistHash();
+                                Log.Info("push status=" + put.StatusCode + " chars=" + text.Length +
+                                         " file=" + fileMode + " bytes=" + size);
+                            }
+                            else
+                            {
+                                LastError = put.Error;
+                                Log.Warn("push failed status=" + put.StatusCode + " kept_pending=true");
+                                lock (gate) { State = SyncState.Error; }
+                            }
                         }
                     }
                 }
@@ -319,10 +362,34 @@ namespace BoardCompanion
                     if (parsed.Status == PayloadParseStatus.Ok)
                     {
                         var remote = parsed.Payload;
+                        var text = remote.text ?? string.Empty;
                         if (remote.hasData)
                         {
-                            // 超长文本走 /file/，第一阶段不实现（不截断、不误处理）
-                            Log.Info("pull skipped hasData=true (not implemented in phase 1)");
+                            // 超长：正文在 /file/{dataName}，先取回来（仍然只在内存）
+                            if (string.IsNullOrEmpty(remote.dataName))
+                            {
+                                Log.Warn("pull skipped hasData without dataName");
+                                text = string.Empty;
+                            }
+                            else
+                            {
+                                var fileGet = client.Get(FilePath(remote.dataName));
+                                if (fileGet.IsOk)
+                                {
+                                    text = fileGet.Body ?? string.Empty;
+                                    Log.Info("pull file status=" + fileGet.StatusCode + " bytes=" + remote.size);
+                                }
+                                else
+                                {
+                                    Log.Warn("pull file failed status=" + fileGet.StatusCode);
+                                    text = string.Empty;
+                                }
+                            }
+                        }
+
+                        if (text.Length == 0)
+                        {
+                            Log.Info("pull status=" + get.StatusCode + " empty skip");
                         }
                         else if (remote.hash == localHash)
                         {
@@ -330,13 +397,13 @@ namespace BoardCompanion
                         }
                         else
                         {
-                            var text = remote.text ?? string.Empty;
                             expectedHash = remote.hash;
                             if (ClipboardMonitor.WriteText(text))
                             {
                                 localHash = remote.hash;
                                 PersistHash();
-                                Log.Info("pull status=" + get.StatusCode + " chars=" + text.Length + " applied=true");
+                                Log.Info("pull status=" + get.StatusCode + " chars=" + text.Length +
+                                         " applied=true file=" + remote.hasData);
                             }
                             else
                             {
@@ -394,6 +461,39 @@ namespace BoardCompanion
             }
             if (string.IsNullOrEmpty(dir)) return name;
             return dir.Trim('/') + "/" + name;
+        }
+
+        /// <summary>
+        /// 超长文本是否该走 `/file/`（与 Android 的 INLINE_TEXT_MAX_BYTES 完全一致）。
+        ///
+        /// 判定用 **UTF-8 字节数**，不是字符数 —— 中文一个字 3 字节，Emoji 4 字节。
+        /// 边界语义：`&lt;= 256 KiB` 内联；`&gt; 256 KiB` 走文件。用户无感，没有手动选项。
+        /// </summary>
+        public static bool UseFileMode(string text)
+        {
+            return ClipboardHasher.Utf8Length(text) > ClipboardPayload.INLINE_TEXT_MAX_BYTES;
+        }
+
+        /// <summary>`/file/{dataName}` 路径（dataName 与 Android 的 dataNameFor() 一致 = hash + ".txt"）</summary>
+        private string FilePath(string dataName)
+        {
+            var name = "file/" + (dataName ?? string.Empty).Trim('/');
+            var dir = config == null ? null : config.syncDir;
+            var baseUrl = config == null ? null : config.baseUrl;
+            if (!string.IsNullOrEmpty(dir) && !string.IsNullOrEmpty(baseUrl))
+            {
+                var trimmedBase = baseUrl.TrimEnd('/');
+                var suffix = "/" + dir.Trim('/');
+                if (trimmedBase.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return name;
+            }
+            if (string.IsNullOrEmpty(dir)) return name;
+            return dir.Trim('/') + "/" + name;
+        }
+
+        /// <summary>与 Android 的 SyncClipboardMapper.dataNameFor() 一致</summary>
+        public static string FileDataName(string hash)
+        {
+            return (string.IsNullOrEmpty(hash) ? "board" : hash) + ".txt";
         }
 
         private void RaiseStateChanged()

@@ -22,6 +22,7 @@ namespace BoardCompanion
         private readonly TextBox nameBox = new TextBox();
         private readonly CheckBox autoBox = new CheckBox();
         private readonly CheckBox clearBox = new CheckBox();
+        private readonly CheckBox autoStartBox = new CheckBox();
         private readonly Label statusLabel = new Label();
         private bool passwordVisible;
 
@@ -84,6 +85,12 @@ namespace BoardCompanion
                 ForeColor = Color.DimGray,
             };
             panel.Controls.Add(risk, 1, panel.RowCount);
+            panel.RowCount++;
+
+            autoStartBox.Text = "开机启动（当前用户 · 登录后在托盘后台运行）";
+            autoStartBox.AutoSize = true;
+            autoStartBox.Checked = AutoStart.IsEnabled();
+            panel.Controls.Add(autoStartBox, 1, panel.RowCount);
             panel.RowCount++;
 
             var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
@@ -152,6 +159,8 @@ namespace BoardCompanion
 
             store.Save(config, passBox.Text);
             engine.Apply(config, passBox.Text);
+            // 开机自启：只在用户显式勾选/取消时改注册表（HKCU Run，无需管理员）
+            AutoStart.SetEnabled(autoStartBox.Checked);
             statusLabel.Text = "已保存";
             if (onSaved != null) onSaved();
         }

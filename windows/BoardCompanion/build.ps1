@@ -43,6 +43,7 @@ $mainOut = Join-Path $build 'BoardCompanion.exe'
     "$root\WebDavUrlPolicy.cs" `
     "$root\WebDavClient.cs" `
     "$root\CredentialStore.cs" `
+    "$root\AutoStart.cs" `
     "$root\ClipboardMonitor.cs" `
     "$root\ClipboardSyncEngine.cs" `
     "$root\TrayController.cs" `

@@ -18,9 +18,14 @@ namespace BoardCompanion
     /// 自动化入口（沿用 Phase 1-B）：
     ///   --sync-once   读配置 → 做一次同步 → 退出（0=成功，1=失败）
     /// </summary>
-    internal static class Program
+    public static class Program
     {
         private const string MutexName = "BoardCompanion.SingleInstance";
+
+        /// <summary>后台拉取间隔：60 秒（低频）。绝不使用秒级轮询。</summary>
+        private const int BackgroundPullMs = 60000;
+
+        private static System.Windows.Forms.Timer backgroundPull;
 
         private static ClipboardMonitor monitor;
         private static TrayController tray;
@@ -87,8 +92,19 @@ namespace BoardCompanion
 
                 tray = new TrayController(engine, openPanel, openSettings, ExitApplication);
 
+                // 低频后台拉取：让 PC 在"没人点同步"时也能收到其它端的内容。
+                // 60 秒一次（**不做秒级轮询**）；本机剪贴板没变时这一趟只会 GET + 必要时写回，
+                // 不会产生多余 PUT。暂停时整体跳过。
+                backgroundPull = new System.Windows.Forms.Timer { Interval = BackgroundPullMs };
+                backgroundPull.Tick += (s, e) =>
+                {
+                    if (config.autoSync && !engine.Paused) engine.SyncNow();
+                };
+                if (config.autoSync) backgroundPull.Start();
+
                 Log.Info("started deviceId=" + engine.DeviceId +
-                         " configured=" + (!string.IsNullOrEmpty(config.baseUrl)) + " mode=winexe-tray");
+                         " configured=" + (!string.IsNullOrEmpty(config.baseUrl)) + " mode=winexe-tray" +
+                         " backgroundPull=" + config.autoSync);
 
                 if (config.autoSync) engine.SyncNow();
 
@@ -106,10 +122,19 @@ namespace BoardCompanion
             Application.Exit();
         }
 
-        private static void Cleanup()
+        private static bool cleaned;
+
+        /// <summary>
+        /// 收尾。**幂等**：只有第一次真正清理并打印 `exited`，
+        /// 之后的调用直接返回 false（修掉退出时打印两次的问题）。
+        /// </summary>
+        public static bool Cleanup()
         {
+            if (cleaned) return false;
+            cleaned = true;
             try
             {
+                if (backgroundPull != null) { backgroundPull.Stop(); backgroundPull.Dispose(); backgroundPull = null; }
                 if (monitor != null) { monitor.Stop(); monitor.Dispose(); monitor = null; }
                 if (engine != null) { engine.Dispose(); engine = null; }
                 if (tray != null) { tray.Dispose(); tray = null; }
@@ -119,6 +144,7 @@ namespace BoardCompanion
             {
                 // 退出路径不抛
             }
+            return true;
         }
 
         /// <summary>无界面：做一次同步后退出（供自动化/自检使用）</summary>
