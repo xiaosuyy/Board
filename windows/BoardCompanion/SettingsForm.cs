@@ -19,6 +19,8 @@ namespace BoardCompanion
         private readonly TextBox urlBox = new TextBox();
         private readonly TextBox userBox = new TextBox();
         private readonly TextBox passBox = new TextBox();
+        private readonly TextBox dirBox = new TextBox();
+        private readonly Label pathPreview = new Label();
         private readonly TextBox nameBox = new TextBox();
         private readonly CheckBox autoBox = new CheckBox();
         private readonly CheckBox clearBox = new CheckBox();
@@ -63,6 +65,17 @@ namespace BoardCompanion
                 eye.Text = passwordVisible ? "隐藏" : "显示";
             };
             panel.Controls.Add(eye, 2, panel.RowCount - 1);
+
+            AddRow(panel, "同步目录", dirBox);
+
+            pathPreview.AutoSize = true;
+            pathPreview.ForeColor = Color.DimGray;
+            pathPreview.MaximumSize = new Size(460, 0);
+            panel.Controls.Add(new Label { Text = "实际路径", AutoSize = true, ForeColor = Color.DimGray, Anchor = AnchorStyles.Left }, 0, panel.RowCount);
+            panel.Controls.Add(pathPreview, 1, panel.RowCount);
+            panel.RowCount++;
+            urlBox.TextChanged += (s, e) => UpdatePathPreview();
+            dirBox.TextChanged += (s, e) => UpdatePathPreview();
 
             AddRow(panel, "设备名称", nameBox);
 
@@ -119,10 +132,25 @@ namespace BoardCompanion
             var config = store.Load();
             urlBox.Text = config.baseUrl;
             userBox.Text = config.username;
+            dirBox.Text = config.syncDir;
             nameBox.Text = config.deviceName;
             autoBox.Checked = config.autoSync;
             clearBox.Checked = config.allowCleartextHttp;
             passBox.Text = store.LoadPassword();
+            UpdatePathPreview();
+        }
+
+        /// <summary>实时显示最终请求路径，填错一眼可见（这是避免"两端各写各的"最有效的办法）</summary>
+        private void UpdatePathPreview()
+        {
+            var url = urlBox.Text.Trim().TrimEnd('/');
+            if (url.Length == 0)
+            {
+                pathPreview.Text = "（先填地址）";
+                return;
+            }
+            var relative = ClipboardSyncEngine.ManifestPathFor(urlBox.Text, dirBox.Text);
+            pathPreview.Text = url + "/" + relative;
         }
 
         private static void AddRow(TableLayoutPanel panel, string label, Control field)
@@ -145,6 +173,7 @@ namespace BoardCompanion
             var config = store.Load();
             config.baseUrl = urlBox.Text.Trim();
             config.username = userBox.Text.Trim();
+            config.syncDir = dirBox.Text.Trim();
             config.deviceName = nameBox.Text.Trim();
             config.autoSync = autoBox.Checked;
             config.allowCleartextHttp = clearBox.Checked;
@@ -181,8 +210,8 @@ namespace BoardCompanion
             else if (response.NotFound)
             {
                 statusLabel.Text = "连上了，但云端没有 SyncClipboard.json。" +
-                                   "若是新服务器，第一次同步会创建；若地址里的目录不存在也会是这个结果——" +
-                                   "请确认地址填到同步目录为止（例如 https://…/dav/board/）";
+                                   "若是新服务器，第一次同步会创建；若目录不存在也会是这个结果——" +
+                                   "请对照上方「实际路径」，确认地址（根）和同步目录两端填法一致";
             }
             else
             {

@@ -365,6 +365,20 @@ namespace BoardCompanionTests
                 biggest < 64 * 1024,
                 "配置目录里不应出现正文副本或临时文件");
 
+            // ---- 路径规则（与 Android 完全一致）----
+            Check("path-root-plus-dir",
+                ClipboardSyncEngine.ManifestPathFor("https://h/dav/", "board") == "board/SyncClipboard.json",
+                "地址=根 + 目录 board → board/SyncClipboard.json");
+            Check("path-url-already-has-dir",
+                ClipboardSyncEngine.ManifestPathFor("https://h/dav/board/", "board") == "SyncClipboard.json",
+                "地址已含 board → 不得再拼一层");
+            Check("path-empty-dir",
+                ClipboardSyncEngine.ManifestPathFor("https://h/dav/board/", "") == "SyncClipboard.json",
+                "目录留空 → 地址即根");
+            Check("path-file-endpoint",
+                ClipboardSyncEngine.RelativePathFor("https://h/dav/", "board", "file/abc.txt") == "board/file/abc.txt",
+                "超长文本的 /file/ 也必须带上同一目录");
+
             // ---- 退出只清理/打印一次 ----
             Check("cleanup-first-run", BoardCompanion.Program.Cleanup(), "第一次应真正清理");
             Check("cleanup-second-run-noop", !BoardCompanion.Program.Cleanup(), "第二次应直接返回 false（不再打印 exited）");

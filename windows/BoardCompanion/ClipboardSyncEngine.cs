@@ -445,24 +445,34 @@ namespace BoardCompanion
         }
 
         /// <summary>
-        /// 清单路径 = `&lt;baseUrl&gt;/SyncClipboard.json`。
+        /// 清单路径 = `&lt;baseUrl&gt;/&lt;syncDir&gt;/SyncClipboard.json`（**与 Android 完全同一规则**）。
         ///
-        /// **地址本身就是同步根**（用户按设置页提示填到同步目录为止），所以这里**不再拼 syncDir**。
-        /// 旧拼法在换服务器时极易多出一层目录 —— 实测踩到：
-        /// `https://pan.lansod.cn/dav/board/` + 旧目录 `boardkey1` → `/dav/board/boardkey1/…` → 404，
-        /// 而设置页又提示"连接成功（云端还没有 SyncClipboard.json）"，很容易误判成服务器问题。
-        ///
-        /// `syncDir` 仍保留在配置里（兼容旧配置），但**不再参与路径拼接**。
+        /// 两条安全网：
+        /// - 目录留空 → 直接用 `&lt;baseUrl&gt;/SyncClipboard.json`（地址即根）；
+        /// - 地址结尾**已经是该目录** → 不再重复拼（否则会变成 /dav/board/board/…，实测踩过）。
         /// </summary>
         public static string ManifestPathFor(string baseUrl, string syncDir)
         {
-            return SyncClipboardProvider.MANIFEST_NAME;
+            return RelativePathFor(baseUrl, syncDir, SyncClipboardProvider.MANIFEST_NAME);
         }
 
-        /// <summary>`/file/{dataName}`（相对于 baseUrl）</summary>
+        /// <summary>按 Android 的规则拼出相对路径（`&lt;dir&gt;/name`，或地址已含目录时直接 `name`）</summary>
+        public static string RelativePathFor(string baseUrl, string syncDir, string name)
+        {
+            var dir = (syncDir ?? string.Empty).Trim().Trim('/');
+            if (dir.Length == 0) return name;
+            var baseTrimmed = (baseUrl ?? string.Empty).Trim().TrimEnd('/');
+            if (baseTrimmed.EndsWith("/" + dir, StringComparison.OrdinalIgnoreCase)) return name;
+            return dir + "/" + name;
+        }
+
+        /// <summary>`/file/{dataName}`（同样遵循"地址即根 / 目录单独填"两条规则）</summary>
         private string FilePath(string dataName)
         {
-            return "file/" + (dataName ?? string.Empty).Trim('/');
+            var file = "file/" + (dataName ?? string.Empty).Trim('/');
+            var dir = config == null ? null : config.syncDir;
+            var baseUrl = config == null ? null : config.baseUrl;
+            return RelativePathFor(baseUrl, dir, file);
         }
 
         /// <summary>清单路径：与 Android 一致 = `&lt;syncDir&gt;/SyncClipboard.json`</summary>
@@ -481,12 +491,6 @@ namespace BoardCompanion
         public static bool UseFileMode(string text)
         {
             return ClipboardHasher.Utf8Length(text) > ClipboardPayload.INLINE_TEXT_MAX_BYTES;
-        }
-
-        /// <summary>`/file/{dataName}` 路径（dataName 与 Android 的 dataNameFor() 一致 = hash + ".txt"）</summary>
-        private string FilePath2Unused(string dataName)
-        {
-            return "file/" + (dataName ?? string.Empty).Trim('/');
         }
 
         /// <summary>与 Android 的 SyncClipboardMapper.dataNameFor() 一致</summary>
