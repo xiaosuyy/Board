@@ -233,9 +233,22 @@ object RimeDictionaryBridge {
         val text = if (!firstIsCjk && secondIsCjk) second else first
         val rawCode = if (!firstIsCjk && secondIsCjk) first else second
         // 词频取最后一个能解析成整数的字段（避开 zh-CN 之类的列）
-        val weight = fields.lastOrNull { it.trim().toIntOrNull() != null }?.trim() ?: "0"
+        val weight = fields.lastOrNull { it.trim().toIntOrNull() != null }?.trim()?.toIntOrNull() ?: 0
         // code 必须是空格分隔的音节，否则（真机实测）prism 会把整串当成一个音节
-        return "$text\t${PinyinSyllables.segment(rawCode)}\t$weight"
+        val code = PinyinSyllables.segment(rawCode)
+        return "$text\t$code\t${if (weight > 0) weight else weightForEntry(code)}"
+    }
+
+    /**
+     * 外部词库普遍不给词频（整列都是 0）。原样写 0 的话，扩展词库内部就完全没有排序依据，
+     * 专名 / 古籍 / 生僻长词会和日常词平起平坐地被随机排在一起。
+     *
+     * 这里用**音节数**做一个很轻的近似：短词通常是日常词，长词多是专名 / 古语 / 书名，
+     * 正好对应「常用扩展词 > 低频扩展词」。真实词频存在时（> 0）优先用真实值。
+     */
+    private fun weightForEntry(code: String): Int {
+        val syllables = code.count { it == ' ' } + 1
+        return (16 - syllables).coerceAtLeast(1) * 100
     }
     /** 清理临时解压出来的工作文件（**gz 保留**）：词典本体 + 占位方案 */
     fun removeStaged(userDir: File, source: DictionarySource) {
@@ -280,13 +293,13 @@ object RimeDictionaryBridge {
         val body = buildString {
             append(PATCH_MARKER).append('\n')
             append("patch:\n")
-            // 单页候选数。
+            // 单页候选数（Rime 一次生成多少候选，≠ UI 可见数量）。
             // ⚠️ 用户目录里的同名文件会**顶掉**资产目录里的那一份（Rime 不会把两份 patch 合并），
             // 资产版 luna_pinyin_simp.custom.yaml 里写的是 menu/page_size: 9；
-            // 这里必须显式重复这个设置，否则会掉回 default.yaml 的默认值 5，
-            // 表现为排序靠后的常用字（如 yuan 的「袁」）永远进不了候选栏。
-            // 取 12 与候选栏的容量（CandidateBar.MAX_CANDIDATES = 12，可横向滑动）对齐。
-            append("  menu/page_size: 12\n")
+            // 这里必须显式重复这个设置，否则会掉回 default.yaml 的默认值 5。
+            // UI 只展示约 12 项（CandidateBar.MAX_CANDIDATES，可横向滑动），
+            // 但底层一次给 30 个，滑一滑就能看到更多常用字/扩展词。
+            append("  menu/page_size: 30\n")
             if (sources.isEmpty()) {
                 append("  # 没有需要挂接的大型词库\n")
             } else {
@@ -341,18 +354,17 @@ object RimeDictionaryBridge {
     /**
      * 额外词源的候选质量（`initial_quality`）。
      *
-     * 校准依据（真机实测数据）：
-     *   · 导入词条的词频列全是 0（外部词库不给词频）→ 候选质量完全由这个偏移决定
-     *   · 官方 luna_pinyin 的词频来自 essay.txt（44 万条，**中位 265、最大 4,822,928**）
-     *   · 取 100 万 → 导入词库的「整词精确匹配」压过默认词库的中低频候选，
-     *     而最常用的词（essay 权重 > 100 万）仍排在前面
+     * 产品优先级：**用户学习词 > 基础常用候选 > 常用扩展词 > 低频扩展词**。
      *
-     * 这很关键：早先用 `-1` 时，导入词条的候选永远排在默认词库的整句组合之后，
-     * 真机上会被挤出候选栏可视区（`鼎折覆餗` 实测就是这样「看不见」的）。
+     * 取 `0`：额外词源的词条权重本身就是「按音节数给的轻量词频」（见 [weightForEntry]），
+     * 基础词库的词频来自 essay.txt（中位 265、最大 4,822,928），于是
+     * 基础常用字/词自然排在扩展词之前，扩展词只负责**扩大覆盖面**，
+     * 而不是接管排序（早先用 100 万时，扩展词会压住日常候选 —— 例如 yuan 的常用字被挤掉）。
      *
-     * 想让默认词库严格优先，把本值改成 `-1` 即可（导入词源仍挂在候选栏里，只是排在后面）。
+     * 底层一次给 [CandidateBar.MAX_CANDIDATES] 之外的 30 个候选，
+     * 所以排在后面的扩展词依然滑一下就可见，不需要靠抬高 quality 来"被看见"。
      */
-    private const val EXTRA_QUALITY = 1_000_000
+    private const val EXTRA_QUALITY = 0
 
     private const val BUFFER = 64 * 1024
 
