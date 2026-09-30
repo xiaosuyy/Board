@@ -37,3 +37,4 @@ _probe/*.xml
 _probe/*.gz
 _probe/*.txt
 *.idsig
+windows/BoardCompanion/build/
