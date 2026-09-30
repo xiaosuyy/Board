@@ -112,6 +112,29 @@ class PhraseEditActivity : Activity() {
         ).apply { topMargin = dp(12) })
 
         setContentView(root)
+
+        // Android 15+ 强制 edge-to-edge：必须自己让出状态栏 / 导航栏 / 键盘，
+        // 否则标题会被状态栏盖住（真机上就是这个现象）。
+        val base = intArrayOf(
+            root.paddingLeft,
+            root.paddingTop,
+            root.paddingRight,
+            root.paddingBottom,
+        )
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                    androidx.core.view.WindowInsetsCompat.Type.ime(),
+            )
+            view.setPadding(
+                base[0],
+                base[1] + bars.top,
+                base[2],
+                base[3] + bars.bottom,
+            )
+            insets
+        }
+
         editor.requestFocus()
         editor.setSelection(editor.text?.length ?: 0)
     }
