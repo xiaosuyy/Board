@@ -875,6 +875,32 @@ class SyncEngine(
         data class Failed(val result: SyncResult) : PullOutcome
     }
 
+    /** 失败自动重试计数（成功即清零） */
+    private val retryAttempts = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /**
+     * 上传失败后的**自动重试**（指数退避）。
+     *
+     * 不依赖 `ConnectivityManager` 回调 —— 真机上实测 Wi-Fi 恢复时系统日志有 `onAvailable`，
+     * 但**没有回调到应用**，所以恢复重试必须自己能跑起来。
+     * 首次 15s，之后 30/45/60/75s，最多 5 次；WorkManager 仍是更长期的兜底。
+     */
+    private fun scheduleClipboardRetry() {
+        val attempt = retryAttempts.incrementAndGet()
+        if (attempt > MAX_CLIPBOARD_RETRY) return
+        val waitMs = minOf(RETRY_BASE_MS * attempt, RETRY_MAX_MS)
+        engineScope.launch {
+            delay(waitMs)
+            if (_status.value.clipboardState == ClipboardSyncState.FAILED) {
+                SyncLog.event(
+                    SyncEvent.RETRY,
+                    "剪贴板同步自动重试 attempt=$attempt wait=${waitMs}ms retry=true",
+                )
+                requestClipboardSync()
+            }
+        }
+    }
+
     /**
      * 发布剪贴板通道的 5 态。
      *
@@ -888,6 +914,7 @@ class SyncEngine(
     ) {
         val current = _status.value
         val synced = state == ClipboardSyncState.SYNCED && !hash.isNullOrBlank()
+        if (synced) retryAttempts.set(0)   // 成功就清零，下次失败重新从 15s 开始
         publish(
             current.copy(
                 clipboardState = state,
@@ -936,6 +963,7 @@ class SyncEngine(
                         ClipboardSyncState.FAILED,
                         error = describe(ensure.error, ensure.message),
                     )
+                    scheduleClipboardRetry()
                     return@withLock SyncResult(SyncOutcome.RETRYABLE_ERROR, _status.value)
                 }
 
@@ -946,6 +974,7 @@ class SyncEngine(
                         ClipboardSyncState.FAILED,
                         error = push.status.lastError ?: "上传失败",
                     )
+                    scheduleClipboardRetry()
                     return@withLock push
                 }
 
@@ -1080,6 +1109,10 @@ class SyncEngine(
         const val CONTENT_TYPE_TEXT = "text/plain; charset=utf-8"
         const val QUEUE_LIMIT = 20
         const val DEBOUNCE_MS = 3_000L
+        /** 剪贴板失败自动重试：首次 15s，之后递增，最多 5 次 */
+        private const val RETRY_BASE_MS = 15_000L
+        private const val RETRY_MAX_MS = 120_000L
+        private const val MAX_CLIPBOARD_RETRY = 5
 
         /** 进度刷新节流：最多每 400ms 刷一次词库进度 */
         const val PROGRESS_THROTTLE_MS = 400L
