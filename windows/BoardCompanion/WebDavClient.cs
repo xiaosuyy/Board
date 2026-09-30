@@ -46,6 +46,27 @@ namespace BoardCompanion
     /// </summary>
     public sealed class WebDavClient
     {
+        /// <summary>
+        /// 显式启用 TLS 1.2 / 1.3。
+        ///
+        /// .NET Framework 在部分机器/注册表配置下仍会用旧协议协商，表现为
+        /// "TLS 握手失败"（服务器拒绝旧协议）。这里只**加强**协议版本，
+        /// **绝不**放宽证书校验（保持默认的 ServerCertificateValidationCallback）。
+        /// </summary>
+        static WebDavClient()
+        {
+            try
+            {
+                // 0x0C00 = Tls12，0x3000 = Tls13（用数值，避免依赖枚举在各版本是否可用）
+                const SecurityProtocolType modern = (SecurityProtocolType)(0x0C00 | 0x3000);
+                ServicePointManager.SecurityProtocol |= modern;
+            }
+            catch (Exception)
+            {
+                // 不支持就保持系统默认
+            }
+        }
+
         private readonly string baseUrl;
         private readonly string username;
         private readonly string password;
@@ -151,6 +172,19 @@ namespace BoardCompanion
                     response.Close();
                     bool notFound = status == 404;
                     return WebDavResult.Fail(status, "HTTP " + status, notFound);
+                }
+                if (ex.Status == WebExceptionStatus.SecureChannelFailure ||
+                    ex.Status == WebExceptionStatus.TrustFailure)
+                {
+                    // 只记类别与底层异常类型/消息（不含 URL 与凭据），便于对症
+                    var inner = ex.InnerException;
+                    var detail = inner == null ? string.Empty : inner.GetType().Name;
+                    if (inner != null && !string.IsNullOrEmpty(inner.Message))
+                    {
+                        var message = inner.Message;
+                        detail += ": " + (message.Length > 200 ? message.Substring(0, 200) : message);
+                    }
+                    Log.Warn("webdav tls failure status=" + ex.Status + " " + detail);
                 }
                 return WebDavResult.Fail(0, Describe(ex.Status), false);
             }
