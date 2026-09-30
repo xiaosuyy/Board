@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.ksp)
@@ -10,6 +12,49 @@ val rimePrebuiltRoot: String = rootProject.layout.projectDirectory
     .absolutePath
     .replace('\\', '/')
 
+/**
+ * 正式 release 签名材料（keystore 路径与口令）。
+ *
+ * 读取优先级：**环境变量 > local.properties**，两者都已被 .gitignore 排除；
+ * 仓库里不保存任何私钥或口令，构建日志里也绝不打印口令。
+ *
+ *   board.release.storeFile / BOARD_RELEASE_STORE_FILE
+ *   board.release.storePassword / BOARD_RELEASE_STORE_PASSWORD
+ *   board.release.keyAlias / BOARD_RELEASE_KEY_ALIAS
+ *   board.release.keyPassword / BOARD_RELEASE_KEY_PASSWORD
+ *
+ * 若缺失：release 仍可编译，但产出 `-unsigned` 包并给出醒目警告，
+ * **不会**静默回退到 debug 证书（避免"以为是正式签名、其实是 debug 签名"）。
+ */
+val signingProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.isFile) file.inputStream().use { load(it) }
+}
+
+fun signingValue(propertyKey: String, envKey: String): String? =
+    System.getenv(envKey)?.takeIf { it.isNotBlank() }
+        ?: signingProperties.getProperty(propertyKey)?.takeIf { it.isNotBlank() }
+
+val releaseStoreFile = signingValue("board.release.storeFile", "BOARD_RELEASE_STORE_FILE")
+val releaseStorePassword = signingValue("board.release.storePassword", "BOARD_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = signingValue("board.release.keyAlias", "BOARD_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = signingValue("board.release.keyPassword", "BOARD_RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it != null }
+
+// 只报告"有没有 / 用的哪个文件名"，绝不输出任何口令
+logger.lifecycle(
+    if (hasReleaseSigning) {
+        "release 签名材料：已就绪（keystore=${releaseStoreFile!!.substringAfterLast('/')}，alias=${releaseKeyAlias}）"
+    } else {
+        "release 签名材料：缺失（release 将输出未签名 APK）"
+    },
+)
+
 android {
     namespace = "com.board.ime"
     compileSdk = 37
@@ -19,10 +64,10 @@ android {
         applicationId = "com.board.ime"
         minSdk = 26
         targetSdk = 36
-        // 正式版 v1.0.0。
-        // versionCode 保持单调递增（1 → 2 → 3），不破坏已有升级链。
-        versionCode = 3
-        versionName = "1.0.0"
+        // v1.1.0：正式签名 + R8。
+        // versionCode 保持单调递增（1 → 2 → 3 → 4），不破坏已有升级链。
+        versionCode = 4
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -58,21 +103,19 @@ android {
 
     signingConfigs {
         /**
-         * 正式包（v1.0.0）签名。
+         * 正式 release 签名（v1.1.0 起所有正式版本**共用同一把 keystore**）。
          *
-         * 用项目既有的 debug 证书：
-         *   · 与当前已安装版本（versionCode 2 / 0.2.0）**同签名**，
-         *     否则覆盖升级会因签名不一致被系统拒绝，本轮「升级安装」验收无法通过；
-         *   · 仓库里不含任何私钥（keystore 只在开发机 ~/.android 下）。
-         *
-         * 将来要发应用商店/外部分发时，把这三行换成自己的正式证书即可，
-         * 注意换证书后就无法再覆盖升级本次的安装（需要卸载重装）。
+         * 私钥与口令不在仓库里：从环境变量 / local.properties 读取（见文件顶部说明）。
+         * 这里只在**四项都齐**时才创建；缺任何一项就不给 release 配签名，
+         * 产出 `app-release-unsigned.apk` 并警告，绝不偷偷用 debug 证书。
          */
-        create("release") {
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 
@@ -81,10 +124,20 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // 暂不混淆：JNI 的 native 方法名与 Room/Kotlin 反射类名必须保留，
-            // 打开 R8 需要一整套 keep 规则，属于后续独立任务（v1.1）。
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // R8：混淆 + 代码收缩。keep 规则见 proguard-rules.pro（只保留 JNI bridge）。
+            isMinifyEnabled = true
+            // 资源收缩**不开启**：Rime 的 schema / 词典 / OpenCC 都在 assets/ 下，
+            // 由运行时按路径读取，资源收缩无法判断它们被使用；一旦误删输入法直接不可用。
+            // 本阶段不冒这个险（收益也远小于代码收缩）。
+            isShrinkResources = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "⚠ 未找到 release 签名材料（环境变量 BOARD_RELEASE_* 或 local.properties 的 board.release.*），" +
+                        "本次 release 将输出**未签名** APK，不会回退 debug 证书。",
+                )
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
