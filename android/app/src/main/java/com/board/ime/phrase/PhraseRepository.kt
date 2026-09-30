@@ -79,25 +79,24 @@ class PhraseRepository(private val dao: PhraseDao) {
      */
     suspend fun reorder(orderedPhraseIds: List<String>): Boolean {
         val active = dao.all().filter { it.deletedAt == null }
+        val byId = active.associateBy { it.phraseId }
         val current = active.sortedWith(
             compareBy({ it.sortOrder }, { it.updatedAt }, { it.phraseId }),
         ).map { it.phraseId }
         if (current == orderedPhraseIds) return false
-        orderedPhraseIds.forEachIndexed { index, phraseId ->
-            dao.updateSortOrder(phraseId, index)
+        // 只有真正发生位置变化的条目需要更新；同一个时间戳 + 一个事务
+        val changed = orderedPhraseIds.filterIndexed { index, phraseId ->
+            byId[phraseId]?.sortOrder != index
         }
+        dao.applyOrder(orderedPhraseIds, changed, System.currentTimeMillis())
         return true
     }
 
     /**
-     * 多设备同步 + 排序冲突归一化。
+     * 多设备同步：**只合并，不本地归一化**（方案 B）。
      *
-     * 规则（与现有 [com.board.ime.sync.SyncWordMerge] 一致，只是 key 换成 phraseId）：
-     * - 只认 phraseId；同一 phraseId 才做合并；
-     * - 墓碑与活条目冲突：`updatedAt` 较新者胜（删除不会被旧数据复活）；
-     * - 两边都活着：较新的一侧胜；
-     * - 合并后若出现相同 sortOrder：**不丢任何条目**，按
-     *   `sortOrder → updatedAt → phraseId` 稳定重排成本机连续顺序。
+     * 远端同步回来的 `sortOrder` 是"当前同步事实"，本机不得按自己的旧顺序重排，
+     * 否则两端顺序会各自演化、无法收敛。仅在**用户主动拖动**时才重排（见 [reorder]）。
      */
     suspend fun mergeFromSync(remote: List<PhraseEntry>) {
         remote.forEach { incoming ->
@@ -116,17 +115,6 @@ class PhraseRepository(private val dao: PhraseDao) {
                     sourceDeviceId = incoming.sourceDeviceId,
                 )
             }
-        }
-        normalizeOrder()
-    }
-
-    /** 本机连续顺序（不丢条目）：sortOrder → updatedAt → phraseId */
-    private suspend fun normalizeOrder() {
-        val active = dao.all()
-            .filter { it.deletedAt == null }
-            .sortedWith(compareBy({ it.sortOrder }, { it.updatedAt }, { it.phraseId }))
-        active.forEachIndexed { index, entry ->
-            if (entry.sortOrder != index) dao.updateSortOrder(entry.phraseId, index)
         }
     }
 

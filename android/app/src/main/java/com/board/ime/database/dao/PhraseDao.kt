@@ -57,8 +57,26 @@ interface PhraseDao {
     )
     suspend fun markDeleted(phraseId: String, deletedAt: Long?, updatedAt: Long)
 
-    @Query("UPDATE phrase_entry SET sortOrder = :sortOrder WHERE phraseId = :phraseId")
-    suspend fun updateSortOrder(phraseId: String, sortOrder: Int)
+    /**
+     * 用户主动排序后写回：**同时更新 updatedAt**。
+     *
+     * 只改 sortOrder 而不动 updatedAt，会导致合并时"本端不一定胜出"，
+     * 多设备顺序就永远收敛不了（这正是之前的 bug）。
+     */
+    @Query(
+        "UPDATE phrase_entry SET sortOrder = :sortOrder, updatedAt = :updatedAt " +
+            "WHERE phraseId = :phraseId",
+    )
+    suspend fun updateSortOrder(phraseId: String, sortOrder: Int, updatedAt: Long)
+
+    /** 一次排序操作 = **一个事务 + 一个时间戳**（不逐条写、不逐条改时间） */
+    @androidx.room.Transaction
+    suspend fun applyOrder(orderedIds: List<String>, changed: List<String>, updatedAt: Long) {
+        changed.forEach { phraseId ->
+            val index = orderedIds.indexOf(phraseId)
+            if (index >= 0) updateSortOrder(phraseId, index, updatedAt)
+        }
+    }
 
     /** 同步落库：整条覆盖（含 sortOrder / 墓碑 / 时间戳） */
     @Query(
