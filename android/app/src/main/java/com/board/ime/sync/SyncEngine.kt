@@ -556,44 +556,19 @@ class SyncEngine(
             return PullOutcome.Applied(0, 0, 1)
         }
 
-        val localLatest = clipboardDao.latestSummary()
-        if (localLatest != null) {
-            // 双方内容不同：按时间判断谁更新
-            val remoteTime = response.lastModified
-            val localTime = localLatest.updatedAt
-            if (remoteTime != null && localTime > remoteTime) {
-                SyncLog.event(
-                    SyncEvent.CONFLICT,
-                    "远端=${SyncLog.shortHash(payload.hash)} 本地更新（本地 ${localTime} > 远端 $remoteTime），保留本地并上传",
-                )
-                return PullOutcome.Applied(0, 1, 0)
-            }
-            SyncLog.event(
-                SyncEvent.CONFLICT,
-                "远端=${SyncLog.shortHash(payload.hash)} 更新，作为**新记录**写入本地（不覆盖、不删除本地任何条目）",
-            )
-            val applied = clipboardRepository.applyRemote(
-                content = text,
-                contentType = if (payload.type == SyncClipboardMapper.TYPE_TEXT) {
-                    ClipboardContentType.TEXT
-                } else {
-                    ClipboardContentType.UNKNOWN
-                },
-                remoteHash = computed,
-                originDeviceId = payload.device,
-                originType = payload.device,
-            )
-            if (applied != null) {
-                SyncLog.event(
-                    SyncEvent.DOWNLOAD,
-                    "hash=${SyncLog.shortHash(computed)} bytes=${payload.size}",
-                )
-                clipboardRepository.markRemoteCurrentById(applied.id)
-                _applied.tryEmit(text)
-            }
-            return PullOutcome.Applied(if (applied != null) 1 else 0, 1, 0)
-        }
-
+        // 远端是「服务器当前剪贴板」= 最新状态，**无条件写入本地**。
+        //
+        // 这里以前有一段「本地 updatedAt > 服务器 Last-Modified 就保留本地、丢弃远端」的逻辑，
+        // 那是**错的**，而且正是「另一端复制的看不到」的根因：
+        //   · 两台设备的时钟不同步（服务器 Last-Modified 只有秒级，还可能跨时区）
+        //   · 用户刚在本机复制过内容，updatedAt 就是"刚刚" → 本地几乎永远"更新"
+        //   · 于是远端内容被静默丢弃，剪贴板面板里自然什么都看不到
+        // SyncClipboard 只有一条当前剪贴板；而我们的顺序是「先 push 再 pull」，
+        // 所以 pull 拿到的一定是 push 之后的最新状态，直接应用即可。
+        SyncLog.event(
+            SyncEvent.DOWNLOAD,
+            "远端=${SyncLog.shortHash(payload.hash)} 作为新记录写入本地（不覆盖、不删除本地任何条目）",
+        )
         val applied = clipboardRepository.applyRemote(
             content = text,
             contentType = if (payload.type == SyncClipboardMapper.TYPE_TEXT) {
@@ -602,6 +577,8 @@ class SyncEngine(
                 ClipboardContentType.UNKNOWN
             },
             remoteHash = computed,
+            originDeviceId = payload.device,
+            originType = payload.device,
         )
         if (applied != null) {
             SyncLog.event(
@@ -612,6 +589,9 @@ class SyncEngine(
             // 通知宿主把它设为系统剪贴板（宿主会先登记抑制，避免回环）
             _applied.tryEmit(text)
         }
+        return PullOutcome.Applied(if (applied != null) 1 else 0, 1, 0)
+
+
         return PullOutcome.Applied(if (applied != null) 1 else 0, 0, 0)
     }
 
