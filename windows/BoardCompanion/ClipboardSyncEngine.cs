@@ -114,9 +114,30 @@ namespace BoardCompanion
                 client = (config != null && !string.IsNullOrEmpty(config.baseUrl))
                     ? new WebDavClient(config.baseUrl, config.username, password)
                     : null;
+                // 关键：沿用上次同步过的 hash，避免重启/手动同步时把云端覆盖成自己的旧剪贴板
+                localHash = (config == null || config.lastHash == null) ? string.Empty : config.lastHash;
                 State = client == null ? SyncState.NotConfigured : SyncState.Idle;
             }
             RaiseStateChanged();
+        }
+
+        /// <summary>把"已同步 hash"落盘（只存 hash，不存正文）</summary>
+        private void PersistHash()
+        {
+            try
+            {
+                if (config == null) return;
+                if (config.lastHash == localHash) return;
+                config.lastHash = localHash;
+                var store = new CredentialStore();
+                var current = store.Load();
+                current.lastHash = localHash;
+                store.Save(current, store.LoadPassword());
+            }
+            catch (Exception)
+            {
+                // 落盘失败不影响同步
+            }
         }
 
         public string DeviceId
@@ -172,7 +193,34 @@ namespace BoardCompanion
             }
             Log.Info("clipboard changed chars=" + text.Length + " hashChanged=true");
             pendingText = text;
-            Task.Run(() => SyncInternal(false));
+            RunSta(() => SyncInternal(false));
+        }
+
+        /// <summary>
+        /// 在**专用 STA 线程**上执行同步。
+        ///
+        /// 关键：Windows 剪贴板（`Clipboard.GetText/SetText`）要求 STA。
+        /// 线程池线程是 MTA，在那里读写剪贴板会直接失败（实测 read=none / write failed）。
+        /// </summary>
+        private static Task RunSta(Action action)
+        {
+            var tcs = new TaskCompletionSource<object>();
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    action();
+                    tcs.SetResult(null);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            });
+            thread.IsBackground = true;
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            return tcs.Task;
         }
 
         /// <summary>启动时 / 托盘「立即同步」：先推本地变更，再拉云端收敛</summary>
@@ -184,7 +232,7 @@ namespace BoardCompanion
         /// <summary>同上，但返回可等待的 Task（供无界面模式判断结果）</summary>
         public Task SyncNowAsync()
         {
-            return Task.Run(() => SyncInternal(true));
+            return RunSta(() => SyncInternal(true));
         }
 
         private void SyncInternal(bool readClipboardFirst)
@@ -246,6 +294,7 @@ namespace BoardCompanion
                         {
                             localHash = hash;
                             pendingText = null;
+                            PersistHash();
                             Log.Info("push status=" + put.StatusCode + " chars=" + text.Length);
                         }
                         else
@@ -286,6 +335,7 @@ namespace BoardCompanion
                             if (ClipboardMonitor.WriteText(text))
                             {
                                 localHash = remote.hash;
+                                PersistHash();
                                 Log.Info("pull status=" + get.StatusCode + " chars=" + text.Length + " applied=true");
                             }
                             else

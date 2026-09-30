@@ -16,6 +16,14 @@ namespace BoardCompanion
         public bool allowCleartextHttp { get; set; }
         public string deviceId { get; set; }
 
+        /// <summary>
+        /// 上一次同步过的内容 hash（**只存 hash，绝不存正文**）。
+        ///
+        /// 有了它，重启/手动同步时才能区分「剪贴板没变过（不要覆盖云端）」
+        /// 与「确实有新内容要推」。与 Android 用 contentHash 判定的语义一致。
+        /// </summary>
+        public string lastHash { get; set; }
+
         public BoardWindowsConfig()
         {
             baseUrl = string.Empty;
@@ -25,6 +33,7 @@ namespace BoardCompanion
             autoSync = true;
             allowCleartextHttp = false;
             deviceId = null;
+            lastHash = null;
         }
     }
 
