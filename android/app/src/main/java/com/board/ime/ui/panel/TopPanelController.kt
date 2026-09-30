@@ -195,7 +195,7 @@ class TopPanelController(
 
         clipboardHeader.onBack = { handleClipboardBack() }
         voiceHeader.onBack = { onVoiceCancel?.invoke() }
-        voiceHeader.onFinish = { onVoiceStop?.invoke() }
+        voiceHeader.onPrimary = { onVoiceStop?.invoke() }
         clipboardHeader.onToggleEdit = { toggleClipboardEdit() }
         clipboardHeader.onToggleSearch = { toggleSearch() }
         clipboardHeader.onClearSearch = { stopSearch() }

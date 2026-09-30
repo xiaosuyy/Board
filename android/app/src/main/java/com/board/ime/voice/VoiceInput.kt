@@ -25,7 +25,10 @@ enum class VoiceState {
     IDLE,
     LISTENING,
     PROCESSING,
-    SUCCESS,
+
+    /** 已拿到最终文本：面板直接显示它，用户点击才上屏 */
+    RESULT,
+
     ERROR,
 }
 
@@ -144,7 +147,7 @@ class VoiceInputController(private val context: Context) {
             if (text.isEmpty()) {
                 emit(VoiceState.ERROR, "没有听清，请再试一次")
             } else {
-                emit(VoiceState.SUCCESS, text)
+                emit(VoiceState.RESULT, text)
             }
         }
 
@@ -229,6 +232,9 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
     private val controller = VoiceInputController(context)
     private var state: VoiceState = VoiceState.IDLE
 
+    /** 最终识别文本；只有用户点击才提交，返回则丢弃 */
+    private var pendingText = ""
+
     init {
         controller.onState = { newState, text -> handleState(newState, text) }
     }
@@ -236,16 +242,41 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
     val currentState: VoiceState
         get() = state
 
-    /** 语音工具的唯一入口：点一次开始，识别中再点一次结束 */
+    /** 语音工具的唯一入口：点一次开始；识别中再点一次 = 结束收音 */
     fun toggle() {
         when (state) {
             VoiceState.LISTENING, VoiceState.PROCESSING -> controller.stop()
+            VoiceState.RESULT -> commitPending()
             else -> start()
         }
     }
 
-    /** 用户点返回：取消当前识别 */
+    /** 点击面板中间的文字：识别中 = 结束收音；有结果 = 提交上屏 */
+    fun onPrimary() {
+        when (state) {
+            VoiceState.LISTENING, VoiceState.PROCESSING -> controller.stop()
+            VoiceState.RESULT -> commitPending()
+            else -> Unit
+        }
+    }
+
+    /**
+     * 上屏**一次**：先丢弃未完成的 Rime 组词（避免 "zhongguo你好"），
+     * 再按当前光标位置 commitText；提交后清空并退出语音状态（重复点击不会重复输入）。
+     */
+    private fun commitPending() {
+        val text = pendingText
+        if (text.isEmpty()) return
+        pendingText = ""
+        state = VoiceState.IDLE
+        host.discardComposition()
+        host.inputConnection?.commitText(text, CURSOR_AT_END)
+        host.hideVoicePanel()
+    }
+
+    /** 用户点返回：不提交任何文字，直接退出 */
     fun cancel() {
+        pendingText = ""
         controller.cancel()
         state = VoiceState.IDLE
         host.hideVoicePanel()
@@ -282,19 +313,16 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
         when (newState) {
             VoiceState.LISTENING, VoiceState.PROCESSING -> host.updateVoicePanel(newState, text)
 
-            VoiceState.SUCCESS -> {
+            VoiceState.RESULT -> {
+                // 只显示，不上屏：等用户点击文本才提交（partial 永不提交）
+                pendingText = text
                 host.updateVoicePanel(newState, text)
-                host.discardComposition()
-                // 只在最终结果时上屏一次（partial 绝不上屏），插入点由 InputConnection 决定
-                host.inputConnection?.commitText(text, CURSOR_AT_END)
-                state = VoiceState.IDLE
-                host.hideVoicePanel()
             }
 
             VoiceState.ERROR -> {
-                host.notify(text)
-                state = VoiceState.IDLE
-                host.hideVoicePanel()
+                // 失败也留在面板里：只显示原因 + 左侧返回，不依赖 Toast、不自动关闭
+                host.showVoicePanel()
+                host.updateVoicePanel(VoiceState.ERROR, text)
             }
 
             VoiceState.IDLE -> {
