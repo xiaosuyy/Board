@@ -192,6 +192,28 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         voicePrivacyCard = card
     }
 
+    /** 通用：只告知、不确认的说明卡片（翻译隐私说明用） */
+    private fun showPrivacyCard(title: String, body: String, serviceLabel: String?) {
+        if (voicePrivacyCard != null) return
+        val root = window?.window?.decorView as? android.view.ViewGroup ?: return
+        val card = com.board.ime.ui.panel.VoicePrivacyCard(this)
+        card.bindInfo(
+            KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize),
+            title,
+            body,
+            serviceLabel,
+        )
+        card.onDismiss = { dismissVoicePrivacyCard() }
+        root.addView(
+            card,
+            android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        voicePrivacyCard = card
+    }
+
     private fun dismissVoicePrivacyCard() {
         voicePrivacyCard?.let { card -> (card.parent as? android.view.ViewGroup)?.removeView(card) }
         voicePrivacyCard = null
@@ -212,6 +234,148 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val info = packageManager.getApplicationInfo(servicePackage, 0)
         packageManager.getApplicationLabel(info).toString().takeIf { it.isNotBlank() }
     }.getOrNull()
+
+    // ---------------------------------------------------------------- 翻译（v1.2 Phase 3）
+
+    /** 翻译协程作用域：跟随 IME 生命周期，onDestroy 一并取消（不留后台请求） */
+    private val translationScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private var translation: com.board.ime.translation.TranslationSession? = null
+
+    /** 读取输入框内容的上限：足够覆盖正常使用，同时避免超长文本把 IPC 撑爆 */
+    private val translateReadChars = 10_000
+
+    private val translationCredentials by lazy {
+        com.board.ime.translation.TranslationCredentialStore(this)
+    }
+
+    private val translationProvider: com.board.ime.translation.TranslationProvider by lazy {
+        com.board.ime.translation.BaiduTranslationProvider(
+            credentialsProvider = { translationCredentials.load() },
+        )
+    }
+
+    private val translationHost = object : com.board.ime.translation.TranslationSession.Host {
+        override fun showTranslationPanel() {
+            panelController?.setTranslationServiceName(translationProvider.displayName)
+            panelController?.showTranslation()
+        }
+
+        override fun hideTranslationPanel() {
+            panelController?.closeTranslation()
+        }
+
+        override fun renderTranslation(
+            state: com.board.ime.translation.TranslationUiState,
+            sourceText: String,
+            resultText: String,
+            source: com.board.ime.translation.TranslationLanguage,
+            target: com.board.ime.translation.TranslationLanguage,
+            message: String,
+        ) {
+            panelController?.updateTranslation(state, sourceText, resultText, source, target, message)
+        }
+
+        override fun currentInputText(): String? = currentCommittedText()
+
+        override fun replaceCurrentInput(text: String) = applyTextReplace(text)
+
+        /**
+         * 只有用户点 [复制] 才写系统剪贴板。
+         *
+         * 同时**抑制 Board 自己的剪贴板历史**：否则译文会被剪贴板监听抓进 Room，
+         * 那就等于把翻译结果落盘了（隐私基线禁止）。
+         */
+        override fun copyToClipboard(text: String) {
+            val manager = clipboardManager ?: return
+            clipboardRepository?.suppressCapture(ClipboardHasher.hash(text))
+            runCatching {
+                manager.setPrimaryClip(ClipData.newPlainText(CLIPBOARD_LABEL, text))
+            }.onFailure { Log.w(TAG, "翻译复制失败（后台限制）：${it.message}") }
+        }
+    }
+
+    private fun translationSession(): com.board.ime.translation.TranslationSession =
+        translation ?: com.board.ime.translation.TranslationSession(
+            host = translationHost,
+            provider = { translationProvider },
+            scope = translationScope,
+            loadSourceLanguage = {
+                com.board.ime.translation.TranslationLanguage.fromCode(
+                    preferences.translationSourceLanguage,
+                ) ?: com.board.ime.translation.TranslationLanguage.AUTO
+            },
+            saveSourceLanguage = { preferences.translationSourceLanguage = it.code },
+            loadTargetLanguage = {
+                com.board.ime.translation.TranslationLanguage.fromCode(
+                    preferences.translationTargetLanguage,
+                ) ?: com.board.ime.translation.TranslationLanguage.ENGLISH
+            },
+            saveTargetLanguage = { preferences.translationTargetLanguage = it.code },
+        ).also { translation = it }
+
+    private fun openTranslation() {
+        translationSession().open()
+    }
+
+    /** 翻译隐私说明（服务商透明 + 数据去向），与语音用同一套卡片 */
+    private fun showTranslationInfoCard() {
+        showPrivacyCard(
+            title = "翻译隐私说明",
+            body = buildString {
+                append("翻译需要联网，原文会发送给当前的翻译服务商处理。")
+                append("Board 不在本地保存原文或译文，也不建立翻译历史与缓存。")
+                append("服务商的数据处理与留存以其服务协议和隐私政策为准。")
+            },
+            serviceLabel = translationProvider.displayName,
+        )
+    }
+
+    /**
+     * 读取当前输入框里**已上屏**的文本（不含尚未提交的 Rime 组词）。
+     *
+     * 只有用户点「翻译」时才交给网络；读完只存在于翻译会话的内存里，
+     * 不写任何本地存储、不进日志。
+     */
+    private fun currentCommittedText(): String? {
+        val connection = currentInputConnection ?: return null
+        val selected = runCatching { connection.getSelectedText(0) }.getOrNull()
+        if (!selected.isNullOrEmpty()) return selected.toString()
+        val before = runCatching { connection.getTextBeforeCursor(translateReadChars, 0) }
+            .getOrNull()?.toString().orEmpty()
+        val after = runCatching { connection.getTextAfterCursor(translateReadChars, 0) }
+            .getOrNull()?.toString().orEmpty()
+        // 未提交的拼音不算「可翻译文本」，也不去动它
+        var head = before
+        val composing = controller.composing
+        if (composing.isNotEmpty() && head.endsWith(composing)) {
+            head = head.dropLast(composing.length)
+        }
+        return (head + after).takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 用译文替换输入框内容。
+     *
+     * 先 `discardComposition()`（只用引擎公开 API，不销毁 Rime 会话），
+     * 避免出现「未提交拼音 + 译文」的混合状态；再按当前光标位置整体替换。
+     */
+    private fun applyTextReplace(text: String) {
+        val connection = currentInputConnection ?: return
+        controller.discardComposition()
+        val selected = runCatching { connection.getSelectedText(0) }.getOrNull()
+        if (!selected.isNullOrEmpty()) {
+            connection.commitText(text, 1)
+            return
+        }
+        val before = runCatching { connection.getTextBeforeCursor(translateReadChars, 0) }
+            .getOrNull()?.length ?: 0
+        val after = runCatching { connection.getTextAfterCursor(translateReadChars, 0) }
+            .getOrNull()?.length ?: 0
+        if (before > 0 || after > 0) connection.deleteSurroundingText(before, after)
+        connection.commitText(text, 1)
+    }
     private var rimeEngine: RimeEngine? = null
     private var controller = InputController(engine)
     private var appliedEngineKind: EngineKind? = null
@@ -314,6 +478,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             clipboardHeader = binding.clipboardHeader,
             clipboardPanel = binding.clipboardPanel,
             voiceHeader = binding.voiceHeader,
+            translationHeader = binding.translationHeader,
+            translationPanel = binding.translationPanel,
         )
         panel.onCandidateSelected = { index -> controller.pickCandidate(index) }
         panel.onComposingClicked = { controller.commitCompositionAsIs() }
@@ -334,6 +500,14 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onVoiceCancel = { voiceSession?.cancel() }
         panel.onVoiceStop = { voiceSession?.toggle() }
         panel.onVoiceInfo = { showVoicePrivacyCard(consent = false) }
+        panel.onTranslationClose = { translationSession().close() }
+        panel.onTranslationRun = { translationSession().translate() }
+        panel.onTranslationCopy = { translationSession().copyResult() }
+        panel.onTranslationReplace = { translationSession().replaceInput() }
+        panel.onTranslationCycleSource = { translationSession().cycleSourceLanguage() }
+        panel.onTranslationCycleTarget = { translationSession().cycleTargetLanguage() }
+        panel.onTranslationOpenSettings = { openSettings() }
+        panel.onTranslationInfo = { showTranslationInfoCard() }
         panel.onToolLayoutChanged = { layout ->
             // 复用现有 SharedPreferences（不新增数据库 / 表）
             preferences.toolbarTools = layout.encodeToolbar()
@@ -420,6 +594,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         dismissVoicePrivacyCard()
         voiceSession?.release()
         voiceSession = null
+        translation?.release()
+        translation = null
+        translationScope.cancel()
         RimeRuntime.close()
         binding = null
         panelController = null
@@ -467,7 +644,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             // 「主题」与「设置」都指向设置页（外观 / 主题在同一处）
             MorePanel.Action.THEME, MorePanel.Action.SETTINGS -> openSettings()
             // 尚未开发的功能：明确告知，不伪装成可用
-            MorePanel.Action.TRANSLATE -> notifyNotImplemented("翻译")
+            MorePanel.Action.TRANSLATE -> openTranslation()
             MorePanel.Action.VOICE -> onVoiceTool()
             MorePanel.Action.PHRASES -> notifyNotImplemented("常用语")
             // CLOSE / CLIPBOARD 由 TopPanelController 内部处理
@@ -706,6 +883,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             PanelLayoutMode.KEYBOARD_ONLY -> {
                 binding.keyboardView.visibility = View.VISIBLE
                 binding.clipboardPanel.visibility = View.GONE
+                binding.translationPanel.visibility = View.GONE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = keyboardHeight
                 }
@@ -713,6 +891,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
             PanelLayoutMode.CLIPBOARD_ONLY -> {
                 binding.keyboardView.visibility = View.GONE
+                binding.translationPanel.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.VISIBLE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = keyboardHeight
@@ -721,9 +900,20 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
             PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD -> {
                 binding.keyboardView.visibility = View.VISIBLE
+                binding.translationPanel.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.VISIBLE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = theme.clipboardSearchMaxHeight
+                }
+            }
+
+            PanelLayoutMode.TRANSLATION_ONLY -> {
+                // 内容区占键盘的位置：总高度与其它状态完全一致，键盘不会跳
+                binding.keyboardView.visibility = View.GONE
+                binding.clipboardPanel.visibility = View.GONE
+                binding.translationPanel.visibility = View.VISIBLE
+                binding.translationPanel.layoutParams = binding.translationPanel.layoutParams.apply {
+                    height = keyboardHeight
                 }
             }
         }
@@ -908,6 +1098,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // 重新算尺寸后，按当前面板状态重排「键盘 / 剪贴板内容区」
         panelController?.let { panel ->
             val mode = when {
+                panel.currentState == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
                 panel.currentState != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
                 panel.isSearching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
                 else -> PanelLayoutMode.CLIPBOARD_ONLY

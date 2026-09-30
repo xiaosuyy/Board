@@ -151,6 +151,30 @@ class VoicePrivacyCard @JvmOverloads constructor(
         serviceView.visibility = if (serviceLabel.isNullOrBlank()) GONE else VISIBLE
     }
 
+    /**
+     * 通用隐私说明（翻译等）：标题 + 正文 + 可选服务名 + 单个「关闭」按钮。
+     *
+     * 用在不需要"确认"、只需要"告知"的场景，因此不出现同意语义。
+     */
+    fun bindInfo(theme: KeyboardTheme, title: String, body: String, serviceLabel: String?) {
+        this.theme = theme
+        titleView.text = title
+        bodyView.text = body
+        serviceView.visibility = if (serviceLabel.isNullOrBlank()) GONE else VISIBLE
+        serviceView.text = if (serviceLabel.isNullOrBlank()) "" else "服务：$serviceLabel"
+        cancelButton.text = "关闭"
+        acceptButton.visibility = GONE
+
+        card.background = GradientDrawable().apply {
+            setColor(theme.panelBackground)
+            cornerRadius = dp(14).toFloat()
+        }
+        titleView.setTextColor(theme.candidateText)
+        bodyView.setTextColor(theme.candidateText)
+        serviceView.setTextColor(theme.candidateMutedText)
+        styleButton(cancelButton, theme.candidateText, theme.panelSurfacePressed)
+    }
+
     private fun styleButton(view: TextView, textColor: Int, backgroundColor: Int) {
         view.apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)

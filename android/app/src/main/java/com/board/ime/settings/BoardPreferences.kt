@@ -94,6 +94,20 @@ class BoardPreferences(context: Context) : SyncContentGate {
         get() = prefs.getBoolean(KEY_VOICE_PRIVACY_ACK, false)
         set(value) = prefs.edit().putBoolean(KEY_VOICE_PRIVACY_ACK, value).apply()
 
+    /**
+     * 翻译语言选择（只记住选过哪个语言）。
+     *
+     * 存的是语言 code（如 `auto` / `zh` / `en`）；
+     * **绝不保存翻译原文或译文**，也不保存任何翻译历史。
+     */
+    var translationSourceLanguage: String?
+        get() = prefs.getString(KEY_TRANSLATION_SOURCE, null)
+        set(value) = prefs.edit().putString(KEY_TRANSLATION_SOURCE, value).apply()
+
+    var translationTargetLanguage: String?
+        get() = prefs.getString(KEY_TRANSLATION_TARGET, null)
+        set(value) = prefs.edit().putString(KEY_TRANSLATION_TARGET, value).apply()
+
     /** 开发者模式：连续点版本号 5 次才打开，日志入口只在这个模式下出现 */
     var developerMode: Boolean
         get() = prefs.getBoolean(KEY_DEVELOPER, false)
@@ -143,6 +157,8 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_CANDIDATE_SIZE = "candidate_text_size"
         const val KEY_SKIP_SENSITIVE = "skip_sensitive_clipboard"
         const val KEY_VOICE_PRIVACY_ACK = "voice_privacy_acknowledged"
+        const val KEY_TRANSLATION_SOURCE = "translation_source_language"
+        const val KEY_TRANSLATION_TARGET = "translation_target_language"
         const val KEY_DEVELOPER = "developer_mode"
         const val KEY_TOOLBAR_TOOLS = "toolbar_tools"
         const val KEY_MORE_TOOLS = "more_tools"

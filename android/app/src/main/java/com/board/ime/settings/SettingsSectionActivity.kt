@@ -187,6 +187,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                 SettingsSection.DICTIONARY -> buildDictionary(content)
                 SettingsSection.CLIPBOARD -> buildClipboard(content)
                 SettingsSection.SYNC -> buildSync(content)
+                SettingsSection.TRANSLATION -> buildTranslation(content)
                 SettingsSection.ADVANCED -> buildAdvanced(content)
             }
         }
@@ -1315,6 +1316,72 @@ class SettingsSectionActivity : AppCompatActivity() {
             SettingsUi.hint(this, "只有勾选的内容进入同步；账号密码、日志、调试信息永远不同步。"),
         )
         content.addView(SettingsUi.cardView(this, contentCard))
+    }
+
+    // ---------------------------------------------------------------- 翻译
+
+    private fun buildTranslation(content: LinearLayout) {
+        val store = com.board.ime.translation.TranslationCredentialStore(this)
+        val current = store.load()
+
+        val card = SettingsUi.card(this)
+        card.addView(SettingsUi.heading(this, "翻译服务"))
+        card.addView(SettingsUi.value(this, "服务：百度翻译（通用文本翻译 API）"))
+        val (appIdLayout, appIdEdit) = SettingsUi.textField(this, "APPID", current.appId)
+        val (secretLayout, secretEdit) = SettingsUi.textField(this, "密钥", current.secret, password = true)
+        card.addView(appIdLayout)
+        card.addView(secretLayout)
+        card.addView(
+            SettingsUi.hint(
+                this,
+                "凭据需要你自己在百度翻译开放平台申请；保存在 Android 加密存储里。" +
+                    "Board 不内置任何 API Key，也不保存翻译原文或译文。",
+            ),
+        )
+        card.addView(
+            SettingsUi.button(this, "保存") {
+                store.save(
+                    com.board.ime.translation.TranslationCredentials(
+                        appId = appIdEdit.text?.toString().orEmpty(),
+                        secret = secretEdit.text?.toString().orEmpty(),
+                    ),
+                )
+                Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+                render()
+            },
+        )
+        card.addView(
+            SettingsUi.button(this, "清空凭据") {
+                store.clear()
+                Toast.makeText(this, "已清空", Toast.LENGTH_SHORT).show()
+                render()
+            },
+        )
+        card.addView(
+            SettingsUi.value(
+                this,
+                if (current.isComplete) "当前状态：已配置" else "当前状态：未配置",
+            ),
+        )
+        if (!store.secureStorageAvailable) {
+            card.addView(
+                SettingsUi.hint(this, "注意：本机加密存储不可用，凭据只保留在本次会话内存中。"),
+            )
+        }
+        content.addView(SettingsUi.cardView(this, card))
+
+        val privacy = SettingsUi.card(this)
+        privacy.addView(SettingsUi.heading(this, "隐私说明"))
+        privacy.addView(
+            SettingsUi.hint(
+                this,
+                "· 翻译需要联网\n" +
+                    "· 原文会发送给当前的翻译服务商（百度翻译）\n" +
+                    "· Board 不在本地保存原文、译文、历史或缓存\n" +
+                    "· 服务商的数据处理与留存以其服务协议和隐私政策为准",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, privacy))
     }
 
     private fun readConfig(

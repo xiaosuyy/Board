@@ -9,6 +9,7 @@ package com.board.ime.ui.panel
  * - [MORE]：点了工具栏入口后，在同一块区域里展开的功能网格
  * - [CLIPBOARD]：剪贴板（标题占用固定面板高度，内容区与键盘等高并可滚动）
  * - [VOICE]：语音输入（同样的固定高度：状态文字 + partial 预览 + 结束按钮）
+ * - [TRANSLATION]：翻译（同样的固定高度：标题 + 服务商；内容区与键盘等高）
  */
 enum class TopPanelState {
     TOOLBAR,
@@ -16,4 +17,5 @@ enum class TopPanelState {
     MORE,
     CLIPBOARD,
     VOICE,
+    TRANSLATION,
 }

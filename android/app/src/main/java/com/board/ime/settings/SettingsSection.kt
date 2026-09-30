@@ -16,6 +16,7 @@ enum class SettingsSection(
     DICTIONARY("词库", "我的词库、学习词、导入导出"),
     CLIPBOARD("剪贴板", "历史、敏感内容、清理"),
     SYNC("同步", "WebDAV、同步内容"),
+    TRANSLATION("翻译", "翻译服务、隐私说明"),
     ADVANCED("高级", "隐私、输入法状态、开发者选项"),
     ;
 

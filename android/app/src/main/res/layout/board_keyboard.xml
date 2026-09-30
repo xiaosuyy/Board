@@ -50,6 +50,11 @@
                 android:id="@+id/voice_header"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
+
+            <com.board.ime.ui.panel.TranslationHeader
+                android:id="@+id/translation_header"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
         </FrameLayout>
 
         <View
@@ -64,6 +69,13 @@
         -->
         <com.board.ime.ui.panel.ClipboardPanel
             android:id="@+id/clipboard_panel"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:visibility="gone" />
+
+        <!-- 翻译内容区：与剪贴板同理，高度 = 键盘高度，键盘隐藏 → 总高度不变 -->
+        <com.board.ime.ui.panel.TranslationPanel
+            android:id="@+id/translation_panel"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:visibility="gone" />

@@ -43,6 +43,8 @@ class TopPanelController(
     private val clipboardHeader: ClipboardHeader,
     private val clipboardPanel: ClipboardPanel,
     private val voiceHeader: VoiceHeader,
+    private val translationHeader: TranslationHeader,
+    private val translationPanel: TranslationPanel,
 ) {
 
     var onMoreAction: ((MorePanel.Action) -> Unit)? = null
@@ -114,6 +116,46 @@ class TopPanelController(
         voiceHeader.render(VoiceState.IDLE, "")
         this.state = derivedState()
         applyState()
+    }
+
+    // ---------------------------------------------------------------- 翻译
+
+    var onTranslationClose: (() -> Unit)? = null
+    var onTranslationRun: (() -> Unit)? = null
+    var onTranslationCopy: (() -> Unit)? = null
+    var onTranslationReplace: (() -> Unit)? = null
+    var onTranslationCycleSource: (() -> Unit)? = null
+    var onTranslationCycleTarget: (() -> Unit)? = null
+    var onTranslationOpenSettings: (() -> Unit)? = null
+    var onTranslationInfo: (() -> Unit)? = null
+
+    /** 打开翻译面板（固定高度不变，内容区占键盘位置） */
+    fun showTranslation() {
+        state = TopPanelState.TRANSLATION
+        applyState()
+    }
+
+    /** 退出翻译面板：回到常规状态（**翻译数据由调用方负责清空**） */
+    fun closeTranslation() {
+        if (this.state != TopPanelState.TRANSLATION) return
+        this.state = derivedState()
+        applyState()
+    }
+
+    fun updateTranslation(
+        state: com.board.ime.translation.TranslationUiState,
+        sourceText: String,
+        resultText: String,
+        source: com.board.ime.translation.TranslationLanguage,
+        target: com.board.ime.translation.TranslationLanguage,
+        message: String,
+    ) {
+        translationPanel.render(state, sourceText, resultText, source, target, message)
+    }
+
+    /** 服务商透明：例如「百度翻译」 */
+    fun setTranslationServiceName(name: String) {
+        translationHeader.setServiceName(name)
     }
 
     /** 布局变化（宿主负责持久化） */
@@ -200,6 +242,15 @@ class TopPanelController(
         voiceHeader.onBack = { onVoiceCancel?.invoke() }
         voiceHeader.onPrimary = { onVoiceStop?.invoke() }
         voiceHeader.onInfo = { onVoiceInfo?.invoke() }
+
+        translationHeader.onBack = { onTranslationClose?.invoke() }
+        translationHeader.onInfo = { onTranslationInfo?.invoke() }
+        translationPanel.onTranslate = { onTranslationRun?.invoke() }
+        translationPanel.onCopy = { onTranslationCopy?.invoke() }
+        translationPanel.onReplace = { onTranslationReplace?.invoke() }
+        translationPanel.onCycleSource = { onTranslationCycleSource?.invoke() }
+        translationPanel.onCycleTarget = { onTranslationCycleTarget?.invoke() }
+        translationPanel.onOpenSettings = { onTranslationOpenSettings?.invoke() }
         clipboardHeader.onToggleEdit = { toggleClipboardEdit() }
         clipboardHeader.onToggleSearch = { toggleSearch() }
         clipboardHeader.onClearSearch = { stopSearch() }
@@ -316,6 +367,8 @@ class TopPanelController(
         clipboardHeader.applyTheme(theme)
         clipboardPanel.applyTheme(theme)
         voiceHeader.applyTheme(theme)
+        translationHeader.applyTheme(theme)
+        translationPanel.applyTheme(theme)
     }
 
     // ---------------------------------------------------------------- 搜索 / 筛选
@@ -432,6 +485,7 @@ class TopPanelController(
     private fun applyState() {
         val previousState = appliedState
         val layout = when {
+            state == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
             state != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
             searching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
             else -> PanelLayoutMode.CLIPBOARD_ONLY
@@ -444,6 +498,7 @@ class TopPanelController(
             candidateBar.visibility = visibleIf(state == TopPanelState.CANDIDATES)
             morePanel.visibility = visibleIf(state == TopPanelState.MORE)
             clipboardHeader.visibility = visibleIf(state == TopPanelState.CLIPBOARD)
+            translationHeader.visibility = visibleIf(state == TopPanelState.TRANSLATION)
             animateIn(visiblePanelChild())
         }
 
@@ -459,6 +514,7 @@ class TopPanelController(
         TopPanelState.MORE -> morePanel
         TopPanelState.CLIPBOARD -> clipboardHeader
         TopPanelState.VOICE -> voiceHeader
+        TopPanelState.TRANSLATION -> translationHeader
     }
 
     /**
