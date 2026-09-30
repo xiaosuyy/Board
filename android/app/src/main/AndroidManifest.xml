@@ -41,6 +41,14 @@
             </intent-filter>
         </activity>
 
+        <!-- 只用于代弹麦克风授权弹窗：无界面、不留在最近任务 -->
+        <activity
+            android:name=".ime.MicPermissionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <activity
             android:name=".settings.DictionaryActivity"
             android:exported="false"

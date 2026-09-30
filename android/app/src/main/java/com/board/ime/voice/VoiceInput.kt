@@ -368,6 +368,9 @@ class VoiceInputSession(
             return
         }
         if (!hasMicPermission()) {
+            // 输入法自己弹不了运行时权限：交给无界面的 MicPermissionActivity 弹系统授权框，
+            // 用户允许后再点一次语音即可（不能只显示文案、什么都不做）。
+            host.requestMicPermission()
             state = VoiceState.IDLE
             host.showVoicePanel()
             host.updateVoicePanel(VoiceState.ERROR, PERMISSION_MESSAGE)
@@ -423,7 +426,7 @@ class VoiceInputSession(
         const val UNAVAILABLE_MESSAGE =
             "没有可用的语音识别服务\n请在「设置 → 语音」配置百度的 AppID / API Key"
         const val PERMISSION_MESSAGE =
-            "需要麦克风权限才能使用语音输入\n可再次点击语音按钮授权"
+            "需要麦克风权限才能使用语音输入\n请在系统弹窗中允许，然后再次点击语音按钮"
 
         /** 仅用于老版本兼容判断，避免直接引用可能不存在的常量 */
         @Suppress("unused")

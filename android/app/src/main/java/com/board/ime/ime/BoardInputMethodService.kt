@@ -138,15 +138,24 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             panelController?.updateVoice(state, text)
         }
 
-        /** 权限被拒：只给一条提示 + 去系统设置，不反复弹窗 */
+        /** 权限被拒：弹系统授权框（输入法没有弹权限的能力，交给透明 Activity 代劳） */
         override fun requestMicPermission() {
             runCatching {
                 startActivity(
-                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                        .setData(Uri.fromParts("package", packageName, null))
+                    Intent(this@BoardInputMethodService, MicPermissionActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 )
-            }.onFailure { Log.w(TAG, "打开系统设置失败：${it.message}") }
+            }.onFailure {
+                Log.w(TAG, "申请麦克风权限失败：${it.message}")
+                // 兜底：至少把用户带到应用详情页，能手动打开
+                runCatching {
+                    startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            .setData(Uri.fromParts("package", packageName, null))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }.onFailure { inner -> Log.w(TAG, "打开系统设置失败：${inner.message}") }
+            }
         }
 
         override fun notify(message: String) {
