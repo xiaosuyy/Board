@@ -97,6 +97,10 @@ class SyncEngine(
      * 窗口内来多少次都只保留一次，且**窗口结束一定执行**（不会像前沿去抖那样永久 SKIPPED）。
      */
     private val clipboardRequests = MutableSharedFlow<Unit>(
+        // replay = 1 很关键：**订阅之前**发出的请求也必须能送达。
+        // 冷启动时 SyncEngineHolder 刚构造完、collector 还没订阅，没有 replay 的话
+        // tryEmit 会被直接丢弃 —— 真机-模拟器实测中，模拟器侧第一条触发就是这么丢的。
+        replay = 1,
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )

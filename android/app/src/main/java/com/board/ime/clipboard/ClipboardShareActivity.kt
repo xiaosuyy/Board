@@ -34,7 +34,12 @@ class ClipboardShareActivity : AppCompatActivity() {
             if (outcome.getOrNull() == ClipboardCaptureResult.INSERTED ||
                 outcome.getOrNull() == ClipboardCaptureResult.UPDATED
             ) {
-                runCatching { com.board.ime.sync.SyncEngineHolder.get(this@ClipboardShareActivity).requestClipboardSync() }
+                runCatching {
+                    com.board.ime.sync.SyncEngineHolder.get(this@ClipboardShareActivity).requestClipboardSync()
+                }.onFailure {
+                    // 以前这里静默吞异常，导致"没触发"无法定位
+                    Log.w(TAG, "触发剪贴板同步失败：${it.message}", it)
+                }
             }
             val message = outcome.fold(
                 onSuccess = { result ->
