@@ -104,7 +104,8 @@ Java_com_board_ime_engine_rime_RimeNative_nativeSetup(
   traits.distribution_code_name = "board-ime";
   traits.distribution_version = ver.c_str();
   traits.app_name = app.c_str();
-  traits.min_log_level = 2;  // WARNING：减少日志噪声
+  // INFO：排查部署问题需要看 deployer 自己的日志（正式版可改回 2=WARNING）
+  traits.min_log_level = 0;
 
   g_api->setup(&traits);
   g_api->initialize(&traits);

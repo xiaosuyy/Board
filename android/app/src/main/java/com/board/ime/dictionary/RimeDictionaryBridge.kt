@@ -66,6 +66,24 @@ object RimeDictionaryBridge {
     fun rimeDictName(source: DictionarySource): String = logicalDictionaryName(source) + ".dict.yaml"
 
     /**
+     * **占位方案**文件名：`<逻辑名>.schema.yaml`。
+     *
+     * librime 的 `schema/dependencies` 里列的名字，deployer 会当作**方案**去找
+     * `<名字>.schema.yaml`；找到就把该方案的 `translator.dictionary` 预编译成
+     * `build/<名字>.table.bin`（官方 `stroke` 就是这么被编译出来的），
+     * 找不到只打印 `missing input schema; skipped unsatisfied dependency`。
+     *
+     * 真机 + librime INFO 日志实测：只给 `.dict.yaml` 时 3 个导入词库全部被 skip，
+     * deploy 里**没有任何** `board_import_*.table.bin`。所以这个占位方案是必需的。
+     *
+     * 它**不会**出现在方案列表里（列表由 `schema_list` 决定），只是词典的挂载点。
+     */
+    fun rimeSchemaName(source: DictionarySource): String = logicalDictionaryName(source) + ".schema.yaml"
+
+    fun rimeSchemaFile(userDir: File, source: DictionarySource): File =
+        File(userDir, rimeSchemaName(source))
+
+    /**
      * 临时工作文件放在**用户目录根**（与 luna_pinyin.dict.yaml 同级）。
      *
      * 放在 `imported/` 子目录里时 librime 没有为它建表（实测），
@@ -128,12 +146,70 @@ object RimeDictionaryBridge {
                 target.delete()
                 return null
             }
+            // 占位方案必须一起就位，否则 deployer 会把词典当成「缺失的方案」跳过
+            writePlaceholderSchema(userDir, source)
             target
         } catch (throwable: Throwable) {
             Log.e(TAG, "解压失败：${throwable.message}", throwable)
             runCatching { target.delete() }
             null
         }
+    }
+
+    /**
+     * 写「占位方案」`<逻辑名>.schema.yaml`，只为让 librime 在部署阶段预编译它的词典。
+     *
+     * 内容刻意做成一具备最小可用结构的方案（speller + segmentors + script_translator），
+     * 万一被 Rime 当成真方案编译也不会报错；但它**不在** `schema_list` 里，用户看不到。
+     */
+    private fun writePlaceholderSchema(userDir: File, source: DictionarySource) {
+        val logical = logicalDictionaryName(source)
+        val body = buildString {
+            append("---\n")
+            append("# Board 自动生成：仅是导入词库的挂载点，用于在部署阶段预编译词典。\n")
+            append("# 它不在 schema_list 里，不会出现在方案列表中；请不要手工修改。\n")
+            // 注意：Rime 方案文件要求 schema_id / name / version / dependencies 都放在 `schema:` 段里
+            // （真机实测：写在顶层会被 deployer 判为 invalid schema definition 而整个编译失败）
+            append("schema:\n")
+            append("  schema_id: ").append(logical).append('\n')
+            append("  name: \"导入词库 ").append(logical).append("\"\n")
+            append("  version: \"").append(source.version).append("\"\n")
+            append("  author:\n    - Board\n")
+            append("  description: |\n    Board 导入词库的挂载点，不用于日常输入。\n")
+            append("  dependencies: []\n")
+            append("translator:\n")
+            append("  dictionary: ").append(logical).append('\n')
+            append("  enable_completion: false\n")
+            append("  enable_sentence: false\n")
+            append("  enable_encoder: false\n")
+            append("  enable_user_dict: false\n")
+            append("speller:\n")
+            append("  alphabet: zyxwvutsrqponmlkjihgfedcba\n")
+            append("  delimiter: \" '\"\n")
+            append("engine:\n")
+            append("  processors:\n")
+            append("    - ascii_composer\n")
+            append("    - recognizer\n")
+            append("    - key_binder\n")
+            append("    - speller\n")
+            append("    - punctuator\n")
+            append("    - selector\n")
+            append("    - navigator\n")
+            append("    - express_editor\n")
+            append("  segmentors:\n")
+            append("    - ascii_segmentor\n")
+            append("    - matcher\n")
+            append("    - abc_segmentor\n")
+            append("    - punct_segmentor\n")
+            append("    - fallback_segmentor\n")
+            append("  translators:\n")
+            append("    - punct_translator\n")
+            append("    - script_translator\n")
+            append("...\n")
+        }
+        val file = rimeSchemaFile(userDir, source)
+        runCatching { file.writeText(body) }
+            .onFailure { Log.w(TAG, "写占位方案失败：${file.name}（${it.message}）") }
     }
 
     /**
@@ -155,15 +231,16 @@ object RimeDictionaryBridge {
         val secondIsCjk = second.any { it.code in 0x4E00..0x9FFF }
         // 编码在前（第一个字段不是汉字、第二个是汉字）→ 交换
         val text = if (!firstIsCjk && secondIsCjk) second else first
-        val code = if (!firstIsCjk && secondIsCjk) first else second
+        val rawCode = if (!firstIsCjk && secondIsCjk) first else second
         // 词频取最后一个能解析成整数的字段（避开 zh-CN 之类的列）
         val weight = fields.lastOrNull { it.trim().toIntOrNull() != null }?.trim() ?: "0"
-        return "$text\t$code\t$weight"
+        // code 必须是空格分隔的音节，否则（真机实测）prism 会把整串当成一个音节
+        return "$text\t${PinyinSyllables.segment(rawCode)}\t$weight"
     }
-    /** 清理临时解压出来的工作文件（**gz 保留**） */
+    /** 清理临时解压出来的工作文件（**gz 保留**）：词典本体 + 占位方案 */
     fun removeStaged(userDir: File, source: DictionarySource) {
-        val target = rimeDictFile(userDir, source)
-        runCatching { if (target.exists()) target.delete() }
+        runCatching { rimeDictFile(userDir, source).takeIf { it.exists() }?.delete() }
+        runCatching { rimeSchemaFile(userDir, source).takeIf { it.exists() }?.delete() }
     }
 
     /** 逻辑词典的 YAML 头 */
@@ -211,10 +288,14 @@ object RimeDictionaryBridge {
                 sources.forEach { source ->
                     append("    - script_translator@").append(translatorName(source)).append('\n')
                 }
-                // **关键**：把词典列进 schema.dependencies —— 这是 Rime「部署阶段预编译词典」的官方机制。
-                // 只写 translator.dictionary 时，Rime 不会在 deploy 里为它建 table.bin
-                // （真机实测：patch 生效、schema 被重编译、deploy 返回成功，但 build/ 里
-                //   没有任何 board_import_*.table.bin，词库等于没生效）。
+                // **关键**：把导入词典列进 `schema/dependencies`。
+                //
+                // 真机 + librime INFO 日志实测（deployment_tasks.cc）：
+                //   dependencies 的语义是「**方案**」，deployer 会找 `<名字>.schema.yaml`，
+                //   找到就把它当依赖方案、预编译它的 `translator.dictionary`（官方 stroke 即如此），
+                //   找不到只打印 `missing input schema; skipped unsatisfied dependency`。
+                //   所以部署时我们**同时**写下 `<逻辑名>.schema.yaml` 占位方案，
+                //   两边配套才能真正生成 `build/board_import_*.table.bin`。
                 append("  \"schema/dependencies/+\":\n")
                 sources.forEach { source ->
                     append("    - ").append(logicalDictionaryName(source)).append('\n')
@@ -222,13 +303,15 @@ object RimeDictionaryBridge {
                 sources.forEach { source ->
                     append("  ").append(translatorName(source)).append(":\n")
                     append("    dictionary: ").append(logicalDictionaryName(source)).append('\n')
-                    append("    enable_completion: true\n")
+                    // 关闭逐键补全：导入词库是静态词源，开启补全会让每个前缀都去大表里扫，
+                    // 直接影响候选延迟（输入热路径）。
+                    append("    enable_completion: false\n")
                     append("    enable_sentence: false\n")
                     // 不建 userdb、不参与编码学习：它是静态词源，避免污染学习数据
                     append("    enable_user_dict: false\n")
                     append("    enable_encoder: false\n")
                     // 质量给负值：默认词库的候选仍然排在前面
-                    append("    initial_quality: -1\n")
+                    append("    initial_quality: ").append(EXTRA_QUALITY).append('\n')
                     append("    comment_format:\n")
                     append("      - xform/.+//\n")
                 }
@@ -247,6 +330,22 @@ object RimeDictionaryBridge {
     /** translator 实例名（Rime 里 `table_translator@xxx` 的 xxx） */
     private fun translatorName(source: DictionarySource): String =
         "board_extra_" + source.hash.take(12).ifBlank { source.id.toString() }
+
+    /**
+     * 额外词源的候选质量（`initial_quality`）。
+     *
+     * 校准依据（真机实测数据）：
+     *   · 导入词条的词频列全是 0（外部词库不给词频）→ 候选质量完全由这个偏移决定
+     *   · 官方 luna_pinyin 的词频来自 essay.txt（44 万条，**中位 265、最大 4,822,928**）
+     *   · 取 100 万 → 导入词库的「整词精确匹配」压过默认词库的中低频候选，
+     *     而最常用的词（essay 权重 > 100 万）仍排在前面
+     *
+     * 这很关键：早先用 `-1` 时，导入词条的候选永远排在默认词库的整句组合之后，
+     * 真机上会被挤出候选栏可视区（`鼎折覆餗` 实测就是这样「看不见」的）。
+     *
+     * 想让默认词库严格优先，把本值改成 `-1` 即可（导入词源仍挂在候选栏里，只是排在后面）。
+     */
+    private const val EXTRA_QUALITY = 1_000_000
 
     private const val BUFFER = 64 * 1024
 

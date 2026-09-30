@@ -535,8 +535,8 @@ class DictionaryRepository(
                 val table = RimeDictionaryBridge.tableFile(dir, source)
                 val ok = deployed && staged.containsKey(source.id) && table.isFile && table.length() > 0L
                 if (ok) ready++
-                // 5) 无论成败都清理临时解压文件；gz 永久保留
-                staged[source.id]?.let { runCatching { it.delete() } }
+                // 5) 无论成败都清理本轮临时文件（.dict.yaml + 占位方案）；gz 永久保留
+                RimeDictionaryBridge.removeStaged(dir, source)
                 sources.setReady(source.id, ok, source.version, System.currentTimeMillis())
                 if (ok) {
                     Log.i(TAG, "部署成功：${source.name} table=${table.name}（${table.length()} B）")
@@ -557,12 +557,13 @@ class DictionaryRepository(
     }
 
     /** 长期存储目录：`files/rime/user/imported` */
+    fun importedDir(): File? = userDir()?.let { File(it, "imported") }
+
     /** 所有数据源的 Rime 部署产物（table.bin）是否都已生成 */
     private fun allTablesReady(dir: File, list: List<DictionarySource>): Boolean = list.all { source ->
         val table = RimeDictionaryBridge.tableFile(dir, source)
         table.isFile && table.length() > 0L
     }
-    fun importedDir(): File? = userDir()?.let { File(it, "imported") }
 
     /** 由名字派生稳定 sourceId（sha256 前 16 位） */
     fun stableSourceId(name: String): String = ClipboardHasher.hash(name.trim()).take(16)
