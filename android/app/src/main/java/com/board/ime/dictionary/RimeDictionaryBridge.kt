@@ -280,6 +280,13 @@ object RimeDictionaryBridge {
         val body = buildString {
             append(PATCH_MARKER).append('\n')
             append("patch:\n")
+            // 单页候选数。
+            // ⚠️ 用户目录里的同名文件会**顶掉**资产目录里的那一份（Rime 不会把两份 patch 合并），
+            // 资产版 luna_pinyin_simp.custom.yaml 里写的是 menu/page_size: 9；
+            // 这里必须显式重复这个设置，否则会掉回 default.yaml 的默认值 5，
+            // 表现为排序靠后的常用字（如 yuan 的「袁」）永远进不了候选栏。
+            // 取 12 与候选栏的容量（CandidateBar.MAX_CANDIDATES = 12，可横向滑动）对齐。
+            append("  menu/page_size: 12\n")
             if (sources.isEmpty()) {
                 append("  # 没有需要挂接的大型词库\n")
             } else {
