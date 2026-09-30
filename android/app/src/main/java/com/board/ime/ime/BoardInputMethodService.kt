@@ -205,6 +205,19 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             observeClipboard(panel.searchQuery, remoteOnly)
         }
         panel.onCollapseKeyboard = { collapseKeyboard() }
+        panel.onToolLayoutChanged = { layout ->
+            // 复用现有 SharedPreferences（不新增数据库 / 表）
+            preferences.toolbarTools = layout.encodeToolbar()
+            preferences.moreTools = layout.encodeMore()
+        }
+        panel.onToolbarFull = {
+            Toast.makeText(this, "工具栏已满（最多 6 个）", Toast.LENGTH_SHORT).show()
+        }
+        // 两个 key 都为 null = 从未自定义 → 默认布局；v1.1 升级不重置
+        panel.toolLayout = com.board.ime.ui.panel.ToolLayout.parse(
+            preferences.toolbarTools,
+            preferences.moreTools,
+        )
         panelController = panel
 
         // 主题 / 尺寸只影响外观：即使失败也必须把键盘交出去

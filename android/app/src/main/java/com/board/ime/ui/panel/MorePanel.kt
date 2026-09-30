@@ -3,11 +3,13 @@ package com.board.ime.ui.panel
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
-import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import com.board.ime.ui.KeyboardTheme
@@ -17,11 +19,14 @@ import com.board.ime.ui.KeyboardTheme
  *
  * 它**替换** TOOLBAR，占用完全相同的 TopPanel 区域与高度：
  * ```
- * [⌃]  主题   翻译   语音   设置   常用语   左移   右移   剪贴板   →
+ * [⌃]  主题   翻译   语音   设置   常用语   左移   右移        →
  * ```
  * - 左侧固定的收起按钮，其余功能横向可滑动（不做分页控件、不做巨大卡片）
- * - 每项 = 小图标（18dp）+ 简短文字（10sp），紧凑排布、统一视觉
- * - 未实现的功能弱化显示，点击明确提示尚未开发
+ * - 每项 = 小图标（18dp）+ 简短文字（10sp），紧凑排布、统一视觉（未做视觉改版）
+ * - 条目由 [ToolLayout.more] 驱动；未实现的功能弱化显示，点击明确提示尚未开发
+ *
+ * 交互：点击 = 执行；**长按拖动** = 行内排序；拖到左侧「⌃」（= 回到工具栏）按钮上或拖出
+ * 面板上方 → 移入工具栏（[onMoveToToolbar]）。
  */
 class MorePanel @JvmOverloads constructor(
     context: Context,
@@ -43,6 +48,12 @@ class MorePanel @JvmOverloads constructor(
 
     var onAction: ((Action) -> Unit)? = null
 
+    /** 「更多」内部排序 */
+    var onReorder: ((Int, Int) -> Unit)? = null
+
+    /** 移入工具栏 */
+    var onMoveToToolbar: ((ToolId) -> Unit)? = null
+
     private var theme: KeyboardTheme = KeyboardTheme.from(
         context,
         com.board.ime.settings.ThemeMode.SYSTEM,
@@ -53,16 +64,11 @@ class MorePanel @JvmOverloads constructor(
     private val scroll = HorizontalScrollView(context)
     private val itemViews = ArrayList<MoreItemView>()
 
-    private val items = listOf(
-        MoreItem(Action.THEME, "主题", PanelIcon.THEME, true),
-        MoreItem(Action.TRANSLATE, "翻译", PanelIcon.TRANSLATE, false),
-        MoreItem(Action.VOICE, "语音", PanelIcon.VOICE, false),
-        MoreItem(Action.SETTINGS, "设置", PanelIcon.SETTINGS, true),
-        MoreItem(Action.PHRASES, "常用语", PanelIcon.PHRASES, false),
-        MoreItem(Action.CURSOR_LEFT, "左移", PanelIcon.CURSOR_LEFT, true),
-        MoreItem(Action.CURSOR_RIGHT, "右移", PanelIcon.CURSOR_RIGHT, true),
-        MoreItem(Action.CLIPBOARD, "剪贴板", PanelIcon.CLIPBOARD, true),
-    )
+    /** 当前布局里的「更多」条目 */
+    private var tools: List<ToolId> = emptyList()
+
+    private var draggingIndex = -1
+    private var dropOnToolbar = false
 
     init {
         orientation = HORIZONTAL
@@ -79,17 +85,31 @@ class MorePanel @JvmOverloads constructor(
         )
         addView(scroll, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
 
-        items.forEach { item ->
-            val view = MoreItemView(context, item)
-            view.onItemClick = { onAction?.invoke(item.action) }
-            itemViews += view
-            row.addView(
-                view,
-                LayoutParams(theme.moreItemWidth, LayoutParams.MATCH_PARENT),
-            )
-        }
         closeSlot.onSlotClick = { onAction?.invoke(Action.CLOSE) }
+        rebuildItems()
         applyTheme(theme)
+    }
+
+    /** 由布局驱动：设置「更多」里的工具 */
+    fun setTools(list: List<ToolId>) {
+        if (tools == list) return
+        tools = list
+        rebuildItems()
+        applyTheme(theme)
+    }
+
+    private fun rebuildItems() {
+        row.removeAllViews()
+        itemViews.clear()
+        tools.forEachIndexed { index, tool ->
+            val view = MoreItemView(context, tool)
+            view.onItemClick = { onAction?.invoke(tool.action) }
+            view.onDragStart = { startDrag(index) }
+            view.onDragMove = { _, rawX, rawY -> updateDropTarget(index, rawX, rawY) }
+            view.onDragEnd = { _, rawX, rawY -> finishDrag(index, rawX, rawY) }
+            itemViews += view
+            row.addView(view, LayoutParams(theme.moreItemWidth, LayoutParams.MATCH_PARENT))
+        }
     }
 
     fun applyTheme(theme: KeyboardTheme) {
@@ -121,24 +141,86 @@ class MorePanel @JvmOverloads constructor(
             setMeasuredDimension(measuredWidth, desired)
         }
     }
-}
 
-/** 「更多」里的一项描述 */
-internal data class MoreItem(
-    val action: MorePanel.Action,
-    val label: String,
-    val icon: PanelIcon,
-    val available: Boolean,
-)
+    // ---------------------------------------------------------------- 拖动
+
+    private fun startDrag(index: Int) {
+        if (draggingIndex == index) return
+        draggingIndex = index
+        dropOnToolbar = false
+        itemViews.forEachIndexed { i, view -> view.setDragging(i == index) }
+        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        invalidate()
+    }
+
+    private fun updateDropTarget(index: Int, rawX: Float, rawY: Float) {
+        if (draggingIndex != index) return
+        val onToolbar = isOverToolbarTarget(rawX, rawY)
+        if (onToolbar != dropOnToolbar) {
+            dropOnToolbar = onToolbar
+            closeSlot.setHighlighted(onToolbar)
+            invalidate()
+        }
+    }
+
+    /** 拖到左侧「⌃」按钮上，或拖出面板上方 → 视为「移到工具栏」 */
+    private fun isOverToolbarTarget(rawX: Float, rawY: Float): Boolean {
+        val panel = IntArray(2)
+        getLocationOnScreen(panel)
+        val slot = IntArray(2)
+        closeSlot.getLocationOnScreen(slot)
+        val rect = RectF(
+            slot[0].toFloat(),
+            slot[1].toFloat(),
+            slot[0] + closeSlot.width.toFloat(),
+            slot[1] + closeSlot.height.toFloat(),
+        )
+        // 按钮本身给一点额外的容错
+        rect.inset(-theme.spaceXs.toFloat(), 0f)
+        if (rect.contains(rawX, rawY)) return true
+        return rawY < panel[1] // 拖出面板上方
+    }
+
+    private fun finishDrag(index: Int, rawX: Float, rawY: Float) {
+        val tool = tools.getOrNull(index)
+        val toToolbar = dropOnToolbar
+        itemViews.forEach { it.setDragging(false) }
+        closeSlot.setHighlighted(false)
+        draggingIndex = -1
+        dropOnToolbar = false
+        invalidate()
+        if (tool == null) return
+        if (toToolbar) {
+            onMoveToToolbar?.invoke(tool)
+            return
+        }
+        val panel = IntArray(2)
+        getLocationOnScreen(panel)
+        if (rawY > panel[1] + height) return // 拖到键盘区：保持不动
+        // 行内排序：插入位置 = 中心在落点左侧的条目数（「更多」从左往右）
+        var target = 0
+        itemViews.forEachIndexed { i, view ->
+            if (i == index) return@forEachIndexed
+            val loc = IntArray(2)
+            view.getLocationOnScreen(loc)
+            val center = loc[0] + view.width / 2f
+            if (center < rawX) target++
+        }
+        if (target != index) onReorder?.invoke(index, target)
+    }
+}
 
 /** 「更多」里的单个功能入口：小图标 + 简短文字，整块垂直居中 */
 internal class MoreItemView @JvmOverloads constructor(
     context: Context,
-    private val item: MoreItem,
+    private val tool: ToolId,
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
 
     var onItemClick: (() -> Unit)? = null
+    var onDragStart: ((Int) -> Unit)? = null
+    var onDragMove: ((Int, Float, Float) -> Unit)? = null
+    var onDragEnd: ((Int, Float, Float) -> Unit)? = null
 
     private val painter = PanelIconPainter(resources)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -152,6 +234,19 @@ internal class MoreItemView @JvmOverloads constructor(
         com.board.ime.settings.ThemeMode.SYSTEM,
     )
     private var pressed = false
+    private var dragging = false
+    private var downX = 0f
+    private var downY = 0f
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val longPress = Runnable {
+        if (!dragging) {
+            dragging = true
+            parent?.requestDisallowInterceptTouchEvent(true)
+            onDragStart?.invoke(0)
+            invalidate()
+        }
+    }
 
     fun applyTheme(theme: KeyboardTheme) {
         this.theme = theme
@@ -159,9 +254,15 @@ internal class MoreItemView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setDragging(value: Boolean) {
+        if (dragging == value) return
+        dragging = value
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (pressed) {
+        if (pressed && !dragging) {
             pressedPaint.color = theme.panelSurfacePressed
             canvas.drawRoundRect(
                 0f,
@@ -174,8 +275,10 @@ internal class MoreItemView @JvmOverloads constructor(
             )
         }
 
-        val color = if (item.available) theme.iconColor else theme.candidateMutedText
+        val available = isToolAvailable(tool)
+        val color = if (available) theme.iconColor else theme.candidateMutedText
         textPaint.color = color
+        val alpha = if (dragging) 120 else 255
 
         val metrics = textPaint.fontMetrics
         val labelHeight = metrics.descent - metrics.ascent
@@ -188,25 +291,44 @@ internal class MoreItemView @JvmOverloads constructor(
             width / 2f,
             blockTop + theme.moreIconSize / 2f,
             theme.moreIconSize,
-            item.icon,
-            color,
+            tool.icon,
+            withAlpha(color, alpha),
         )
+        textPaint.alpha = alpha
         canvas.drawText(
-            item.label,
+            tool.label,
             width / 2f,
             blockTop + theme.moreIconSize + gap - metrics.ascent,
             textPaint,
         )
+        textPaint.alpha = 255
     }
+
+    private fun withAlpha(color: Int, alpha: Int): Int =
+        (color and 0x00FFFFFF) or (alpha shl 24)
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
                 pressed = true
                 invalidate()
+                handler.postDelayed(longPress, LONG_PRESS_MS)
             }
 
             MotionEvent.ACTION_MOVE -> {
+                if (dragging) {
+                    onDragMove?.invoke(0, event.rawX, event.rawY)
+                    return true
+                }
+                val moved = (event.x - downX) * (event.x - downX) + (event.y - downY) * (event.y - downY)
+                if (moved > touchSlop * touchSlop) {
+                    handler.removeCallbacks(longPress)
+                    pressed = false
+                    invalidate()
+                    return true
+                }
                 val inside = event.x >= 0 && event.y >= 0 && event.x <= width && event.y <= height
                 if (pressed != inside) {
                     pressed = inside
@@ -215,6 +337,11 @@ internal class MoreItemView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_UP -> {
+                handler.removeCallbacks(longPress)
+                if (dragging) {
+                    onDragEnd?.invoke(0, event.rawX, event.rawY)
+                    return true
+                }
                 val inside = event.x >= 0 && event.y >= 0 && event.x <= width && event.y <= height
                 pressed = false
                 invalidate()
@@ -225,6 +352,11 @@ internal class MoreItemView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE -> {
+                handler.removeCallbacks(longPress)
+                if (dragging) {
+                    onDragEnd?.invoke(0, event.rawX, event.rawY)
+                    return true
+                }
                 pressed = false
                 invalidate()
             }
@@ -244,4 +376,14 @@ internal class MoreItemView @JvmOverloads constructor(
         super.performClick()
         return true
     }
+
+    private companion object {
+        const val LONG_PRESS_MS = 350L
+    }
+}
+
+/** 尚未实现引擎的工具在 UI 上弱化显示（与视觉表现一致，本阶段不实现引擎） */
+internal fun isToolAvailable(tool: ToolId): Boolean = when (tool) {
+    ToolId.TRANSLATE, ToolId.VOICE, ToolId.PHRASES -> false
+    else -> true
 }

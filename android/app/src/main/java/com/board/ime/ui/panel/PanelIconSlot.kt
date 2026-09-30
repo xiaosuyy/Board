@@ -28,6 +28,7 @@ internal class PanelIconSlot @JvmOverloads constructor(
     private var iconSizePx: Float = 0f
     private var pillRadiusPx: Float = 0f
     private var pressed = false
+    private var highlighted = false
 
     /** 图标可以中途换（例如收藏 / 取消收藏） */
     fun setIcon(icon: PanelIcon) {
@@ -41,6 +42,13 @@ internal class PanelIconSlot @JvmOverloads constructor(
         invalidate()
     }
 
+    /** 拖动经过时的高亮（与按下态同一套视觉，不引入新样式） */
+    fun setHighlighted(value: Boolean) {
+        if (highlighted == value) return
+        highlighted = value
+        invalidate()
+    }
+
     fun applyTheme(theme: KeyboardTheme, tint: Int = theme.iconColor) {
         iconColor = tint
         pressedColor = theme.panelSurfacePressed
@@ -51,7 +59,7 @@ internal class PanelIconSlot @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (pressed) {
+        if (pressed || highlighted) {
             pillPaint.color = pressedColor
             canvas.drawRoundRect(
                 0f,

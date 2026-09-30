@@ -72,6 +72,31 @@ class TopPanelController(
     /** 「收起键盘」：宿主调用 InputMethodService 的隐藏能力 */
     var onCollapseKeyboard: (() -> Unit)? = null
 
+    /** 布局变化（宿主负责持久化） */
+    var onToolLayoutChanged: ((ToolLayout) -> Unit)? = null
+
+    /** 工具栏已满（最多 6 个），无法再加入 */
+    var onToolbarFull: (() -> Unit)? = null
+
+    /** 当前工具栏 / 「更多」布局；赋值即驱动两个面板重排 */
+    var toolLayout: ToolLayout = ToolLayout.DEFAULT
+        set(value) {
+            field = value
+            toolbar.setTools(value.toolbar)
+            morePanel.setTools(value.more)
+        }
+
+    private fun publishToolLayout(layout: ToolLayout) {
+        if (layout == toolLayout) return
+        toolLayout = layout
+        onToolLayoutChanged?.invoke(layout)
+    }
+
+    /** 工具栏里的工具点击：剪贴板就地打开，其余与「更多」走同一条路 */
+    private fun dispatchToolAction(action: MorePanel.Action) {
+        if (action == MorePanel.Action.CLIPBOARD) showClipboard() else onMoreAction?.invoke(action)
+    }
+
     private var state: TopPanelState = TopPanelState.TOOLBAR
     private var composing: CharSequence = ""
     private var searching = false
@@ -102,8 +127,19 @@ class TopPanelController(
         toolbar.onAction = { action ->
             when (action) {
                 ToolbarView.Action.OPEN_MORE -> showMore()
-                ToolbarView.Action.CLIPBOARD -> showClipboard()
                 ToolbarView.Action.COLLAPSE_KEYBOARD -> onCollapseKeyboard?.invoke()
+            }
+        }
+        toolbar.onToolClick = { tool -> dispatchToolAction(tool.action) }
+        toolbar.onReorder = { from, to -> publishToolLayout(toolLayout.reorderToolbar(from, to)) }
+        toolbar.onMoveToMore = { tool -> publishToolLayout(toolLayout.moveToMore(tool)) }
+        morePanel.onReorder = { from, to -> publishToolLayout(toolLayout.reorderMore(from, to)) }
+        morePanel.onMoveToToolbar = { tool ->
+            val next = toolLayout.moveToToolbar(tool)
+            if (next == null) {
+                onToolbarFull?.invoke()
+            } else {
+                publishToolLayout(next)
             }
         }
         morePanel.onAction = { action ->

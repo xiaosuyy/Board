@@ -90,6 +90,20 @@ class BoardPreferences(context: Context) : SyncContentGate {
         get() = prefs.getBoolean(KEY_DEVELOPER, false)
         set(value) = prefs.edit().putBoolean(KEY_DEVELOPER, value).apply()
 
+    /**
+     * 工具栏 / 更多 的工具布局（逗号分隔的 storageKey）。
+     *
+     * **两个 key 都为 null 表示从未自定义过** → 上层用默认布局；
+     * 因此 v1.1 升级到 v1.2 不会重置任何东西（不写就不覆盖）。
+     */
+    var toolbarTools: String?
+        get() = prefs.getString(KEY_TOOLBAR_TOOLS, null)
+        set(value) = prefs.edit().putString(KEY_TOOLBAR_TOOLS, value).apply()
+
+    var moreTools: String?
+        get() = prefs.getString(KEY_MORE_TOOLS, null)
+        set(value) = prefs.edit().putString(KEY_MORE_TOOLS, value).apply()
+
     /** 同步内容开关（剪贴板 / 用户词库 / 学习词 / 常用语 / 自定义词 / 主题 / 键盘设置） */
     override fun isEnabled(content: SyncContent): Boolean =
         prefs.getBoolean(content.storageKey, content.defaultEnabled)
@@ -120,5 +134,7 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_CANDIDATE_SIZE = "candidate_text_size"
         const val KEY_SKIP_SENSITIVE = "skip_sensitive_clipboard"
         const val KEY_DEVELOPER = "developer_mode"
+        const val KEY_TOOLBAR_TOOLS = "toolbar_tools"
+        const val KEY_MORE_TOOLS = "more_tools"
     }
 }
