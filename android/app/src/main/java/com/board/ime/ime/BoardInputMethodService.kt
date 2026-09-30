@@ -285,6 +285,76 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }.getOrNull()
     }
 
+    // ---------------------------------------------------------------- 常用语（v1.2 Phase 4）
+
+    private var phraseRepository: com.board.ime.phrase.PhraseRepository? = null
+    private var phraseCollector: kotlinx.coroutines.Job? = null
+
+    /** 当前常用语列表（面板创建时立即渲染，避免闪空） */
+    private var phrases: List<com.board.ime.database.entity.PhraseEntry> = emptyList()
+
+    /** 只在一行数据真正变化时刷新面板（不是每次按键） */
+    private fun startPhraseObservation() {
+        if (phraseCollector != null) return
+        val repository = phraseRepository ?: return
+        phraseCollector = serviceScope.launch {
+            repository.observe().collect { list ->
+                phrases = list
+                mainHandler.post { panelController?.updatePhrases(list) }
+            }
+        }
+    }
+
+    private fun openPhrases() {
+        panelController?.showPhrases()
+        panelController?.updatePhrases(phrases)
+    }
+
+    /**
+     * 点击常用语：**直接上屏**。
+     *
+     * 先 `discardComposition()`（不残留未提交拼音），再按当前光标位置 commitText。
+     * **全程不写系统剪贴板**，因此不会触发 Clipboard Capture。
+     */
+    private fun usePhrase(entry: com.board.ime.database.entity.PhraseEntry) {
+        controller.discardComposition()
+        currentInputConnection?.commitText(entry.text, 1)
+        // 只记长度，绝不打正文
+        Log.i(TAG, "phrase inserted chars=${entry.text.length}")
+    }
+
+    private fun editPhrase(entry: com.board.ime.database.entity.PhraseEntry) {
+        runCatching {
+            startActivity(
+                com.board.ime.phrase.PhraseEditActivity
+                    .editIntent(this, entry.phraseId, entry.text)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { Log.w(TAG, "打开常用语编辑失败：${it.message}") }
+    }
+
+    private fun addPhrase() {
+        runCatching {
+            startActivity(
+                com.board.ime.phrase.PhraseEditActivity
+                    .addIntent(this)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { Log.w(TAG, "打开常用语新增失败：${it.message}") }
+    }
+
+    /** 软删除：只留墓碑，删除才能同步传播，不会被别的设备复活 */
+    private fun deletePhrase(entry: com.board.ime.database.entity.PhraseEntry) {
+        serviceScope.launch {
+            phraseRepository?.delete(entry.phraseId)
+            Log.i(TAG, "phrase deleted")
+        }
+    }
+
+    private fun reorderPhrases(order: List<String>) {
+        serviceScope.launch { phraseRepository?.reorder(order) }
+    }
+
     // ---------------------------------------------------------------- 翻译（v1.2 Phase 3）
 
     /** 翻译协程作用域：跟随 IME 生命周期，onDestroy 一并取消（不留后台请求） */
@@ -506,6 +576,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             contentStore = ClipboardRepository.contentStoreFor(this),
             sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector { preferences.skipSensitiveClipboard },  // 开关必须在这里生效
         )
+        phraseRepository = com.board.ime.phrase.PhraseRepository(
+            BoardDatabase.get(this).phraseDao(),
+        )
+        startPhraseObservation()
         registerClipboardListener()
         startSync()
 
@@ -530,6 +604,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             voiceHeader = binding.voiceHeader,
             translationHeader = binding.translationHeader,
             translationPanel = binding.translationPanel,
+            phrasesHeader = binding.phrasesHeader,
+            phrasesPanel = binding.phrasesPanel,
         )
         panel.onCandidateSelected = { index -> controller.pickCandidate(index) }
         panel.onComposingClicked = { controller.commitCompositionAsIs() }
@@ -559,6 +635,12 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onTranslationCycleTarget = { translationSession().cycleTargetLanguage() }
         panel.onTranslationOpenSettings = { openSettings() }
         panel.onTranslationInfo = { showTranslationInfoCard() }
+        panel.onPhrasesClose = { panelController?.closePhrases() }
+        panel.onPhrasesAdd = { addPhrase() }
+        panel.onPhrasesUse = { entry -> usePhrase(entry) }
+        panel.onPhrasesEdit = { entry -> editPhrase(entry) }
+        panel.onPhrasesDelete = { entry -> deletePhrase(entry) }
+        panel.onPhrasesReorder = { order -> reorderPhrases(order) }
         panel.onToolLayoutChanged = { layout ->
             // 复用现有 SharedPreferences（不新增数据库 / 表）
             preferences.toolbarTools = layout.encodeToolbar()
@@ -573,6 +655,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             preferences.moreTools,
         )
         panelController = panel
+        // 面板刚建好：立刻把当前常用语渲染进去
+        panel.updatePhrases(phrases)
 
         // 主题 / 尺寸只影响外观：即使失败也必须把键盘交出去
         runCatching { applyTheme() }.onFailure { throwable ->
@@ -648,6 +732,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         translation?.release()
         translation = null
         translationScope.cancel()
+        phraseCollector?.cancel()
+        phraseCollector = null
         RimeRuntime.close()
         binding = null
         panelController = null
@@ -697,7 +783,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             // 尚未开发的功能：明确告知，不伪装成可用
             MorePanel.Action.TRANSLATE -> openTranslation()
             MorePanel.Action.VOICE -> onVoiceTool()
-            MorePanel.Action.PHRASES -> notifyNotImplemented("常用语")
+            MorePanel.Action.PHRASES -> openPhrases()
             // CLOSE / CLIPBOARD 由 TopPanelController 内部处理
             MorePanel.Action.CLOSE, MorePanel.Action.CLIPBOARD -> Unit
         }
@@ -935,6 +1021,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.VISIBLE
                 binding.clipboardPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
+                binding.phrasesPanel.visibility = View.GONE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = keyboardHeight
                 }
@@ -943,6 +1030,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             PanelLayoutMode.CLIPBOARD_ONLY -> {
                 binding.keyboardView.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
+                binding.phrasesPanel.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.VISIBLE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = keyboardHeight
@@ -952,6 +1040,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD -> {
                 binding.keyboardView.visibility = View.VISIBLE
                 binding.translationPanel.visibility = View.GONE
+                binding.phrasesPanel.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.VISIBLE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = theme.clipboardSearchMaxHeight
@@ -962,8 +1051,19 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 // 内容区占键盘的位置：总高度与其它状态完全一致，键盘不会跳
                 binding.keyboardView.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.GONE
+                binding.phrasesPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.VISIBLE
                 binding.translationPanel.layoutParams = binding.translationPanel.layoutParams.apply {
+                    height = keyboardHeight
+                }
+            }
+
+            PanelLayoutMode.PHRASES_ONLY -> {
+                binding.keyboardView.visibility = View.GONE
+                binding.clipboardPanel.visibility = View.GONE
+                binding.translationPanel.visibility = View.GONE
+                binding.phrasesPanel.visibility = View.VISIBLE
+                binding.phrasesPanel.layoutParams = binding.phrasesPanel.layoutParams.apply {
                     height = keyboardHeight
                 }
             }
@@ -1150,6 +1250,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panelController?.let { panel ->
             val mode = when {
                 panel.currentState == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
+                panel.currentState == TopPanelState.PHRASES -> PanelLayoutMode.PHRASES_ONLY
                 panel.currentState != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
                 panel.isSearching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
                 else -> PanelLayoutMode.CLIPBOARD_ONLY

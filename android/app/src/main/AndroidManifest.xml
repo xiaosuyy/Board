@@ -49,6 +49,14 @@
             android:noHistory="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!-- 常用语新增 / 编辑：极简编辑页（输入法无法给自己输入文字，所以用 Activity） -->
+        <activity
+            android:name=".phrase.PhraseEditActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="常用语"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
         <activity
             android:name=".settings.DictionaryActivity"
             android:exported="false"

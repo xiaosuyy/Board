@@ -15,4 +15,5 @@ enum class PanelLayoutMode {
     CLIPBOARD_ONLY,
     CLIPBOARD_WITH_KEYBOARD,
     TRANSLATION_ONLY,
+    PHRASES_ONLY,
 }

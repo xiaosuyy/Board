@@ -45,6 +45,8 @@ class TopPanelController(
     private val voiceHeader: VoiceHeader,
     private val translationHeader: TranslationHeader,
     private val translationPanel: TranslationPanel,
+    private val phrasesHeader: PhrasesHeader,
+    private val phrasesPanel: PhrasesPanel,
 ) {
 
     var onMoreAction: ((MorePanel.Action) -> Unit)? = null
@@ -119,6 +121,32 @@ class TopPanelController(
         voiceHeader.render(VoiceState.IDLE, "")
         this.state = derivedState()
         applyState()
+    }
+
+    // ---------------------------------------------------------------- 常用语
+
+    var onPhrasesClose: (() -> Unit)? = null
+    var onPhrasesAdd: (() -> Unit)? = null
+    var onPhrasesUse: ((com.board.ime.database.entity.PhraseEntry) -> Unit)? = null
+    var onPhrasesEdit: ((com.board.ime.database.entity.PhraseEntry) -> Unit)? = null
+    var onPhrasesDelete: ((com.board.ime.database.entity.PhraseEntry) -> Unit)? = null
+    var onPhrasesReorder: ((List<String>) -> Unit)? = null
+
+    /** 打开常用语面板（固定高度不变，内容区占键盘位置） */
+    fun showPhrases() {
+        state = TopPanelState.PHRASES
+        applyState()
+    }
+
+    fun closePhrases() {
+        if (this.state != TopPanelState.PHRASES) return
+        this.state = derivedState()
+        applyState()
+    }
+
+    /** 列表数据变化（由宿主持有 Flow 后推过来；不在按键时调用） */
+    fun updatePhrases(items: List<com.board.ime.database.entity.PhraseEntry>) {
+        phrasesPanel.render(items)
     }
 
     // ---------------------------------------------------------------- 翻译
@@ -255,6 +283,13 @@ class TopPanelController(
         translationPanel.onCycleSource = { onTranslationCycleSource?.invoke() }
         translationPanel.onCycleTarget = { onTranslationCycleTarget?.invoke() }
         translationPanel.onOpenSettings = { onTranslationOpenSettings?.invoke() }
+
+        phrasesHeader.onBack = { onPhrasesClose?.invoke() }
+        phrasesHeader.onAdd = { onPhrasesAdd?.invoke() }
+        phrasesPanel.onUse = { entry -> onPhrasesUse?.invoke(entry) }
+        phrasesPanel.onEdit = { entry -> onPhrasesEdit?.invoke(entry) }
+        phrasesPanel.onDelete = { entry -> onPhrasesDelete?.invoke(entry) }
+        phrasesPanel.onReorder = { order -> onPhrasesReorder?.invoke(order) }
         clipboardHeader.onToggleEdit = { toggleClipboardEdit() }
         clipboardHeader.onToggleSearch = { toggleSearch() }
         clipboardHeader.onClearSearch = { stopSearch() }
@@ -373,6 +408,8 @@ class TopPanelController(
         voiceHeader.applyTheme(theme)
         translationHeader.applyTheme(theme)
         translationPanel.applyTheme(theme)
+        phrasesHeader.applyTheme(theme)
+        phrasesPanel.applyTheme(theme)
     }
 
     // ---------------------------------------------------------------- 搜索 / 筛选
@@ -490,6 +527,7 @@ class TopPanelController(
         val previousState = appliedState
         val layout = when {
             state == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
+            state == TopPanelState.PHRASES -> PanelLayoutMode.PHRASES_ONLY
             state != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
             searching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
             else -> PanelLayoutMode.CLIPBOARD_ONLY
@@ -503,6 +541,7 @@ class TopPanelController(
             morePanel.visibility = visibleIf(state == TopPanelState.MORE)
             clipboardHeader.visibility = visibleIf(state == TopPanelState.CLIPBOARD)
             translationHeader.visibility = visibleIf(state == TopPanelState.TRANSLATION)
+            phrasesHeader.visibility = visibleIf(state == TopPanelState.PHRASES)
             animateIn(visiblePanelChild())
         }
 
@@ -519,6 +558,7 @@ class TopPanelController(
         TopPanelState.CLIPBOARD -> clipboardHeader
         TopPanelState.VOICE -> voiceHeader
         TopPanelState.TRANSLATION -> translationHeader
+        TopPanelState.PHRASES -> phrasesHeader
     }
 
     /**

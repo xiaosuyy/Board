@@ -12,10 +12,12 @@ import com.board.ime.database.dao.ClipboardDao
 import com.board.ime.database.dao.DeviceDao
 import com.board.ime.database.dao.DictionaryDao
 import com.board.ime.database.dao.DictionarySourceDao
+import com.board.ime.database.dao.PhraseDao
 import com.board.ime.database.dao.SyncOperationDao
 import com.board.ime.database.entity.ClipboardItem
 import com.board.ime.database.entity.Device
 import com.board.ime.database.entity.DictionaryEntry
+import com.board.ime.database.entity.PhraseEntry
 import com.board.ime.database.entity.SyncOperation
 import com.board.ime.dictionary.DictionarySource
 
@@ -37,8 +39,9 @@ import com.board.ime.dictionary.DictionarySource
         DictionarySource::class,
         Device::class,
         SyncOperation::class,
+        PhraseEntry::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -53,6 +56,8 @@ abstract class BoardDatabase : RoomDatabase() {
     abstract fun deviceDao(): DeviceDao
 
     abstract fun syncOperationDao(): SyncOperationDao
+
+    abstract fun phraseDao(): PhraseDao
 
     companion object {
 
@@ -322,6 +327,46 @@ abstract class BoardDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v11：新增**常用语独立表** `phrase_entry`。
+         *
+         * 常用语不复用 `dictionary_entry`：那张表的 `word` 是唯一索引，
+         * 存不下两条完全相同的常用语；而且常用语需要 `sortOrder`。
+         *
+         * 纯新增表：**不动任何既有表**，老数据（词库 / 剪贴板 / 设备 / 同步队列）一条不丢，
+         * 常用语初始为空。跨设备身份用 `phraseId`（UUID），本地自增 `id` 不参与同步。
+         */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS phrase_entry (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        phraseId TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        sortOrder INTEGER NOT NULL DEFAULT 0,
+                        deletedAt INTEGER,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        sourceDeviceId TEXT
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_phrase_entry_phraseId " +
+                        "ON phrase_entry (phraseId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_phrase_entry_deletedAt " +
+                        "ON phrase_entry (deletedAt)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_phrase_entry_sortOrder " +
+                        "ON phrase_entry (sortOrder)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: BoardDatabase? = null
 
@@ -378,6 +423,7 @@ abstract class BoardDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
+                    MIGRATION_10_11,
                 )
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
