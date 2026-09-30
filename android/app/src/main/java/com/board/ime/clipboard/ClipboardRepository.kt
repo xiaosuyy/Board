@@ -52,6 +52,14 @@ enum class ClipboardCaptureSource {
 }
 
 /**
+ * 远端图片落库结果。
+ *
+ * [summary] 是本地记录；[localHash] 是**本端重新编码**后的 hash ——
+ * 回环抑制用它（跨平台 PNG 字节不同，不能用远端 hash）。
+ */
+data class RemoteImageApplied(val summary: ClipboardSummary?, val localHash: String)
+
+/**
  * 剪贴板仓库（本地存储 + 同步任务）。
  *
  * ## 存储策略（本轮重点）
@@ -85,6 +93,16 @@ class ClipboardRepository(
 
     /** 串行化抓取：系统的剪贴板回调可能连续触发多次 */
     private val captureLock = Mutex()
+
+    /**
+     * 图片 PNG 仓库：**由文字仓库的父目录派生**（`<files>/clipboard-images`），
+     * 因此**不需要改动任何调用点的构造函数**。
+     */
+    private val imageStore: ClipboardImageStore? =
+        contentStore?.let { store ->
+            val parent = store.rootDir.parentFile ?: store.rootDir
+            ClipboardImageStore(File(parent, "clipboard-images"))
+        }
 
     /** 刚由同步写进来的内容：这段时间内系统回调不再产生上传任务 */
     private val suppressed = HashMap<String, Long>()
@@ -164,9 +182,13 @@ class ClipboardRepository(
         return loadContent(item)
     }
 
-    suspend fun loadContent(item: ClipboardItem): String? = when (item.contentStorage) {
-        ClipboardContentStorage.INLINE -> item.content
-        ClipboardContentStorage.FILE -> contentStore?.read(item.contentFilePath)
+    suspend fun loadContent(item: ClipboardItem): String? {
+        // 图片是二进制：**绝不能**当成文本读回来
+        if (item.contentType == ClipboardContentType.IMAGE) return null
+        return when (item.contentStorage) {
+            ClipboardContentStorage.INLINE -> item.content
+            ClipboardContentStorage.FILE -> contentStore?.read(item.contentFilePath)
+        }
     }
 
     suspend fun loadContent(summary: ClipboardSummary): String? = loadContent(summary.id)
@@ -344,6 +366,156 @@ class ClipboardRepository(
             )
             return dao.findSummaryById(id)
         }
+    }
+
+    // ---------------------------------------------------------------- 图片（Phase 1-E）
+
+    /**
+     * **图片输入适配层（唯一入口）**：系统剪贴板图片与 `ACTION_SEND` 分享图片都走这里，
+     * 最终汇合到同一个 Image payload / push 链路 —— 绝不复制第二套图片上传代码。
+     */
+    suspend fun captureImageFromUri(
+        resolver: android.content.ContentResolver,
+        uri: android.net.Uri,
+        enqueuePush: Boolean = true,
+    ): ClipboardCaptureResult? {
+        val processed = ClipboardImageCodec.processUri(resolver, uri) ?: return null
+        return captureImage(processed, enqueuePush = enqueuePush)
+    }
+
+    /** 把一张**已按本端规则编码好**的图片写入本地历史（可产生上传任务） */
+    suspend fun captureImage(
+        processed: ProcessedImage,
+        sourceDeviceId: String? = null,
+        source: ClipboardCaptureSource = ClipboardCaptureSource.LOCAL,
+        enqueuePush: Boolean = true,
+    ): ClipboardCaptureResult {
+        val store = imageStore ?: return ClipboardCaptureResult.SKIPPED_EMPTY
+        val hash = processed.hash
+        if (hash.isEmpty()) return ClipboardCaptureResult.SKIPPED_EMPTY
+
+        val fromSync = source == ClipboardCaptureSource.REMOTE ||
+            hash == lastRemoteHash ||
+            consumeSuppression(hash)
+
+        // 图片**自回写**会再次走到这里（远端落库 → 写系统剪贴板 → 系统回调）。
+        // 落库用的是**远端 hash**、本端回读 hash 不同，因此这里若继续 insert 会产生
+        // 重复条目 + 重复文件；来自同步的图片一律**不重复入库**。
+        // （文字路径有它自己的、被冻结的语义，这里不改它。）
+        if (fromSync) {
+            SyncLog.event(
+                SyncEvent.SUPPRESS_LOOP,
+                "图片 hash=${SyncLog.shortHash(hash)} 来自同步，不重复入库",
+            )
+            return ClipboardCaptureResult.UPDATED
+        }
+
+        return captureLock.withLock {
+            val now = System.currentTimeMillis()
+            val existing = dao.findSummaryByHash(hash)
+            if (existing != null) {
+                dao.touchAndRestore(id = existing.id, updatedAt = now)
+                if (enqueuePush) enqueueClipboardPush(existing.id)
+                return@withLock ClipboardCaptureResult.UPDATED
+            }
+
+            val file = store.write(hash, processed.bytes)
+                ?: return@withLock ClipboardCaptureResult.SKIPPED_EMPTY
+            val id = dao.insert(
+                ClipboardItem(
+                    content = "",
+                    contentType = ClipboardContentType.IMAGE,
+                    preview = IMAGE_PREVIEW,
+                    contentHash = hash,
+                    sourceDeviceId = sourceDeviceId,
+                    createdAt = now,
+                    updatedAt = now,
+                    contentStorage = ClipboardContentStorage.FILE,
+                    contentFilePath = file.absolutePath,
+                    contentSize = processed.bytes.size.toLong(),
+                    searchText = "",
+                ),
+            )
+            if (enqueuePush) enqueueClipboardPush(id)
+            ClipboardCaptureResult.INSERTED
+        }
+    }
+
+    /**
+     * 远端图片写进本地历史（**不覆盖、不删除本地任何条目**）。
+     *
+     * 落库用的是**远端 hash**（下次 pull 才能短路，不重复下载）；
+     * 回环抑制登记的是**本端重新编码后的 hash**。
+     *
+     * @return 写入/命中结果；存储不可用或解码失败返回 null
+     */
+    suspend fun applyRemoteImage(
+        remoteBytes: ByteArray,
+        remoteHash: String,
+        originDeviceId: String? = null,
+        originType: String? = null,
+    ): RemoteImageApplied? {
+        val store = imageStore ?: return null
+        val processed = ClipboardImageCodec.processRaw(remoteBytes) ?: return null
+        val localHash = processed.hash
+
+        // 先登记抑制：写入后系统剪贴板回调不该再触发上传
+        suppressCapture(localHash)
+        lastRemoteHash = localHash
+
+        return captureLock.withLock {
+            val now = System.currentTimeMillis()
+            val existing = dao.findSummaryByHash(remoteHash)
+            if (existing != null) {
+                dao.touchAndRestore(id = existing.id, updatedAt = now)
+                return@withLock RemoteImageApplied(dao.findSummaryById(existing.id), localHash)
+            }
+            val file = store.write(remoteHash, processed.bytes) ?: return@withLock null
+            val id = dao.insert(
+                ClipboardItem(
+                    content = "",
+                    contentType = ClipboardContentType.IMAGE,
+                    preview = IMAGE_PREVIEW,
+                    contentHash = remoteHash,
+                    sourceDeviceId = SOURCE_REMOTE,
+                    origin = ClipboardOrigin.REMOTE,
+                    originDeviceId = originDeviceId,
+                    originType = originType,
+                    receivedAt = now,
+                    createdAt = now,
+                    updatedAt = now,
+                    contentStorage = ClipboardContentStorage.FILE,
+                    contentFilePath = file.absolutePath,
+                    contentSize = processed.bytes.size.toLong(),
+                    searchText = "",
+                ),
+            )
+            RemoteImageApplied(dao.findSummaryById(id), localHash)
+        }
+    }
+
+    /** 取一条图片条目的 PNG 字节（只对 IMAGE 有效） */
+    fun loadImageBytes(hash: String): ByteArray? = imageStore?.read(hash)
+
+    /**
+     * 清理无引用的图片文件。
+     *
+     * - `referenced`：仍被剪贴板历史条目引用的文件（从 `contentFilePath` 反推 hash）→ 不删；
+     * - [currentClipboardHash]：**当前系统剪贴板 URI 正在引用**的图片 → 不删；
+     * - 只有无引用且超过 [ttlMs] 的才删（失败残留 / 中断残留 / 旧文件）。
+     *
+     * @return 删除的文件数
+     */
+    suspend fun pruneImages(
+        currentClipboardHash: String?,
+        ttlMs: Long = IMAGE_TTL_MS,
+    ): Int {
+        val store = imageStore ?: return 0
+        val referenced = runCatching { dao.allFilePaths() }
+            .getOrDefault(emptyList())
+            .map { File(it).name.removeSuffix(ClipboardImageStore.PNG_SUFFIX) }
+            .toSet()
+        return store.prune(referenced, currentClipboardHash, System.currentTimeMillis(), ttlMs)
     }
 
     /**
@@ -669,6 +841,19 @@ class ClipboardRepository(
         /** 同上，但直接给 files 目录（自测 / 测试用，不依赖 Context） */
         fun contentStoreFor(filesDir: File): ClipboardContentStore =
             ClipboardContentStore(File(filesDir, "clipboard"))
+
+        /** 图片在列表里的占位摘要（本阶段不渲染缩略图） */
+        const val IMAGE_PREVIEW = "[图片]"
+
+        /** 图片文件 TTL：无引用且超过它才清理（保护“刚收到、可能还要用”的图） */
+        const val IMAGE_TTL_MS = 24L * 60L * 60L * 1000L
+
+        /** 图片仓库目录（`<files>/clipboard-images`），与文字仓库同级但分开 */
+        fun imageStoreFor(context: Context): ClipboardImageStore =
+            ClipboardImageStore(File(context.filesDir, "clipboard-images"))
+
+        fun imageStoreFor(filesDir: File): ClipboardImageStore =
+            ClipboardImageStore(File(filesDir, "clipboard-images"))
 
         private val WHITESPACE = Regex("\\s+")
         private val LINK_PATTERN = Regex("^https?://\\S+$", RegexOption.IGNORE_CASE)

@@ -63,8 +63,10 @@
             android:label="@string/dictionary_title" />
 
         <!--
-          「分享给 Board」：其它 App 分享 text/plain 时可以直接存进 Board 剪贴板。
-          优先用 content:// URI（大文本不必经过 Intent 字符串），见 ClipboardShareActivity。
+          「分享给 Board」：其它 App 分享 text/plain（文本）或 image/*（图片）时，
+          都可以直接存进 Board 剪贴板 / 图片剪贴板。
+          优先用 content:// URI（大文本 / 图片不必经过 Intent 字符串），见 ClipboardShareActivity。
+          Phase 1-E：图片分享是「输入适配层」，最终汇合到与系统剪贴板图片同一条链路。
         -->
         <activity
             android:name=".clipboard.ClipboardShareActivity"
@@ -77,8 +79,26 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
+
+        <!--
+          FileProvider：只服务于 Android 图片剪贴板 URI（系统剪贴板放不下原始图片字节，
+          只能放一个可解析的 content:// URI）。
+          · exported=false、grantUriPermissions=true
+          · 只开放 <files>/clipboard-images/（见 res/xml/board_file_paths.xml）
+          · **不**暴露整个 App 私有目录
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/board_file_paths" />
+        </provider>
 
         <activity
             android:name=".settings.SettingsSectionActivity"

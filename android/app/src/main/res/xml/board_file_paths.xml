@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 只开放**图片临时目录**，绝不暴露整个 App 私有目录。
+  目录与 ClipboardImageStore 一致：<files>/clipboard-images/
+-->
+<paths>
+    <files-path
+        name="clipboard_images"
+        path="clipboard-images/" />
+</paths>

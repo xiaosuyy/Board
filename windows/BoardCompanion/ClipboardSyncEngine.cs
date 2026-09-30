@@ -85,6 +85,21 @@ namespace BoardCompanion
         /// <summary>待推送的正文（**只在内存**；Push 失败时留到下次重试）</summary>
         private string pendingText;
 
+        /// <summary>待推送的图片 PNG 字节（**只在内存**；Push 失败时留到下次重试）。与 pendingText 互斥。</summary>
+        private byte[] pendingImage;
+
+        /// <summary>待推送图片的**本机编码** hash（PNG 字节的 SHA-256）</summary>
+        private string pendingImageHash;
+
+        /// <summary>
+        /// 最近一次已应用的**远端图片 manifest hash**（只在内存）。
+        ///
+        /// 跨平台 PNG 编码不同，远端 hash ≠ 本机回读 hash，所以不能用 localHash 判重；
+        /// 用它在 backgroundPull 里跳过「同一张远端图」的重复下载与重复写剪贴板。
+        /// 这不是新的回环机制 —— 回环仍由 expectedHash / localHash / hash 短路负责。
+        /// </summary>
+        private string lastImageRemoteHash;
+
         private bool busy;
 
         public event EventHandler StateChanged;
@@ -148,7 +163,11 @@ namespace BoardCompanion
         public void SetPaused(bool paused)
         {
             Paused = paused;
-            if (!paused) localHash = string.Empty; // 恢复后允许重新同步一次
+            if (!paused)
+            {
+                localHash = string.Empty;      // 恢复后允许重新同步一次
+                lastImageRemoteHash = null;
+            }
             lock (gate) { State = paused ? SyncState.Paused : (client == null ? SyncState.NotConfigured : SyncState.Idle); }
             Log.Info("paused=" + paused);
             RaiseStateChanged();
@@ -158,6 +177,30 @@ namespace BoardCompanion
         public void OnClipboardChanged()
         {
             if (Paused) return;
+            if (ClipboardMonitor.ContainsImage())
+            {
+                var image = ClipboardMonitor.ReadImagePng();
+                if (image == null)
+                {
+                    Log.Info("clipboard changed (image read failed, ignored)");
+                    return;
+                }
+                var imageHash = ClipboardHasher.HashBytes(image);
+                if (imageHash == expectedHash)
+                {
+                    Log.Info("clipboard changed image suppress_loop");
+                    expectedHash = null;
+                    return;
+                }
+                if (imageHash == localHash)
+                {
+                    Log.Info("clipboard changed image hashChanged=false skip");
+                    return;
+                }
+                debounce.Stop();
+                debounce.Start();
+                return;
+            }
             var text = ClipboardMonitor.ReadText();
             if (text == null)
             {
@@ -183,6 +226,23 @@ namespace BoardCompanion
 
         private void OnDebounceElapsed()
         {
+            if (ClipboardMonitor.ContainsImage())
+            {
+                var image = ClipboardMonitor.ReadImagePng();
+                if (image == null) return;
+                var imageHash = ClipboardHasher.HashBytes(image);
+                if (imageHash == localHash || imageHash == expectedHash)
+                {
+                    Log.Info("debounce settle image hashChanged=false skip");
+                    return;
+                }
+                Log.Info("clipboard changed image hashChanged=true bytes=" + image.Length);
+                pendingImage = image;
+                pendingImageHash = imageHash;
+                pendingText = null;
+                RunSta(() => SyncInternal(false));
+                return;
+            }
             var text = ClipboardMonitor.ReadText();
             if (text == null) return;
             var hash = ClipboardHasher.Hash(text);
@@ -256,17 +316,39 @@ namespace BoardCompanion
             {
                 if (readClipboardFirst)
                 {
-                    var current = ClipboardMonitor.ReadText();
-                    Log.Info("read clipboard chars=" + (current == null ? "none" : current.Length.ToString()));
-                    if (current != null)
+                    if (ClipboardMonitor.ContainsImage())
                     {
-                        var currentHash = ClipboardHasher.Hash(current);
-                        if (currentHash != localHash) pendingText = current;
+                        var currentImage = ClipboardMonitor.ReadImagePng();
+                        Log.Info("read clipboard image bytes=" +
+                                 (currentImage == null ? "none" : currentImage.Length.ToString()));
+                        if (currentImage != null)
+                        {
+                            var currentImageHash = ClipboardHasher.HashBytes(currentImage);
+                            if (currentImageHash != localHash)
+                            {
+                                pendingImage = currentImage;
+                                pendingImageHash = currentImageHash;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var current = ClipboardMonitor.ReadText();
+                        Log.Info("read clipboard chars=" + (current == null ? "none" : current.Length.ToString()));
+                        if (current != null)
+                        {
+                            var currentHash = ClipboardHasher.Hash(current);
+                            if (currentHash != localHash) pendingText = current;
+                        }
                     }
                 }
 
                 // ---- 1) Push（只在本地确有变更时）----
-                if (pendingText != null)
+                if (pendingImage != null)
+                {
+                    PushImage();
+                }
+                else if (pendingText != null)
                 {
                     var text = pendingText;
                     var hash = ClipboardHasher.Hash(text);
@@ -362,52 +444,59 @@ namespace BoardCompanion
                     if (parsed.Status == PayloadParseStatus.Ok)
                     {
                         var remote = parsed.Payload;
-                        var text = remote.text ?? string.Empty;
-                        if (remote.hasData)
+                        if (string.Equals(remote.type, ClipboardPayload.TYPE_IMAGE, StringComparison.Ordinal))
                         {
-                            // 超长：正文在 /file/{dataName}，先取回来（仍然只在内存）
-                            if (string.IsNullOrEmpty(remote.dataName))
-                            {
-                                Log.Warn("pull skipped hasData without dataName");
-                                text = string.Empty;
-                            }
-                            else
-                            {
-                                var fileGet = client.Get(FilePath(remote.dataName));
-                                if (fileGet.IsOk)
-                                {
-                                    text = fileGet.Body ?? string.Empty;
-                                    Log.Info("pull file status=" + fileGet.StatusCode + " bytes=" + remote.size);
-                                }
-                                else
-                                {
-                                    Log.Warn("pull file failed status=" + fileGet.StatusCode);
-                                    text = string.Empty;
-                                }
-                            }
-                        }
-
-                        if (text.Length == 0)
-                        {
-                            Log.Info("pull status=" + get.StatusCode + " empty skip");
-                        }
-                        else if (remote.hash == localHash)
-                        {
-                            Log.Info("pull status=" + get.StatusCode + " hashChanged=false skip");
+                            PullImage(remote, get.StatusCode);
                         }
                         else
                         {
-                            expectedHash = remote.hash;
-                            if (ClipboardMonitor.WriteText(text))
+                            var text = remote.text ?? string.Empty;
+                            if (remote.hasData)
                             {
-                                localHash = remote.hash;
-                                PersistHash();
-                                Log.Info("pull status=" + get.StatusCode + " chars=" + text.Length +
-                                         " applied=true file=" + remote.hasData);
+                                // 超长：正文在 /file/{dataName}，先取回来（仍然只在内存）
+                                if (string.IsNullOrEmpty(remote.dataName))
+                                {
+                                    Log.Warn("pull skipped hasData without dataName");
+                                    text = string.Empty;
+                                }
+                                else
+                                {
+                                    var fileGet = client.Get(FilePath(remote.dataName));
+                                    if (fileGet.IsOk)
+                                    {
+                                        text = fileGet.Body ?? string.Empty;
+                                        Log.Info("pull file status=" + fileGet.StatusCode + " bytes=" + remote.size);
+                                    }
+                                    else
+                                    {
+                                        Log.Warn("pull file failed status=" + fileGet.StatusCode);
+                                        text = string.Empty;
+                                    }
+                                }
+                            }
+
+                            if (text.Length == 0)
+                            {
+                                Log.Info("pull status=" + get.StatusCode + " empty skip");
+                            }
+                            else if (remote.hash == localHash)
+                            {
+                                Log.Info("pull status=" + get.StatusCode + " hashChanged=false skip");
                             }
                             else
                             {
-                                Log.Warn("pull write-clipboard failed");
+                                expectedHash = remote.hash;
+                                if (ClipboardMonitor.WriteText(text))
+                                {
+                                    localHash = remote.hash;
+                                    PersistHash();
+                                    Log.Info("pull status=" + get.StatusCode + " chars=" + text.Length +
+                                             " applied=true file=" + remote.hasData);
+                                }
+                                else
+                                {
+                                    Log.Warn("pull write-clipboard failed");
+                                }
                             }
                         }
                     }
@@ -442,6 +531,133 @@ namespace BoardCompanion
                 Log.Info("sync done elapsedMs=" + (Environment.TickCount - started));
                 RaiseStateChanged();
             }
+        }
+
+        /// <summary>
+        /// 推送内存中的待发图片（Phase 1-E）。
+        ///
+        /// - 超过 10 MiB → 丢弃且**不写清单**（只记元数据）；
+        /// - 上传失败 → 保留 pending，下次重试（断网恢复后自动补）；
+        /// - 成功 → 本地 hash 记为「本机编码 hash」，并登记 lastImageRemoteHash。
+        /// </summary>
+        private void PushImage()
+        {
+            var bytes = pendingImage;
+            var hash = pendingImageHash;
+            if (bytes == null || string.IsNullOrEmpty(hash))
+            {
+                pendingImage = null;
+                pendingImageHash = null;
+                return;
+            }
+            if (hash == localHash)
+            {
+                pendingImage = null;
+                pendingImageHash = null;
+                return;
+            }
+            if (!ClipboardImage.WithinLimit(bytes.Length))
+            {
+                Log.Warn("push image rejected bytes=" + bytes.Length +
+                         " limit=" + ClipboardPayload.MAX_IMAGE_BYTES + " kept_pending=false");
+                pendingImage = null;
+                pendingImageHash = null;
+                return;
+            }
+
+            var dataName = ClipboardImage.DataName(hash);
+            var filePut = client.PutBytes(FilePath(dataName), bytes, "image/png");
+            if (!filePut.IsOk)
+            {
+                LastError = filePut.Error;
+                Log.Warn("push image file failed status=" + filePut.StatusCode +
+                         " bytes=" + bytes.Length + " kept_pending=true");
+                lock (gate) { State = SyncState.Error; }
+                return;
+            }
+
+            var payload = new ClipboardPayload
+            {
+                type = ClipboardPayload.TYPE_IMAGE,
+                hash = hash,
+                text = null,
+                hasData = true,
+                dataName = dataName,
+                size = bytes.Length,
+                device = DeviceId,
+            };
+            var put = client.PutText(
+                ManifestPath(),
+                SyncClipboardProvider.Serialize(payload),
+                "application/json; charset=utf-8");
+            if (put.IsOk)
+            {
+                localHash = hash;
+                lastImageRemoteHash = hash;
+                pendingImage = null;
+                pendingImageHash = null;
+                PersistHash();
+                Log.Info("push image status=" + put.StatusCode + " bytes=" + bytes.Length);
+            }
+            else
+            {
+                LastError = put.Error;
+                Log.Warn("push image manifest failed status=" + put.StatusCode + " kept_pending=true");
+                lock (gate) { State = SyncState.Error; }
+            }
+        }
+
+        /// <summary>
+        /// 拉取远端图片（Phase 1-E）。**二进制**下载，校验大小与 hash，写回系统剪贴板。
+        ///
+        /// 回环抑制：本端回读再按本端编码，登记 expectedHash / localHash（**不用远端 hash**，
+        /// 因为两端 PNG 编码可能不同）。
+        /// </summary>
+        private void PullImage(ClipboardPayload remote, int status)
+        {
+            if (string.IsNullOrEmpty(remote.dataName))
+            {
+                Log.Warn("pull image skipped no dataName");
+                return;
+            }
+            if (remote.hash == lastImageRemoteHash)
+            {
+                Log.Info("pull status=" + status + " image hashChanged=false skip");
+                return;
+            }
+            var fileGet = client.GetBytes(FilePath(remote.dataName));
+            if (!fileGet.IsOk)
+            {
+                Log.Warn("pull image failed status=" + fileGet.StatusCode);
+                return;
+            }
+            var bytes = fileGet.BodyBytes ?? new byte[0];
+            if (!ClipboardImage.WithinLimit(bytes.Length))
+            {
+                Log.Warn("pull image rejected bytes=" + bytes.Length +
+                         " limit=" + ClipboardPayload.MAX_IMAGE_BYTES);
+                return;
+            }
+            if (!string.IsNullOrEmpty(remote.hash) && remote.hash != ClipboardHasher.HashBytes(bytes))
+            {
+                Log.Warn("pull image hash mismatch, ignored");
+                return;
+            }
+            if (!ClipboardMonitor.WriteImagePng(bytes))
+            {
+                Log.Warn("pull image write-clipboard failed");
+                return;
+            }
+            // 本端回读再编码 → 得到“本机编码 hash”，作为抑制与后续判重基准
+            var readback = ClipboardMonitor.ReadImagePng();
+            var readbackHash = (readback == null || readback.Length == 0)
+                ? remote.hash
+                : ClipboardHasher.HashBytes(readback);
+            expectedHash = readbackHash;
+            localHash = readbackHash;
+            lastImageRemoteHash = remote.hash;
+            PersistHash();
+            Log.Info("pull status=" + status + " image bytes=" + bytes.Length + " applied=true");
         }
 
         /// <summary>

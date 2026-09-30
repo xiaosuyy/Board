@@ -82,6 +82,15 @@ class SyncEngine(
     private val _applied = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val applied: SharedFlow<String> = _applied.asSharedFlow()
 
+    /**
+     * 图片落点通道（Phase 1-E）。
+     *
+     * **与文字完全独立**：不把 `SharedFlow<String>` 重构成 sealed type，
+     * 文字链路一行不动。载荷是**本端 hash**，宿主据此找到 PNG 文件并写入图片剪贴板。
+     */
+    private val _appliedImage = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val appliedImage: SharedFlow<String> = _appliedImage.asSharedFlow()
+
     private val syncMutex = Mutex()
 
     // ---------------------------------------------------------------- 剪贴板专用通道
@@ -516,13 +525,18 @@ class SyncEngine(
             complete(operation)
             return null
         }
-        if (!isTextSupported(item)) {
+        if (!isSyncableType(item)) {
             SyncLog.warn(
                 SyncEvent.IGNORED_TYPE,
                 "本地类型 ${item.contentType} 暂不支持上传，已忽略（不伪装成已同步）",
             )
             complete(operation)
             return null
+        }
+
+        // Phase 1-E：图片走二进制 /file/{hash}.png（清单 / 任务队列与文字完全同一套）
+        if (item.contentType == ClipboardContentType.IMAGE) {
+            return pushImageLocal(client, item, operation)
         }
 
         // 完整内容可能在文件里（超长剪贴板），这里按 id 读出来
@@ -594,6 +608,60 @@ class SyncEngine(
         return fail(response, SyncTrigger.AFTER_CLIPBOARD_CHANGE)
     }
 
+    /**
+     * 图片上传（Phase 1-E）。
+     *
+     * 与文字**共用同一套**「清单 + 任务队列 + 完成标记」；唯一区别是正文以**二进制**
+     * PUT 到 `/file/{hash}.png`，**不进 JSON**。
+     */
+    private suspend fun pushImageLocal(
+        client: WebDavClient,
+        item: ClipboardItem,
+        operation: SyncOperation,
+    ): SyncResult? {
+        val hash = item.contentHash
+        val bytes = if (hash.isNotEmpty()) clipboardRepository.loadImageBytes(hash) else null
+        if (bytes == null || bytes.isEmpty()) {
+            SyncLog.warn(SyncEvent.IGNORED_TYPE, "这条图片的内容已不可读（文件缺失？），跳过上传")
+            complete(operation)
+            return null
+        }
+        if (bytes.size > SyncClipboardMapper.MAX_IMAGE_BYTES) {
+            SyncLog.warn(
+                SyncEvent.IGNORED_TYPE,
+                "图片超过上限（bytes=${bytes.size} limit=${SyncClipboardMapper.MAX_IMAGE_BYTES}），不上传",
+            )
+            complete(operation)
+            return null
+        }
+
+        val dataName = SyncClipboardMapper.dataNameForImage(hash)
+        val filePut = client.putBytes(SyncClipboardPaths.file(dataName), bytes, CONTENT_TYPE_PNG)
+        if (!filePut.isOk) return failPush(operation, filePut)
+
+        val payload = SyncClipboardMapper.toImagePayload(hash, bytes.size.toLong())
+        val response = client.putText(
+            SyncClipboardPaths.MANIFEST,
+            SyncClipboardMapper.payloadToJson(payload),
+            CONTENT_TYPE_JSON,
+        )
+        return when {
+            response.isOk -> {
+                complete(operation)
+                pushCount = 1
+                pushedHashThisRun = hash
+                clipboardRepository.markRemoteCurrentById(item.id)
+                SyncLog.event(
+                    SyncEvent.UPLOAD,
+                    "图片已上传 hash=${SyncLog.shortHash(hash)} bytes=${bytes.size}",
+                )
+                null
+            }
+
+            else -> failPush(operation, response)
+        }
+    }
+
     /** 拉取远端清单并合并进本地历史 */
     private suspend fun pullRemote(client: WebDavClient): PullOutcome {
         val response = client.getText(SyncClipboardPaths.MANIFEST)
@@ -614,6 +682,11 @@ class SyncEngine(
                 "远端 type=${payload.type} hasData=${payload.hasData} 本轮不支持，安全忽略",
             )
             return PullOutcome.Applied(0, 0, 0)
+        }
+
+        // Phase 1-E：远端图片（二进制），与文字分支完全分开
+        if (payload.type == SyncClipboardMapper.TYPE_IMAGE) {
+            return pullImage(client, payload)
         }
 
         // 超长文本：清单里只有元信息，正文要从 /file/{dataName} 单独拉
@@ -692,9 +765,70 @@ class SyncEngine(
             _applied.tryEmit(text)
         }
         return PullOutcome.Applied(if (applied != null) 1 else 0, 1, 0)
+    }
 
+    /**
+     * 拉取远端图片（Phase 1-E）：**二进制**下载 → 大小/hash 校验 → 落库 → 通知宿主写图片剪贴板。
+     *
+     * 去重按**远端 hash**（下次 pull 才能短路，不重复下载）。
+     * `autoSync = OFF` 视为「暂停」：**不下载、不写剪贴板**。
+     */
+    private suspend fun pullImage(client: WebDavClient, payload: SyncClipboardPayload): PullOutcome {
+        if (!loadConfig().autoSync) {
+            SyncLog.event(SyncEvent.IGNORED_TYPE, "autoSync=OFF（暂停），本次不拉取图片")
+            return PullOutcome.Applied(0, 0, 0)
+        }
+        val name = payload.dataName
+        if (name.isNullOrBlank()) {
+            SyncLog.warn(SyncEvent.IGNORED_TYPE, "远端图片标记 hasData 但缺少 dataName，已安全忽略")
+            return PullOutcome.Applied(0, 0, 0)
+        }
+        val file = client.getBytes(SyncClipboardPaths.file(name))
+        if (!file.isOk) return PullOutcome.Failed(fail(file, SyncTrigger.MANUAL))
 
-        return PullOutcome.Applied(if (applied != null) 1 else 0, 0, 0)
+        val bytes = file.value ?: ByteArray(0)
+        if (bytes.isEmpty() || bytes.size > SyncClipboardMapper.MAX_IMAGE_BYTES) {
+            SyncLog.warn(
+                SyncEvent.IGNORED_TYPE,
+                "远端图片为空或超过上限（bytes=${bytes.size}），已忽略",
+            )
+            return PullOutcome.Applied(0, 0, 0)
+        }
+        val computed = ClipboardHasher.hashBytes(bytes)
+        if (payload.hash.isNotEmpty() && payload.hash != computed) {
+            SyncLog.warn(
+                SyncEvent.CONFLICT,
+                "远端图片 hash 与内容不一致（远端=${SyncLog.shortHash(payload.hash)} " +
+                    "本地算=${SyncLog.shortHash(computed)}），拒绝写入",
+            )
+            return PullOutcome.Applied(0, 1, 0)
+        }
+
+        val local = clipboardDao.findSummaryByHash(computed)
+        if (local != null) {
+            SyncLog.event(SyncEvent.SKIP_SAME_HASH, "图片 hash=${SyncLog.shortHash(computed)} 本地已存在")
+            clipboardRepository.markRemoteCurrent(computed)
+            return PullOutcome.Applied(0, 0, 1)
+        }
+
+        val applied = clipboardRepository.applyRemoteImage(
+            remoteBytes = bytes,
+            remoteHash = computed,
+            originDeviceId = payload.device,
+            originType = payload.device,
+        ) ?: return PullOutcome.Applied(0, 0, 0)
+
+        val summary = applied.summary
+        if (summary != null) {
+            SyncLog.event(
+                SyncEvent.DOWNLOAD,
+                "远端图片已保存 hash=${SyncLog.shortHash(computed)} bytes=${bytes.size}",
+            )
+            clipboardRepository.markRemoteCurrentById(summary.id)
+            // 通知宿主写入系统图片剪贴板（宿主先登记抑制，避免回环）
+            _appliedImage.tryEmit(computed)
+        }
+        return PullOutcome.Applied(if (summary != null) 1 else 0, 1, 0)
     }
 
     // ---------------------------------------------------------------- 导入词库（大型文件）
@@ -1102,9 +1236,13 @@ class SyncEngine(
         )
     }
 
-    private fun isTextSupported(item: ClipboardItem): Boolean = when (item.contentType) {
-        ClipboardContentType.TEXT, ClipboardContentType.LINK -> true
-        ClipboardContentType.IMAGE, ClipboardContentType.FILE, ClipboardContentType.UNKNOWN -> false
+    private fun isSyncableType(item: ClipboardItem): Boolean = when (item.contentType) {
+        ClipboardContentType.TEXT,
+        ClipboardContentType.LINK,
+        ClipboardContentType.IMAGE,
+        -> true
+
+        ClipboardContentType.FILE, ClipboardContentType.UNKNOWN -> false
     }
 
     private fun fail(response: WebDavResponse<*>, trigger: SyncTrigger): SyncResult {
@@ -1195,6 +1333,7 @@ class SyncEngine(
     private companion object {
         const val CONTENT_TYPE_JSON = "application/json"
         const val CONTENT_TYPE_TEXT = "text/plain; charset=utf-8"
+        const val CONTENT_TYPE_PNG = "image/png"
         const val QUEUE_LIMIT = 20
         const val DEBOUNCE_MS = 3_000L
         /** 剪贴板失败自动重试：首次 15s，之后递增，最多 5 次 */

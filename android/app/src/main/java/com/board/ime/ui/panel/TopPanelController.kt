@@ -57,6 +57,8 @@ class TopPanelController(
     var onClipboardInsert: ((ClipboardSummary) -> Unit)? = null
     /** 「全文」按 id 取内容（IO 线程读，回主线程回调） */
     var onClipboardLoadContent: ((Long, (String?) -> Unit) -> Unit)? = null
+    /** 图片条目的**低分辨率缩略图**（按目标像素降采样解码；不落盘、不缓存） */
+    var onClipboardLoadThumbnail: ((ClipboardSummary, Int, (android.graphics.Bitmap?) -> Unit) -> Unit)? = null
     var onClipboardTogglePin: ((ClipboardSummary) -> Unit)? = null
     var onClipboardToggleFavorite: ((ClipboardSummary) -> Unit)? = null
     var onClipboardDelete: ((ClipboardSummary) -> Unit)? = null
@@ -300,6 +302,9 @@ class TopPanelController(
         clipboardPanel.onToggleFavorite = { item -> onClipboardToggleFavorite?.invoke(item) }
         clipboardPanel.onDelete = { item -> onClipboardDelete?.invoke(item) }
         clipboardPanel.onLoadContent = { id, onLoaded -> onClipboardLoadContent?.invoke(id, onLoaded) }
+        clipboardPanel.onLoadThumbnail = { item, maxPx, onLoaded ->
+            onClipboardLoadThumbnail?.invoke(item, maxPx, onLoaded)
+        }
         clipboardPanel.onClearHistory = { includeProtected ->
             onClipboardClearHistory?.invoke(includeProtected)
         }

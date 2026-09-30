@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net;
 using System.Text;
 
@@ -16,6 +17,8 @@ namespace BoardCompanion
         public bool IsOk { get; set; }
         public int StatusCode { get; set; }
         public string Body { get; set; }
+        /// <summary>二进制读取（图片）时的原始字节；文本读取时为 null</summary>
+        public byte[] BodyBytes { get; set; }
         public string Error { get; set; }
         public bool NotFound { get; set; }
 
@@ -88,12 +91,30 @@ namespace BoardCompanion
             return Execute(WebDavMethod.Put, path, text ?? string.Empty, contentType);
         }
 
+        /// <summary>GET 二进制（图片 / 文件）。**绝不经 UTF-8 字符串中转**。</summary>
+        public WebDavResult GetBytes(string path)
+        {
+            return Execute(WebDavMethod.Get, path, null, null, null, readBinary: true);
+        }
+
+        /// <summary>PUT 二进制（图片 / 文件）。**绝不经 UTF-8 字符串中转**。</summary>
+        public WebDavResult PutBytes(string path, byte[] bytes, string contentType)
+        {
+            return Execute(WebDavMethod.Put, path, null, contentType, bytes ?? new byte[0], readBinary: false);
+        }
+
         public WebDavResult MkCol(string path)
         {
             return Execute(WebDavMethod.MkCol, path, null, null);
         }
 
-        private WebDavResult Execute(WebDavMethod method, string path, string body, string contentType)
+        private WebDavResult Execute(
+            WebDavMethod method,
+            string path,
+            string body,
+            string contentType,
+            byte[] binaryBody = null,
+            bool readBinary = false)
         {
             var url = baseUrl + "/" + (path ?? string.Empty).TrimStart('/');
             HttpWebRequest request;
@@ -121,7 +142,7 @@ namespace BoardCompanion
 
             if (method == WebDavMethod.Put)
             {
-                var bytes = Encoding.UTF8.GetBytes(body ?? string.Empty);
+                var bytes = binaryBody ?? Encoding.UTF8.GetBytes(body ?? string.Empty);
                 request.ContentType = string.IsNullOrEmpty(contentType)
                     ? "application/json; charset=utf-8"
                     : contentType;
@@ -149,18 +170,28 @@ namespace BoardCompanion
                 {
                     int status = (int)response.StatusCode;
                     string text = string.Empty;
+                    byte[] bytes = null;
                     if (method == WebDavMethod.Get)
                     {
-                        using (var reader = new System.IO.StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                        if (readBinary)
                         {
-                            text = reader.ReadToEnd();
+                            // 有界读取：最多多读 1 字节即可判定“超过 10 MiB”
+                            bytes = ReadAll(response, ClipboardPayload.MAX_IMAGE_BYTES + 1);
+                        }
+                        else
+                        {
+                            using (var reader = new System.IO.StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                            {
+                                text = reader.ReadToEnd();
+                            }
                         }
                     }
                     // 2xx = 成功（与 Android 一致，不只认 200）
                     bool ok = status >= 200 && status < 300;
-                    return ok
-                        ? WebDavResult.Ok(status, text)
-                        : WebDavResult.Fail(status, "HTTP " + status, false);
+                    if (!ok) return WebDavResult.Fail(status, "HTTP " + status, false);
+                    var result = WebDavResult.Ok(status, text);
+                    result.BodyBytes = bytes;
+                    return result;
                 }
             }
             catch (WebException ex)
@@ -191,6 +222,28 @@ namespace BoardCompanion
             catch (Exception)
             {
                 return WebDavResult.Fail(0, "请求失败", false);
+            }
+        }
+
+        /// <summary>
+        /// 把响应体读成字节。**有界**：最多读 [maxBytes]（≤0 表示不限），
+        /// 因此即使服务器返回超大文件也不会把内存打爆（超限时调用方按“超过 10 MiB”拒绝）。
+        /// </summary>
+        private static byte[] ReadAll(HttpWebResponse response, int maxBytes)
+        {
+            int limit = maxBytes > 0 ? maxBytes : int.MaxValue;
+            using (var input = response.GetResponseStream())
+            using (var output = new MemoryStream())
+            {
+                var buffer = new byte[64 * 1024];
+                while (true)
+                {
+                    int read = input.Read(buffer, 0, buffer.Length);
+                    if (read <= 0) break;
+                    output.Write(buffer, 0, read);
+                    if (output.Length > limit) break;
+                }
+                return output.ToArray();
             }
         }
 

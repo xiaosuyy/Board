@@ -41,6 +41,22 @@ object ClipboardHasher {
         }
     }
 
+    /**
+     * 任意字节的 SHA-256（小写十六进制）。
+     *
+     * 图片用它：hash = SHA-256(**PNG 字节**)，与 Windows 的 `ClipboardHasher.HashBytes` 形状一致。
+     * 注意：两端对同一图片编出的 PNG 字节可能不同，因此**不做跨平台图片 hash 去重**
+     * —— 本端只用**自己实际生成的 PNG 字节**算 hash。
+     */
+    fun hashBytes(bytes: ByteArray): String = try {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(bytes)
+        digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+    } catch (throwable: Throwable) {
+        Log.w(TAG, "计算图片哈希失败：${throwable.message}")
+        ""
+    }
+
     /** 与 [hash] 等价的判定，但用于「两个内容是否相同」的快速比较 */
     fun sameContent(a: String, b: String): Boolean = a.length == b.length && a == b
 

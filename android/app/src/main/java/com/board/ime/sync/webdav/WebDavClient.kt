@@ -119,12 +119,24 @@ class OkHttpWebDavClient(
 
     override suspend fun getBytes(path: String): WebDavResponse<ByteArray> {
         invalidUrl<ByteArray>()?.let { return it }
-        val response = execute(authed(urlFor(path)).get().build())
-        return when {
-            response.error == WebDavError.NONE ->
-                WebDavResponse.ok(response.value.orEmpty().toByteArray(Charsets.UTF_8), response.httpCode)
-
-            else -> WebDavResponse.fail(response.error, response.httpCode, response.message)
+        return try {
+            val start = System.currentTimeMillis()
+            client.newCall(authed(urlFor(path)).get().build()).execute().use { response ->
+                logHttp(response.request, response, start)
+                if (response.code !in 200..299) {
+                    fromClassifiedBytes(classify(response))
+                } else {
+                    // 真正的二进制读取（body.bytes()）——**绝不**经 UTF-8 字符串中转，
+                    // 否则 PNG 等二进制会被破坏。文字 GET 的行为完全不变。
+                    WebDavResponse.ok(response.body?.bytes() ?: ByteArray(0), response.code)
+                }
+            }
+        } catch (timeout: SocketTimeoutException) {
+            WebDavResponse.fail(WebDavError.TIMEOUT, message = "超时")
+        } catch (io: IOException) {
+            WebDavResponse.fail(WebDavError.NETWORK, message = io.message ?: "网络不可用")
+        } catch (throwable: Throwable) {
+            WebDavResponse.fail(WebDavError.UNEXPECTED, message = throwable.message)
         }
     }
 
@@ -322,6 +334,10 @@ class OkHttpWebDavClient(
 
     /** 把 [classify] 的分类结果转成 `WebDavResponse<Unit>`（错误路径用） */
     private fun fromClassified(classified: WebDavResponse<String>): WebDavResponse<Unit> =
+        WebDavResponse.fail(classified.error, classified.httpCode, classified.message)
+
+    /** 同上，但用于二进制的错误路径 */
+    private fun fromClassifiedBytes(classified: WebDavResponse<String>): WebDavResponse<ByteArray> =
         WebDavResponse.fail(classified.error, classified.httpCode, classified.message)
 
     /**

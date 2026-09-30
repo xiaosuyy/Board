@@ -69,6 +69,24 @@ class ClipboardShareActivity : AppCompatActivity() {
             sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector { com.board.ime.settings.BoardPreferences(this).skipSensitiveClipboard },
         )
 
+        // 0) 图片分享（Phase 1-E）：与系统剪贴板图片**完全同一条**链路，不复制上传代码
+        val imageUri = sharedImageUri(intent)
+        if (imageUri != null) {
+            val engine = com.board.ime.sync.SyncEngineHolder.get(this@ClipboardShareActivity)
+            if (!engine.loadConfig().autoSync) {
+                Log.i(TAG, "autoSync=OFF（暂停），忽略分享的图片")
+                return ClipboardCaptureResult.SKIPPED_EMPTY
+            }
+            val result = repository.captureImageFromUri(contentResolver, imageUri, enqueuePush = true)
+            if (result != null) {
+                // 只记状态，绝不记图片内容
+                Log.i(TAG, "分享导入（图片） result=$result")
+                return result
+            }
+            Log.w(TAG, "分享的图片无法读取或解码，已忽略")
+            return ClipboardCaptureResult.SKIPPED_EMPTY
+        }
+
         // 1) 优先：content:// URI（大文本不必经过 Intent 字符串）
         val uri = intent.parcelableExtra<Uri>(Intent.EXTRA_STREAM) ?: intent.data
         if (uri != null && uri.scheme?.startsWith("content") == true) {
@@ -88,6 +106,24 @@ class ClipboardShareActivity : AppCompatActivity() {
         return ClipboardCaptureResult.SKIPPED_EMPTY
     }
 
+    /**
+     * 分享意图里的图片 URI。
+     *
+     * 判定：`Intent.type` 优先（`image` 开头）→ URI 的实际 MIME → 对方完全没给 type 时按扩展名兜底。
+     * 支持 `content://`；`file://` 也能通过 `ContentResolver.openInputStream` 读。
+     * **绝不把 URI 转成 String 当普通文本。**
+     */
+    private fun sharedImageUri(intent: Intent): Uri? {
+        val uri = intent.parcelableExtra<Uri>(Intent.EXTRA_STREAM) ?: intent.data ?: return null
+        val declared = intent.type
+        if (ClipboardImageCodec.isImageMime(declared)) return uri
+        val mime = runCatching { contentResolver.getType(uri) }.getOrNull()
+        if (ClipboardImageCodec.isImageMime(mime)) return uri
+        if (declared != null) return null
+        val name = uri.lastPathSegment?.lowercase() ?: return null
+        return uri.takeIf { candidate -> IMAGE_EXTENSIONS.any { name.endsWith(it) } }
+    }
+
     private fun readUri(uri: Uri): String? = runCatching {
         contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
     }.onFailure { Log.w(TAG, "读取分享内容失败：${it.message}") }.getOrNull()
@@ -105,5 +141,8 @@ class ClipboardShareActivity : AppCompatActivity() {
 
     private companion object {
         const val TAG = "BoardClipboardShare"
+
+        /** 对方没给 MIME 时的兜底扩展名 */
+        val IMAGE_EXTENSIONS = listOf(".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
     }
 }

@@ -7,6 +7,7 @@ import com.board.ime.voice.VoiceInputSession
 import com.board.ime.voice.VoiceState
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.SharedPreferences
@@ -648,6 +649,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onClipboardDelete = { item -> deleteClipboardItem(item) }
         panel.onClipboardClearHistory = { includeProtected -> clearClipboardHistory(includeProtected) }
         panel.onClipboardLoadContent = { id, onLoaded -> loadClipboardContent(id, onLoaded) }
+        panel.onClipboardLoadThumbnail = { item, maxPx, onLoaded ->
+            loadClipboardThumbnail(item, maxPx, onLoaded)
+        }
         panel.onPanelLayoutChanged = { mode -> applyPanelLayout(mode) }
         panel.onClipboardOpened = { onClipboardOpened() }
         panel.onSearchQueryChanged = { query -> observeClipboard(query, panel.isRemoteOnly) }
@@ -878,6 +882,26 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }
     }
 
+    /**
+     * 图片缩略图：**从当前受控图片文件**按目标像素**降采样**解码（IO 线程），回主线程回调。
+     *
+     * - 不加载原图全尺寸 Bitmap；
+     * - **不写任何磁盘缓存**（不生成缩略图文件）；
+     * - 返回的 Bitmap 由面板负责回收（条目替换 / 面板离开窗口时）。
+     */
+    private fun loadClipboardThumbnail(
+        item: ClipboardSummary,
+        maxPx: Int,
+        onLoaded: (android.graphics.Bitmap?) -> Unit,
+    ) {
+        serviceScope.launch {
+            val bitmap = runCatching {
+                com.board.ime.clipboard.ClipboardImageCodec.decodeThumbnail(item.contentFilePath, maxPx)
+            }.getOrNull()
+            mainHandler.post { onLoaded(bitmap) }
+        }
+    }
+
     private fun setClipboardPinned(item: ClipboardSummary, pinned: Boolean) {
         serviceScope.launch { clipboardRepository?.setPinned(item.id, pinned) }
     }
@@ -931,6 +955,14 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val manager = clipboardManager ?: return
         val clip = runCatching { manager.primaryClip }.getOrNull() ?: return
         if (clip.itemCount == 0) return
+
+        // Phase 1-E：图片**优先按 MIME 判定**，绝不把图片 URI 当普通文本处理
+        val imageUri = clipImageUri(clip)
+        if (imageUri != null) {
+            captureClipboardImage(imageUri, pushToCloud)
+            return
+        }
+
         val text = runCatching { clip.getItemAt(0).coerceToText(this)?.toString() }
             .getOrNull()
             ?.trim()
@@ -950,6 +982,127 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 requestAutoSync()
             }
         }
+    }
+
+    // ------------------------------------------------------------ 图片剪贴板（Phase 1-E）
+
+    /** autoSync=OFF 即「暂停」语义（不新增 paused 状态；只作用于图片路径） */
+    private fun isAutoSyncOn(): Boolean =
+        runCatching { syncEngine?.loadConfig()?.autoSync == true }.getOrDefault(false)
+
+    /**
+     * 剪贴板里若是图片，返回它的 URI。
+     *
+     * 判定顺序：`ClipDescription` 的 MIME 优先（`image` 开头），其次看各 item 的 URI MIME。
+     */
+    private fun clipImageUri(clip: ClipData): Uri? {
+        val description = clip.description
+        if (description != null) {
+            for (i in 0 until description.mimeTypeCount) {
+                if (com.board.ime.clipboard.ClipboardImageCodec.isImageMime(description.getMimeType(i))) {
+                    return (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }.firstOrNull()
+                }
+            }
+        }
+        for (i in 0 until clip.itemCount) {
+            val uri = clip.getItemAt(i).uri ?: continue
+            val type = runCatching { contentResolver.getType(uri) }.getOrNull()
+            if (com.board.ime.clipboard.ClipboardImageCodec.isImageMime(type)) return uri
+        }
+        return null
+    }
+
+    /**
+     * 系统剪贴板图片 → 与 `ACTION_SEND` 分享入口**完全同一条**链路
+     * （`ClipboardRepository.captureImageFromUri`），不存在第二套图片上传代码。
+     *
+     * autoSync=OFF 时作为暂停：**不 Capture、不上传**。
+     */
+    private fun captureClipboardImage(uri: Uri, pushToCloud: Boolean) {
+        if (!isAutoSyncOn()) {
+            com.board.ime.sync.SyncLog.event(
+                com.board.ime.sync.SyncEvent.IGNORED_TYPE,
+                "autoSync=OFF（暂停），不抓取剪贴板图片",
+            )
+            return
+        }
+        serviceScope.launch {
+            val result = clipboardRepository?.captureImageFromUri(
+                contentResolver,
+                uri,
+                enqueuePush = pushToCloud,
+            )
+            if (result == ClipboardCaptureResult.INSERTED) requestAutoSync()
+        }
+    }
+
+    /**
+     * 远端图片写进系统剪贴板。
+     *
+     * **先按本端重新编码算出本端 hash 并登记抑制**，再写剪贴板 ——
+     * 否则系统回调会把它当本机复制再上传（回环）。跨平台 PNG 编码不同，所以不用远端 hash。
+     */
+    private fun applyRemoteImageToClipboard(hash: String) {
+        if (!isAutoSyncOn()) {
+            Log.w(TAG, "autoSync=OFF（暂停），不写图片剪贴板")
+            return
+        }
+        val manager = clipboardManager ?: return
+        serviceScope.launch {
+            val store = ClipboardRepository.imageStoreFor(this@BoardInputMethodService)
+            val file = store.fileFor(hash)
+            if (!file.isFile) return@launch
+            val processed = com.board.ime.clipboard.ClipboardImageCodec
+                .processRaw(file.readBytes()) ?: return@launch
+            clipboardRepository?.suppressCapture(processed.hash)
+            val uri = runCatching {
+                androidx.core.content.FileProvider.getUriForFile(
+                    this@BoardInputMethodService,
+                    "$packageName.fileprovider",
+                    file,
+                )
+            }.getOrNull()
+            if (uri == null) {
+                Log.w(TAG, "图片 FileProvider URI 生成失败（authority / paths 配置？）")
+                return@launch
+            }
+            // 关键：**显式声明 image/png**，不依赖 FileProvider 的 getType 一定返回非空。
+            // 若 ClipDescription 没有 MIME，支持图片粘贴的 App 会用 hasMimeType("image/*")
+            // 判定“剪贴板里没有图片”，于是长按粘贴什么都不出。
+            val mime = contentResolver.getType(uri) ?: "image/png"
+            val clip = ClipData(
+                ClipDescription(CLIPBOARD_LABEL, arrayOf(mime)),
+                ClipData.Item(uri),
+            )
+            val set = runCatching { manager.setPrimaryClip(clip) }
+            if (set.isFailure) {
+                // Android 10+ 后台写剪贴板可能被忽略；本地历史里仍然有这条
+                Log.w(TAG, "写入图片剪贴板被拒绝（后台限制）：${set.exceptionOrNull()?.message}")
+                return@launch
+            }
+            // 回读确认系统真的接受了这个 clip（只记元数据，绝不记图片内容）
+            val back = runCatching { manager.primaryClip }.getOrNull()
+            val backMime = back?.description?.let { d ->
+                if (d.mimeTypeCount > 0) d.getMimeType(0) else null
+            }
+            Log.i(
+                TAG,
+                "图片剪贴板已写入 mime=$mime items=${back?.itemCount ?: 0} readbackMime=$backMime",
+            )
+        }
+    }
+
+    /** **当前系统剪贴板正在引用**的图片 hash（清理想保护它，避免用户稍后粘贴失败） */
+    private fun currentClipboardImageHash(): String? {
+        val clip = runCatching { clipboardManager?.primaryClip }.getOrNull() ?: return null
+        for (i in 0 until clip.itemCount) {
+            val path = clip.getItemAt(i).uri?.path ?: continue
+            val name = path.substringAfterLast('/')
+            if (name.endsWith(com.board.ime.clipboard.ClipboardImageStore.PNG_SUFFIX)) {
+                return name.removeSuffix(com.board.ime.clipboard.ClipboardImageStore.PNG_SUFFIX)
+            }
+        }
+        return null
     }
 
     // ------------------------------------------------------------ 同步
@@ -985,6 +1138,15 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
         serviceScope.launch {
             engine.applied.collect { content -> mainHandler.post { applyRemoteToClipboard(content) } }
+        }
+
+        // 图片落点：独立通道（不触碰文字链路）
+        serviceScope.launch {
+            engine.appliedImage.collect { hash -> mainHandler.post { applyRemoteImageToClipboard(hash) } }
+        }
+        // 图片生命周期：清理无引用且已过期的旧文件；**当前剪贴板引用的那张不删**
+        serviceScope.launch {
+            runCatching { clipboardRepository?.pruneImages(currentClipboardImageHash()) }
         }
 
         if (config.isConfigured && config.autoSync) {

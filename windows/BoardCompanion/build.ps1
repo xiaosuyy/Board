@@ -29,7 +29,8 @@ $refs = @(
     '/r:System.Core.dll',
     '/r:System.Web.Extensions.dll',
     '/r:System.Security.dll',
-    '/r:System.Windows.Forms.dll'
+    '/r:System.Windows.Forms.dll',
+    '/r:System.Drawing.dll'
 )
 $common = @('/nologo', '/platform:anycpu', '/optimize+')
 
@@ -39,6 +40,7 @@ $mainOut = Join-Path $build 'BoardCompanion.exe'
     "$root\Program.cs" `
     "$root\ClipboardHasher.cs" `
     "$root\ClipboardPayload.cs" `
+    "$root\ClipboardImage.cs" `
     "$root\SyncClipboardProvider.cs" `
     "$root\WebDavUrlPolicy.cs" `
     "$root\WebDavClient.cs" `

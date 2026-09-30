@@ -14,7 +14,7 @@ import java.io.File
  * - 写入是**分块**的：不把整段内容再复制成一份 byte[]（10MB 文本会瞬间多占 30MB）
  * - 删记录时同步删文件；文件缺失时读取返回 null，由上层给出「文件缺失」而不是崩
  */
-class ClipboardContentStore(private val rootDir: File) {
+class ClipboardContentStore(val rootDir: File) {
 
     /** 一条内容对应的文件（不保证存在） */
     fun fileFor(hash: String): File {

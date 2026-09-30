@@ -42,6 +42,7 @@ namespace BoardCompanionTests
             TestUrlPolicy();
             TestLifecycle();
             TestPhase1D();
+            TestPhase1E();
 
             Console.WriteLine();
             Console.WriteLine("PASS " + passed);
@@ -151,8 +152,17 @@ namespace BoardCompanionTests
                 unknownResult.Status == PayloadParseStatus.Ok && unknownResult.Payload.text == "x",
                 "status=" + unknownResult.Status);
 
-            // Image / File / Group：安全拒绝，不当作 Text
-            foreach (var type in new[] { "Image", "File", "Group" })
+            // Phase 1-E：Image 带数据时**支持**（二进制走 /file/，清单里不含图片）
+            var image = SyncClipboardProvider.Deserialize(
+                "{\"type\":\"Image\",\"hash\":\"abc\",\"text\":null,\"hasData\":true," +
+                "\"dataName\":\"abc.png\",\"size\":5}");
+            Check("accept-image-with-data",
+                image.Status == PayloadParseStatus.Ok && image.Payload.hasData &&
+                image.Payload.dataName == "abc.png" && image.Payload.text == null,
+                "status=" + image.Status);
+
+            // File / Group，以及**没有数据**的 Image：依旧安全拒绝，绝不当作 Text
+            foreach (var type in new[] { "File", "Group" })
             {
                 var r = SyncClipboardProvider.Deserialize(
                     "{\"type\":\"" + type + "\",\"hash\":\"abc\",\"hasData\":true,\"dataName\":\"f.png\"}");
@@ -160,6 +170,11 @@ namespace BoardCompanionTests
                     r.Status == PayloadParseStatus.UnsupportedType && r.Payload == null,
                     "status=" + r.Status);
             }
+            var noDataImage = SyncClipboardProvider.Deserialize(
+                "{\"type\":\"Image\",\"hash\":\"abc\",\"hasData\":false,\"dataName\":\"\"}");
+            Check("reject-image-without-data",
+                noDataImage.Status == PayloadParseStatus.UnsupportedType && noDataImage.Payload == null,
+                "status=" + noDataImage.Status);
 
             // 损坏 JSON
             Check("broken-json",
@@ -184,6 +199,117 @@ namespace BoardCompanionTests
             Check("empty-json",
                 SyncClipboardProvider.Deserialize("").Status == PayloadParseStatus.InvalidJson,
                 "空串应 InvalidJson");
+        }
+
+        // ------------------------------------------------------------ 图片（Phase 1-E）
+
+        /// <summary>
+        /// 图片相关：统一常量、10 MiB 边界、PNG 编解码的**确定性**与透明通道、
+        /// 图片清单形状。**不触碰系统剪贴板**（避免污染用户剪贴板，真机项另记 NOT VERIFIED）。
+        /// </summary>
+        private static void TestPhase1E()
+        {
+            Console.WriteLine("[image]");
+
+            Check("image-limit-const",
+                ClipboardPayload.MAX_IMAGE_BYTES == 10 * 1024 * 1024,
+                "必须与 Android 一致 = 10 MiB");
+
+            // ---- 10 MiB 边界：10MiB-1 / 10MiB / 10MiB+1 ----
+            Check("image-limit-10mib-1",
+                ClipboardImage.WithinLimit(ClipboardPayload.MAX_IMAGE_BYTES - 1L), "-1 应通过");
+            Check("image-limit-10mib",
+                ClipboardImage.WithinLimit(ClipboardPayload.MAX_IMAGE_BYTES), "= 10MiB 应通过");
+            Check("image-limit-10mib+1",
+                !ClipboardImage.WithinLimit(ClipboardPayload.MAX_IMAGE_BYTES + 1L), "+1 应拒绝");
+            Check("image-limit-zero", !ClipboardImage.WithinLimit(0L), "0 应拒绝");
+
+            // ---- dataName ----
+            Check("image-data-name",
+                ClipboardImage.DataName("abc") == "abc.png" &&
+                ClipboardImage.DataName("") == "board.png",
+                "dataName = <hash>.png");
+
+            // ---- PNG 编码稳定性（不碰剪贴板）----
+            using (var bitmap = new System.Drawing.Bitmap(8, 8))
+            {
+                using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+                {
+                    graphics.Clear(System.Drawing.Color.Crimson);
+                }
+                var png1 = ClipboardImage.EncodePng(bitmap);
+                var png2 = ClipboardImage.EncodePng(bitmap);
+                Check("png-encode-stable",
+                    ByteEquals(png1, png2) && png1.Length > 0,
+                    "同一 Bitmap 反复编码应得到相同字节");
+                Check("png-hash-stable",
+                    ClipboardHasher.HashBytes(png1) == ClipboardHasher.HashBytes(png2) &&
+                    ClipboardHasher.HashBytes(png1).Length == 64,
+                    "PNG hash 应稳定且为 64 位小写十六进制");
+
+                var decoded = ClipboardImage.DecodePng(png1);
+                Check("png-decode", decoded != null && decoded.Width == 8 && decoded.Height == 8,
+                    "解码后尺寸应保持 8x8");
+                if (decoded != null)
+                {
+                    var reencoded = ClipboardImage.EncodePng(decoded);
+                    Check("png-reencode-stable", ByteEquals(png1, reencoded),
+                        "编码→解码→编码应幂等（回环抑制依赖它）");
+                    decoded.Dispose();
+                }
+            }
+
+            // ---- 透明 PNG：保留 alpha ----
+            using (var bitmap = new System.Drawing.Bitmap(
+                4, 4, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            {
+                bitmap.SetPixel(0, 0, System.Drawing.Color.FromArgb(0, 255, 0, 0));
+                bitmap.SetPixel(1, 0, System.Drawing.Color.FromArgb(128, 0, 255, 0));
+                bitmap.SetPixel(2, 0, System.Drawing.Color.FromArgb(255, 0, 0, 255));
+                var png = ClipboardImage.EncodePng(bitmap);
+                var back = ClipboardImage.DecodePng(png);
+                Check("png-transparency",
+                    back != null && back.GetPixel(0, 0).A == 0 &&
+                    back.GetPixel(1, 0).A == 128 && back.GetPixel(2, 0).A == 255,
+                    "透明通道必须保留");
+                if (back != null) back.Dispose();
+            }
+
+            Check("png-decode-garbage",
+                ClipboardImage.DecodePng(new byte[] { 1, 2, 3, 4 }) == null,
+                "坏数据应返回 null 而不是抛异常");
+
+            // ---- 图片清单形状（与 Android 的 toImagePayload 一致）----
+            var hash = ClipboardHasher.HashBytes(new byte[] { 9, 9, 9 });
+            var payload = new ClipboardPayload
+            {
+                type = ClipboardPayload.TYPE_IMAGE,
+                hash = hash,
+                text = null,
+                hasData = true,
+                dataName = ClipboardImage.DataName(hash),
+                size = 3,
+                device = "win-test",
+            };
+            var json = SyncClipboardProvider.Serialize(payload);
+            var back2 = SyncClipboardProvider.Deserialize(json);
+            Check("image-manifest-roundtrip",
+                back2.Status == PayloadParseStatus.Ok && back2.Payload.hasData &&
+                back2.Payload.text == null && back2.Payload.dataName == hash + ".png" &&
+                back2.Payload.size == 3,
+                "图片清单应为 type=Image/hasData=true/text=null/dataName=<hash>.png");
+            Check("image-manifest-has-no-body",
+                json.Length < 512, "清单里不得含图片二进制，实际长度 " + json.Length);
+        }
+
+        private static bool ByteEquals(byte[] a, byte[] b)
+        {
+            if (a == null || b == null || a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
         }
 
         // ------------------------------------------------------------ 生命周期 / UI

@@ -67,7 +67,10 @@ object SyncClipboardMapper {
      * `Image` / `File` / `Group` 一律返回 false —— 上层必须**安全忽略并记录日志**，
      * 不允许把不支持的类型伪装成已同步。
      */
-    fun isSupported(payload: SyncClipboardPayload): Boolean = payload.type == TYPE_TEXT
+    fun isSupported(payload: SyncClipboardPayload): Boolean =
+        payload.type == TYPE_TEXT ||
+            // Phase 1-E：Image 必须是**文件型**（hasData + dataName），二进制走 /file/
+            (payload.type == TYPE_IMAGE && payload.hasData && !payload.dataName.isNullOrBlank())
 
     /**
      * 超过这个字节数的文本不再内联进 `SyncClipboard.json`，改走 `/file/`。
@@ -77,8 +80,33 @@ object SyncClipboardMapper {
      */
     const val INLINE_TEXT_MAX_BYTES = 256 * 1024
 
+    /**
+     * 图片统一上限（两端一致 = 10 MiB）。
+     *
+     * **同时作用于原始输入与最终 PNG**：超过则不上传、不写清单、不写剪贴板。
+     * 与 Windows `ClipboardPayload.MAX_IMAGE_BYTES` 必须一致。
+     */
+    const val MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
     /** 超长文本在 `/file/` 下的名字 */
     fun dataNameFor(hash: String): String = "${hash.ifEmpty { "board" }}.txt"
+
+    /** 图片在 `/file/` 下的名字（统一 PNG） */
+    fun dataNameForImage(hash: String): String = "${hash.ifEmpty { "board" }}.png"
+
+    /**
+     * Board 图片 → 协议：**不新增协议字段**，完全复用超长文本的文件型形状，
+     * 只把 `type` 换成已定义的 `Image`，`dataName` 用 `.png`。
+     * 二进制**绝不**进 JSON。
+     */
+    fun toImagePayload(hash: String, size: Long): SyncClipboardPayload = SyncClipboardPayload(
+        type = TYPE_IMAGE,
+        hash = hash,
+        text = null,
+        hasData = true,
+        dataName = dataNameForImage(hash),
+        size = size,
+    )
 
     /** Board → 协议（保持内联，短文本用）。[content] 是调用方读出来的完整内容 */
     fun toPayload(item: ClipboardItem, content: String): SyncClipboardPayload {

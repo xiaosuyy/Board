@@ -1,16 +1,21 @@
 package com.board.ime.ui.panel
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.text.TextUtils
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import kotlin.math.abs
 import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
 import android.widget.ScrollView
@@ -61,7 +66,25 @@ class ClipboardPanel @JvmOverloads constructor(
      */
     var onLoadContent: ((Long, (String?) -> Unit) -> Unit)? = null
 
+    /**
+     * **图片条目**的异步缩略图（只在 `contentType == IMAGE` 时调用）。
+     *
+     * 参数：条目、目标像素边长、回调（**主线程**；null = 不可用，不显示任何占位）。
+     * 面板自己不碰文件 / 数据库：由宿主在后台按目标尺寸**降采样**解码后回调。
+     */
+    var onLoadThumbnail: ((ClipboardSummary, Int, (Bitmap?) -> Unit) -> Unit)? = null
+
     private enum class Mode { LIST, ACTION, DETAIL, CLEAR }
+
+    /**
+     * 剪贴板分类页。**只是内部交互状态**，UI 上不显示任何分类名称 / 指示器 / Tab。
+     *
+     * 顺序即滑动手势的方向：`FILE ← TEXT → IMAGE`
+     * - 默认打开 = [TEXT]
+     * - 左滑 → 下一项 = [IMAGE]
+     * - 右滑 → 上一项 = [FILE]
+     */
+    private enum class ClipPage { FILE, TEXT, IMAGE }
 
     private var theme: KeyboardTheme = KeyboardTheme.from(
         context,
@@ -72,6 +95,16 @@ class ClipboardPanel @JvmOverloads constructor(
     private var counts: ClipboardCounts = ClipboardCounts(0, 0, 0)
     private var mode = Mode.LIST
     private var editMode = false
+
+    /** 当前分类页（默认文字页；顺序见 [ClipPage]） */
+    private var pageIndex = ClipPage.TEXT.ordinal
+
+    /** 水平切换手势：起点 + 判定阈值（只在明确水平拖动时才接管，垂直留给原有滚动） */
+    private var gestureDownX = 0f
+    private var gestureDownY = 0f
+    private val touchSlop: Int get() = ViewConfiguration.get(context).scaledTouchSlop
+    private val switchThresholdPx: Int
+        get() = (SWITCH_THRESHOLD_DP * resources.displayMetrics.density).toInt().coerceAtLeast(1)
     private var searching = false
     private var remoteOnly = false
     private var selected: ClipboardSummary? = null
@@ -187,6 +220,64 @@ class ClipboardPanel @JvmOverloads constructor(
         else -> false
     }
 
+    // ---------------------------------------------------------------- 分类页（纯 UI 状态）
+
+    private val page: ClipPage get() = ClipPage.values()[pageIndex]
+
+    /**
+     * 当前分类页要展示的条目。
+     *
+     * **只在 UI 层过滤**：数据层（Room / 同步）完全不感知分类。
+     * 文字页 = TEXT / LINK / UNKNOWN（与 [ClipboardContentType.isTextLike] 一致）。
+     */
+    private fun visibleItems(): List<ClipboardSummary> = when (page) {
+        ClipPage.TEXT -> items.filter { it.contentType.isTextLike }
+        ClipPage.IMAGE -> items.filter { it.contentType == ClipboardContentType.IMAGE }
+        ClipPage.FILE -> items.filter { it.contentType == ClipboardContentType.FILE }
+    }
+
+    /** 左滑 / 右滑切换分类页；越界不动。**UI 上不显示任何分类提示**。 */
+    private fun switchPage(step: Int) {
+        val next = (pageIndex + step).coerceIn(0, ClipPage.values().size - 1)
+        if (next == pageIndex) return
+        pageIndex = next
+        mode = Mode.LIST
+        selected = null
+        renderedKey = null   // 触发重建（缩略图随重建释放 / 重新按需生成）
+        render()
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        // 只有普通列表页参与水平切换：动作条 / 全文 / 清空确认保持原样
+        if (mode != Mode.LIST) return false
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                gestureDownX = ev.x
+                gestureDownY = ev.y
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val dx = ev.x - gestureDownX
+                val dy = ev.y - gestureDownY
+                // 只接管“明确的水平拖动”（|dx| 明显大于 |dy|）；
+                // 垂直拖动 / 点击一律放行给 ScrollView 与卡片的原有行为
+                if (abs(dx) > touchSlop && abs(dx) > abs(dy)) return true
+            }
+        }
+        return false
+    }
+
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        if (mode != Mode.LIST) return super.onTouchEvent(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_UP -> {
+                val dx = ev.x - gestureDownX
+                if (abs(dx) >= switchThresholdPx) switchPage(if (dx < 0) 1 else -1)
+            }
+        }
+        return true
+    }
+
     // ---------------------------------------------------------------- 渲染
 
     private fun render() {
@@ -198,14 +289,15 @@ class ClipboardPanel @JvmOverloads constructor(
         if (structureUnchanged && mode == Mode.LIST) {
             // 结构没变，只是内容 / 标记变了：原地更新，不重建 View
             items.forEach { item -> binders[item.id]?.let { updateCard(it, item) } }
-            sectionLabel.text = listLabel()
+            sectionLabel.text = listLabel(visibleItems().size)
             return
         }
 
         footer.removeAllViews()
         footer.visibility = GONE
+        // 重建前先释放上一批缩略图（含清空 binders），避免 Bitmap 泄漏
+        releaseAllThumbnails()
         grid.removeAllViews()
-        binders.clear()
 
         when (mode) {
             Mode.LIST -> renderList()
@@ -219,16 +311,19 @@ class ClipboardPanel @JvmOverloads constructor(
     private fun structurePart(key: String): String = key.substringBefore('#')
 
     private fun buildKey(): String {
+        // 指纹只覆盖**当前分类页**的条目：别的分类新增内容不会白重建当前页
+        val visible = visibleItems()
         val structure = buildString {
             append(mode.name).append('|')
+            append(page.name).append('|')
             append(if (editMode) '1' else '0').append(if (searching) '1' else '0')
             append(if (remoteOnly) '1' else '0').append('|')
             append(selected?.id ?: -1).append('|')
-            items.forEach { append(it.id).append(',').append(if (it.isPinned) 'p' else '-') }
+            visible.forEach { append(it.id).append(',').append(if (it.isPinned) 'p' else '-') }
         }
         val content = buildString {
             append('#')
-            items.forEach {
+            visible.forEach {
                 append(it.id).append(':')
                 append(it.preview.orEmpty()).append(':')
                 append(if (it.isFavorite) 'f' else '-')
@@ -240,13 +335,15 @@ class ClipboardPanel @JvmOverloads constructor(
     }
 
     private fun renderList() {
-        val hasItems = items.isNotEmpty()
+        val visible = visibleItems()
+        val hasItems = visible.isNotEmpty()
         scroll.visibility = if (hasItems) VISIBLE else GONE
         emptyView.visibility = if (hasItems) GONE else VISIBLE
         // 非搜索 / 非筛选状态：分区标题由各分区自己画，顶部不再重复一行
         sectionLabel.visibility = if ((searching || remoteOnly) && hasItems) VISIBLE else GONE
-        sectionLabel.text = listLabel()
+        sectionLabel.text = listLabel(visible.size)
         if (!hasItems) {
+            // 沿用既有空白区文案（不为“暂无文件 / 暂无图片”新增任何类别文字）
             emptyView.text = when {
                 remoteOnly -> "还没有来自其他设备的剪贴板内容"
                 searching -> "没有匹配的剪贴板记录"
@@ -256,11 +353,11 @@ class ClipboardPanel @JvmOverloads constructor(
         }
 
         if (searching || remoteOnly) {
-            addRows(items)
+            addRows(visible)
         } else {
-            val pinned = items.filter { it.isPinned }
-            val favorite = items.filter { !it.isPinned && it.isFavorite }
-            val recent = items.filter { !it.isPinned && !it.isFavorite }
+            val pinned = visible.filter { it.isPinned }
+            val favorite = visible.filter { !it.isPinned && it.isFavorite }
+            val recent = visible.filter { !it.isPinned && !it.isFavorite }
             addSection("固定", pinned)
             addSection("收藏", favorite)
             addSection("最近", recent)
@@ -271,9 +368,9 @@ class ClipboardPanel @JvmOverloads constructor(
         }
     }
 
-    private fun listLabel(): String = when {
-        remoteOnly -> "云端剪贴板 · ${items.size} 条"
-        searching -> "搜索结果 · ${items.size} 条"
+    private fun listLabel(count: Int): String = when {
+        remoteOnly -> "云端剪贴板 · $count 条"
+        searching -> "搜索结果 · $count 条"
         else -> ""
     }
 
@@ -318,8 +415,50 @@ class ClipboardPanel @JvmOverloads constructor(
         val pinSlot: View,
         val starSlot: View,
         val originLabel: TextView,
+        /** 图片条目右侧的小缩略图（非图片条目 GONE，不占空间、不改变文字排版） */
+        val thumb: ImageView,
     ) {
         var item: ClipboardSummary? = null
+
+        /** 当前缩略图对应的内容 hash（换条目 / 换图片时据此重新加载） */
+        var thumbHash: String? = null
+
+        /** 当前显示的缩略图 Bitmap，由本面板负责回收 */
+        var thumbBitmap: Bitmap? = null
+    }
+
+    /**
+     * 缩略图边长（px）：
+     * **不超过「卡片最小内容高度」**（`minHeight - 上下 padding`），因此加图**绝不会把卡片撑高**；
+     * 同时不超过 [THUMBNAIL_MAX_DP]。视觉目标是“提示这是哪张图”，不是卡片主体。
+     */
+    private fun thumbnailSizePx(): Int {
+        val byCard = theme.clipboardCardMinHeight - theme.clipboardPadding * 2
+        val byMax = (THUMBNAIL_MAX_DP * resources.displayMetrics.density).toInt()
+        return minOf(byCard, byMax).coerceAtLeast(0)
+    }
+
+    private fun releaseThumbBitmap(binder: CardBinder) {
+        binder.thumbBitmap?.recycle()
+        binder.thumbBitmap = null
+    }
+
+    /** 释放当前所有缩略图（并清空卡片索引），条目被替换 / 面板离开窗口时调用 */
+    private fun releaseAllThumbnails() {
+        binders.values.forEach { binder ->
+            binder.thumb.setImageDrawable(null)
+            releaseThumbBitmap(binder)
+            binder.thumbHash = null
+        }
+        binders.clear()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        // 面板离开窗口：**立即释放**缩略图，不保留任何图片缓存；
+        // 下次显示时按需重新生成（renderedKey 置空以触发重建）。
+        releaseAllThumbnails()
+        renderedKey = null
     }
 
     private fun createCard(item: ClipboardSummary): View {
@@ -383,7 +522,19 @@ class ClipboardPanel @JvmOverloads constructor(
         column.addView(badgeRow)
         card.addView(column)
 
-        val binder = CardBinder(card, preview, pinSlot, starSlot, originLabel)
+        // 图片缩略图：卡片右侧原有的留白区域。默认 GONE → 文字条目尺寸 / 排版完全不变。
+        // 固定正方形 + FIT_CENTER = contain（保持比例、不裁切主体、不超出卡片）。
+        val thumb = ImageView(context).apply {
+            visibility = GONE
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        val thumbSize = thumbnailSizePx()
+        card.addView(
+            thumb,
+            LayoutParams(thumbSize, thumbSize).apply { marginStart = theme.spaceS },
+        )
+
+        val binder = CardBinder(card, preview, pinSlot, starSlot, originLabel, thumb)
         binders[item.id] = binder
         updateCard(binder, item)
 
@@ -412,6 +563,35 @@ class ClipboardPanel @JvmOverloads constructor(
         binder.originLabel.setTextColor(
             if (item.origin == ClipboardOrigin.REMOTE) theme.accent else theme.candidateMutedText,
         )
+        // 图片条目：只在卡片右侧原有留白处放一张小缩略图；非图片条目完全不显示（不占空间）
+        if (item.contentType == ClipboardContentType.IMAGE) {
+            binder.thumb.visibility = VISIBLE
+            if (binder.thumbHash != item.contentHash) {
+                binder.thumbHash = item.contentHash
+                binder.thumb.setImageDrawable(null)
+                releaseThumbBitmap(binder)
+                val token = item.contentHash
+                val callback: (Bitmap?) -> Unit = callback@{ bitmap ->
+                    // 回调回来时条目可能已被替换 / 移除：丢弃并回收，绝不挂到错误的卡片上
+                    if (binder.thumbHash != token || binder.item?.contentHash != token) {
+                        bitmap?.recycle()
+                        return@callback
+                    }
+                    // 先换上新的，再回收旧的（避免“视图还挂着已回收的 Bitmap”）
+                    val previous = binder.thumbBitmap
+                    binder.thumbBitmap = bitmap
+                    binder.thumb.setImageBitmap(bitmap)
+                    if (previous != null && previous !== bitmap) previous.recycle()
+                }
+                onLoadThumbnail?.invoke(item, thumbnailSizePx(), callback)
+            }
+        } else if (binder.thumb.visibility != GONE) {
+            binder.thumb.visibility = GONE
+            binder.thumb.setImageDrawable(null)
+            binder.thumbHash = null
+            releaseThumbBitmap(binder)
+        }
+
         val highlight = mode == Mode.ACTION && selected?.id == item.id
         binder.card.background = cardBackground(highlight)
     }
@@ -645,5 +825,11 @@ class ClipboardPanel @JvmOverloads constructor(
     private companion object {
         const val COLUMNS = 2
         const val CARD_MAX_LINES = 3
+
+        /** 缩略图边长上限（dp）；实际还会被「卡片最小内容高度」再压一次 */
+        const val THUMBNAIL_MAX_DP = 48f
+
+        /** 水平切换分类的位移阈值（dp）；达到才切页，避免误触 */
+        const val SWITCH_THRESHOLD_DP = 56f
     }
 }

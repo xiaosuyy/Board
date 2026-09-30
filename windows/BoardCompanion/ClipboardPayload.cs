@@ -17,8 +17,15 @@ namespace BoardCompanion
         public const string TYPE_FILE = "File";
         public const string TYPE_GROUP = "Group";
 
-        /// <summary>与 Android 完全一致的内联上限（超出走 /file/，Windows 第一阶段不实现）</summary>
+        /// <summary>与 Android 完全一致的内联上限（超出走 /file/）</summary>
         public const int INLINE_TEXT_MAX_BYTES = 256 * 1024;
+
+        /// <summary>
+        /// 图片上限（两端统一 10 MiB）。**同时作用于原始输入与最终 PNG**：
+        /// 超过则不上传、不写清单、不写剪贴板，只记必要元数据。
+        /// 与 Android `SyncClipboardMapper.MAX_IMAGE_BYTES` 必须一致。
+        /// </summary>
+        public const int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
         public string type { get; set; }
         public string hash { get; set; }
@@ -44,10 +51,23 @@ namespace BoardCompanion
             device = null;
         }
 
-        /// <summary>只有 Text 才处理；Image / File / Group 一律安全忽略（不报错、不上传）</summary>
+        /// <summary>
+        /// 处理的范围（Phase 1-E）：
+        /// - `Text`：始终支持；
+        /// - `Image`：仅当是**文件型**（`hasData=true` 且带 `dataName`）时支持，二进制走 `/file/`；
+        /// - `File` / `Group` / 无数据的 Image：一律安全忽略（不报错、不上传、不写剪贴板）。
+        /// </summary>
         public bool IsSupported
         {
-            get { return string.Equals(type, TYPE_TEXT, StringComparison.Ordinal); }
+            get
+            {
+                if (string.Equals(type, TYPE_TEXT, StringComparison.Ordinal)) return true;
+                if (string.Equals(type, TYPE_IMAGE, StringComparison.Ordinal))
+                {
+                    return hasData && !string.IsNullOrEmpty(dataName);
+                }
+                return false;
+            }
         }
     }
 
