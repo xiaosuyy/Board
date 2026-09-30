@@ -88,6 +88,9 @@ class TopPanelController(
     /** 语音面板底部「系统语音识别 · 可能联网」被点击：查看完整隐私说明 */
     var onVoiceInfo: (() -> Unit)? = null
 
+    /** 语音面板右侧麦克风被点击：**结束本次识别**（不是提交） */
+    var onVoiceMicStop: (() -> Unit)? = null
+
     /** 打开语音面板（与其它状态共用同一个固定高度） */
     fun showVoice() {
         state = TopPanelState.VOICE
@@ -242,6 +245,7 @@ class TopPanelController(
         voiceHeader.onBack = { onVoiceCancel?.invoke() }
         voiceHeader.onPrimary = { onVoiceStop?.invoke() }
         voiceHeader.onInfo = { onVoiceInfo?.invoke() }
+        voiceHeader.onStop = { onVoiceMicStop?.invoke() }
 
         translationHeader.onBack = { onTranslationClose?.invoke() }
         translationHeader.onInfo = { onTranslationInfo?.invoke() }

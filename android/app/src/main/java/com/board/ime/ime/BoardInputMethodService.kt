@@ -107,15 +107,17 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     }
 
     /**
-     * 当前语音引擎：**百度翻译开放平台「语音翻译」**（`/api/trans/v2/voicetrans`）。
+     * 当前语音引擎：**百度实时语音识别（realtime ASR）**。
      *
-     * 它复用用户**已有的翻译凭据**（APPID + 密钥），不需要另开智能云账号。
-     * 备选：`BaiduRealtimeVoiceRecognitionProvider`（智能云实时语音识别，需要另一套
-     * AppID + API Key，边说边出字但要求额外开通服务）—— 需要时改这一行即可切换。
+     * 🎙 的语义永远是「语音 → 原语言文字」，**不接语音翻译**。
+     * 需要语音智能云的 **AppID + API Key**（与翻译平台的 APPID/密钥不是同一套）。
+     *
+     * 备选（如确实要做"边说边译"）：`BaiduVoiceTranslateEngine`，它复用翻译凭据，
+     * 但是整段上传、且输出的是译文 —— 与 🎙 的定位不符，默认不启用。
      */
     private val voiceEngine: com.board.ime.voice.VoiceRecognitionEngine by lazy {
-        com.board.ime.voice.BaiduVoiceTranslateEngine(
-            credentialsProvider = { translationCredentials.load() },
+        com.board.ime.voice.BaiduRealtimeVoiceRecognitionProvider(
+            credentialsProvider = { voiceCredentials.load() },
         )
     }
 
@@ -547,6 +549,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onCollapseKeyboard = { collapseKeyboard() }
         panel.onVoiceCancel = { voiceSession?.cancel() }
         panel.onVoiceStop = { voiceSession?.toggle() }
+        panel.onVoiceMicStop = { voiceSession?.toggle() }
         panel.onVoiceInfo = { showVoicePrivacyCard(consent = false) }
         panel.onTranslationClose = { translationSession().close() }
         panel.onTranslationRun = { translationSession().translate() }

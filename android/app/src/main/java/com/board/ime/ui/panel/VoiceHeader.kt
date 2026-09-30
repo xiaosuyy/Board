@@ -41,8 +41,14 @@ class VoiceHeader @JvmOverloads constructor(
      */
     var onPrimary: (() -> Unit)? = null
 
-    /** 点击底部「系统语音识别 · 可能联网」：查看完整隐私说明 */
+    /** 点击底部「语音内容会发送给识别服务 · 点此了解」：查看完整隐私说明 */
     var onInfo: (() -> Unit)? = null
+
+    /**
+     * 点击右侧麦克风：**结束本次识别**（不是确认、不是提交）。
+     * 结果仍要用户点文字才上屏。
+     */
+    var onStop: (() -> Unit)? = null
 
     private var theme: KeyboardTheme = KeyboardTheme.from(
         context,
@@ -50,6 +56,9 @@ class VoiceHeader @JvmOverloads constructor(
     )
 
     private val backSlot = PanelIconSlot(context, PanelIcon.BACK)
+
+    /** 右侧「结束识别」麦克风：VoiceHeader 专属操作位，不参与工具栏排布 */
+    private val micSlot = PanelIconSlot(context, PanelIcon.VOICE)
     private val textView = TextView(context)
     private val hintView = TextView(context)
     private val column = LinearLayout(context)
@@ -107,7 +116,12 @@ class VoiceHeader @JvmOverloads constructor(
         }
         addView(column, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
 
+        // 最右侧固定给麦克风（不做任何工具栏布局计算；中间文本宽度自然减去左右两块）
+        addView(micSlot, LayoutParams(theme.toolHitSize, LayoutParams.MATCH_PARENT))
+        micSlot.visibility = android.view.View.GONE
+
         backSlot.onSlotClick = { onBack?.invoke() }
+        micSlot.onSlotClick = { onStop?.invoke() }
         hintView.setOnClickListener { onInfo?.invoke() }
 
         textView.setOnTouchListener { _, event ->
@@ -161,6 +175,7 @@ class VoiceHeader @JvmOverloads constructor(
         setBackgroundColor(theme.panelBackground)
         hintView.setTextColor(theme.candidateMutedText)
         backSlot.applyTheme(theme)
+        micSlot.applyTheme(theme)
         render(lastState, lastText)
         requestLayout()
         invalidate()
@@ -191,8 +206,15 @@ class VoiceHeader @JvmOverloads constructor(
         lastState = state
         lastText = text
         textView.text = text
-        primaryEnabled = (state == VoiceState.LISTENING || state == VoiceState.PROCESSING ||
-            state == VoiceState.RESULT) && text.isNotEmpty()
+        // 只有「最终结果」的文字可点（点文字 = 上屏）；识别中由右侧麦克风负责结束，
+        // 这样绝不会把中途的 partial 当成最终文本提交。
+        primaryEnabled = state == VoiceState.RESULT && text.isNotEmpty()
+        // 右侧麦克风只在"正在识别"出现；RESULT / ERROR 一律不显示任何右侧按钮（尤其不再有 ✓）
+        micSlot.visibility = if (state == VoiceState.LISTENING || state == VoiceState.PROCESSING) {
+            android.view.View.VISIBLE
+        } else {
+            android.view.View.GONE
+        }
         textView.setTextColor(
             when (state) {
                 VoiceState.RESULT, VoiceState.LISTENING, VoiceState.PROCESSING -> theme.candidateText
