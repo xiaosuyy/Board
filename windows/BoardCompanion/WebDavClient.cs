@@ -152,11 +152,41 @@ namespace BoardCompanion
                     bool notFound = status == 404;
                     return WebDavResult.Fail(status, "HTTP " + status, notFound);
                 }
-                return WebDavResult.Fail(0, "网络不可用", false);
+                return WebDavResult.Fail(0, Describe(ex.Status), false);
             }
             catch (Exception)
             {
                 return WebDavResult.Fail(0, "请求失败", false);
+            }
+        }
+
+        /// <summary>
+        /// 把底层网络异常翻译成**能对症**的中文提示。
+        ///
+        /// 以前所有非 HTTP 失败都写"网络不可用"，用户根本无法判断是域名写错了、
+        /// 证书不受信任、还是端口没开 —— 这里按 WebExceptionStatus 区分。
+        /// 只输出故障类别，不含 URL query / 凭据。
+        /// </summary>
+        public static string Describe(WebExceptionStatus status)
+        {
+            switch (status)
+            {
+                case WebExceptionStatus.NameResolutionFailure:
+                case WebExceptionStatus.ProxyNameResolutionFailure:
+                    return "域名解析失败（地址写错，或本机 DNS 解析不了这个域名）";
+                case WebExceptionStatus.TrustFailure:
+                    return "HTTPS 证书校验失败（服务器证书不受信任；自签名证书需要导入信任）";
+                case WebExceptionStatus.SecureChannelFailure:
+                    return "TLS 握手失败（服务器可能只支持较新的 TLS 版本）";
+                case WebExceptionStatus.Timeout:
+                    return "连接超时（服务器没有响应）";
+                case WebExceptionStatus.ConnectFailure:
+                    return "无法连接（端口未开放 / 服务器不可达 / 被当前网络拦截）";
+                case WebExceptionStatus.ReceiveFailure:
+                case WebExceptionStatus.SendFailure:
+                    return "传输中断（连接被中途断开）";
+                default:
+                    return "网络层失败（" + status + "）";
             }
         }
     }

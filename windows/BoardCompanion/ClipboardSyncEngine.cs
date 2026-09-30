@@ -444,23 +444,25 @@ namespace BoardCompanion
             }
         }
 
+        /// <summary>清单路径：与 Android 一致 = `&lt;syncDir&gt;/SyncClipboard.json`（静态版，设置页也用）</summary>
+        public static string ManifestPathFor(string baseUrl, string syncDir)
+        {
+            var name = SyncClipboardProvider.MANIFEST_NAME;
+            if (!string.IsNullOrEmpty(syncDir) && !string.IsNullOrEmpty(baseUrl))
+            {
+                var trimmedBase = baseUrl.TrimEnd('/');
+                var suffix = "/" + syncDir.Trim('/');
+                if (trimmedBase.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return name;
+            }
+            if (string.IsNullOrEmpty(syncDir)) return name;
+            return syncDir.Trim('/') + "/" + name;
+        }
+
         /// <summary>清单路径：与 Android 一致 = `&lt;syncDir&gt;/SyncClipboard.json`</summary>
         private string ManifestPath()
         {
-            var name = SyncClipboardProvider.MANIFEST_NAME;
-            var dir = config == null ? null : config.syncDir;
-            var baseUrl = config == null ? null : config.baseUrl;
-
-            // baseUrl 可能**已经包含**同步目录（用户按设置页提示直接填到目录为止），
-            // 这时再拼一次 syncDir 就会变成 /boardkey1/boardkey1/，Android 将永远看不到。
-            if (!string.IsNullOrEmpty(dir) && !string.IsNullOrEmpty(baseUrl))
-            {
-                var trimmedBase = baseUrl.TrimEnd('/');
-                var suffix = "/" + dir.Trim('/');
-                if (trimmedBase.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return name;
-            }
-            if (string.IsNullOrEmpty(dir)) return name;
-            return dir.Trim('/') + "/" + name;
+            return ManifestPathFor(config == null ? null : config.baseUrl,
+                                   config == null ? null : config.syncDir);
         }
 
         /// <summary>

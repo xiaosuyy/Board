@@ -171,7 +171,9 @@ namespace BoardCompanion
             statusLabel.Text = "正在测试连接…";
             var config = store.Load();
             var client = new WebDavClient(config.baseUrl, config.username, store.LoadPassword());
-            var response = client.Get(SyncClipboardProvider.MANIFEST_NAME);
+            // 与同步引擎走**同一个**路径：<地址>/<同步目录>/SyncClipboard.json
+            var manifest = ClipboardSyncEngine.ManifestPathFor(config.baseUrl, config.syncDir);
+            var response = client.Get(manifest);
             if (response.IsOk)
             {
                 statusLabel.Text = "连接成功（HTTP " + response.StatusCode + "）";
