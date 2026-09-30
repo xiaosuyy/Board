@@ -180,7 +180,9 @@ namespace BoardCompanion
             }
             else if (response.NotFound)
             {
-                statusLabel.Text = "连接成功（云端还没有 SyncClipboard.json）";
+                statusLabel.Text = "连上了，但云端没有 SyncClipboard.json。" +
+                                   "若是新服务器，第一次同步会创建；若地址里的目录不存在也会是这个结果——" +
+                                   "请确认地址填到同步目录为止（例如 https://…/dav/board/）";
             }
             else
             {

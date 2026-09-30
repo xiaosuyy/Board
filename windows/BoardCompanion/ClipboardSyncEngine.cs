@@ -444,18 +444,25 @@ namespace BoardCompanion
             }
         }
 
-        /// <summary>清单路径：与 Android 一致 = `&lt;syncDir&gt;/SyncClipboard.json`（静态版，设置页也用）</summary>
+        /// <summary>
+        /// 清单路径 = `&lt;baseUrl&gt;/SyncClipboard.json`。
+        ///
+        /// **地址本身就是同步根**（用户按设置页提示填到同步目录为止），所以这里**不再拼 syncDir**。
+        /// 旧拼法在换服务器时极易多出一层目录 —— 实测踩到：
+        /// `https://pan.lansod.cn/dav/board/` + 旧目录 `boardkey1` → `/dav/board/boardkey1/…` → 404，
+        /// 而设置页又提示"连接成功（云端还没有 SyncClipboard.json）"，很容易误判成服务器问题。
+        ///
+        /// `syncDir` 仍保留在配置里（兼容旧配置），但**不再参与路径拼接**。
+        /// </summary>
         public static string ManifestPathFor(string baseUrl, string syncDir)
         {
-            var name = SyncClipboardProvider.MANIFEST_NAME;
-            if (!string.IsNullOrEmpty(syncDir) && !string.IsNullOrEmpty(baseUrl))
-            {
-                var trimmedBase = baseUrl.TrimEnd('/');
-                var suffix = "/" + syncDir.Trim('/');
-                if (trimmedBase.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return name;
-            }
-            if (string.IsNullOrEmpty(syncDir)) return name;
-            return syncDir.Trim('/') + "/" + name;
+            return SyncClipboardProvider.MANIFEST_NAME;
+        }
+
+        /// <summary>`/file/{dataName}`（相对于 baseUrl）</summary>
+        private string FilePath(string dataName)
+        {
+            return "file/" + (dataName ?? string.Empty).Trim('/');
         }
 
         /// <summary>清单路径：与 Android 一致 = `&lt;syncDir&gt;/SyncClipboard.json`</summary>
@@ -477,19 +484,9 @@ namespace BoardCompanion
         }
 
         /// <summary>`/file/{dataName}` 路径（dataName 与 Android 的 dataNameFor() 一致 = hash + ".txt"）</summary>
-        private string FilePath(string dataName)
+        private string FilePath2Unused(string dataName)
         {
-            var name = "file/" + (dataName ?? string.Empty).Trim('/');
-            var dir = config == null ? null : config.syncDir;
-            var baseUrl = config == null ? null : config.baseUrl;
-            if (!string.IsNullOrEmpty(dir) && !string.IsNullOrEmpty(baseUrl))
-            {
-                var trimmedBase = baseUrl.TrimEnd('/');
-                var suffix = "/" + dir.Trim('/');
-                if (trimmedBase.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return name;
-            }
-            if (string.IsNullOrEmpty(dir)) return name;
-            return dir.Trim('/') + "/" + name;
+            return "file/" + (dataName ?? string.Empty).Trim('/');
         }
 
         /// <summary>与 Android 的 SyncClipboardMapper.dataNameFor() 一致</summary>
