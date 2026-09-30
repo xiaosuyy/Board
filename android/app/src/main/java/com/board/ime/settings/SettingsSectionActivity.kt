@@ -1327,26 +1327,38 @@ class SettingsSectionActivity : AppCompatActivity() {
         val card = SettingsUi.card(this)
         card.addView(SettingsUi.heading(this, "翻译服务"))
         card.addView(SettingsUi.value(this, "服务：百度翻译（通用文本翻译 API）"))
-        val (appIdLayout, appIdEdit) = SettingsUi.textField(this, "APPID", current.appId)
+        val (appIdLayout, appIdEdit) = SettingsUi.textField(this, "APPID（数字）", current.appId)
         val (secretLayout, secretEdit) = SettingsUi.textField(this, "密钥", current.secret, password = true)
         card.addView(appIdLayout)
         card.addView(secretLayout)
         card.addView(
             SettingsUi.hint(
                 this,
-                "凭据需要你自己在百度翻译开放平台申请；保存在 Android 加密存储里。" +
-                    "Board 不内置任何 API Key，也不保存翻译原文或译文。",
+                "APPID 与密钥在「百度翻译开放平台 → 管理控制台 → 开发者信息」查看：" +
+                    "APPID 是一串数字，不是密钥的名称、也不是 API Key。" +
+                    "填完后还需要在平台「开通通用文本翻译服务」，否则会报 52003 未授权用户。" +
+                    "凭据保存在 Android 加密存储中；Board 不内置任何 Key，也不保存翻译原文或译文。",
             ),
         )
         card.addView(
             SettingsUi.button(this, "保存") {
+                val appId = appIdEdit.text?.toString().orEmpty().trim()
                 store.save(
                     com.board.ime.translation.TranslationCredentials(
-                        appId = appIdEdit.text?.toString().orEmpty(),
+                        appId = appId,
                         secret = secretEdit.text?.toString().orEmpty(),
                     ),
                 )
-                Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+                // APPID 在百度翻译开放平台是一串数字；填成名称/密钥时几乎必然是填错了
+                if (appId.isNotEmpty() && appId.any { !it.isDigit() }) {
+                    Toast.makeText(
+                        this,
+                        "已保存。但 APPID 通常是一串数字 —— 请确认这里填的是 APPID，不是密钥名称或 API Key",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                } else {
+                    Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+                }
                 render()
             },
         )

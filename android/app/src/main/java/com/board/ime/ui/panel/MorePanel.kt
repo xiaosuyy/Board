@@ -382,8 +382,12 @@ internal class MoreItemView @JvmOverloads constructor(
     }
 }
 
-/** 尚未实现引擎的工具在 UI 上弱化显示（与视觉表现一致，本阶段不实现引擎） */
+/**
+ * 尚未实现引擎的工具在 UI 上弱化显示（灰显）。
+ *
+ * 语音（Phase 2）与翻译（Phase 3）都已实现，因此不再灰显；只剩「常用语」还没做。
+ */
 internal fun isToolAvailable(tool: ToolId): Boolean = when (tool) {
-    ToolId.TRANSLATE, ToolId.VOICE, ToolId.PHRASES -> false
+    ToolId.PHRASES -> false
     else -> true
 }

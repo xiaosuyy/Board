@@ -239,6 +239,17 @@ class TranslationSessionTest {
     }
 
     @Test
+    fun providerErrorCodesUseSourcedMessages() {
+        assertTrue(translateProviderMessage("52003").contains("未授权用户"))
+        assertTrue(translateProviderMessage("52003").contains("52003"))
+        assertTrue(translateProviderMessage("54001").contains("签名错误"))
+        assertTrue(translateProviderMessage("54004").contains("余额"))
+        // 官方表里没有的码不猜含义，保留原始码方便排查
+        assertEquals("翻译服务返回错误（99999）", translateProviderMessage("99999"))
+        assertEquals("翻译服务返回了错误", translateProviderMessage(null))
+    }
+
+    @Test
     fun releaseClearsEverything() {
         val host = FakeHost().apply { inputText = "你好" }
         val subject = session(host, MockTranslationProvider())

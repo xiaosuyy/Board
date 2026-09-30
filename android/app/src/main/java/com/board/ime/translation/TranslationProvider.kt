@@ -55,8 +55,9 @@ sealed class TranslationFailure(val message: String) {
     data object Cancelled : TranslationFailure("已取消")
 
     /** 服务商返回了错误码。只显示错误码本身，不显示原始响应体。 */
+    /** 服务商返回了错误码：显示映射后的中文说明 + 错误码，不显示原始响应体。 */
     data class ProviderError(val code: String?) :
-        TranslationFailure(if (code.isNullOrBlank()) "翻译服务返回了错误" else "翻译服务返回错误（$code）")
+        TranslationFailure(translateProviderMessage(code))
 
     /** HTTP 层失败（只显示状态码） */
     data class Http(val status: Int) : TranslationFailure("翻译服务不可用（HTTP $status）")
@@ -96,4 +97,30 @@ internal fun baiduSign(appId: String, query: String, salt: String, secret: Strin
     val raw = "$appId$query$salt$secret"
     val digest = MessageDigest.getInstance("MD5").digest(raw.toByteArray(Charsets.UTF_8))
     return digest.joinToString("") { byte -> "%02x".format(byte) }
+}
+
+/**
+ * 百度翻译开放平台「错误码列表」的中文说明。
+ *
+ * 依据官方错误码表（52003 未授权用户 / 54001 签名错误 / 54003 访问频率受限 /
+ * 54004 账户余额不足 …）。**表里没有的码不猜测含义**，只回显原始错误码，方便排查。
+ */
+internal fun translateProviderMessage(code: String?): String {
+    if (code.isNullOrBlank()) return "翻译服务返回了错误"
+    val explain = when (code) {
+        "52001" -> "请求超时，请重试"
+        "52002" -> "服务端系统错误，请重试"
+        "52003" -> "未授权用户：APPID 不正确，或「通用文本翻译」服务未开通"
+        "54000" -> "必填参数为空"
+        "54001" -> "签名错误：请检查密钥是否填对"
+        "54003" -> "访问频率受限，请稍后重试"
+        "54004" -> "账户余额不足"
+        "54005" -> "长文本请求过于频繁，请稍后重试"
+        "58000" -> "客户端 IP 非法"
+        "58001" -> "语言方向不支持"
+        "58002" -> "服务当前已关闭"
+        "90107" -> "认证未通过或未生效"
+        else -> null
+    }
+    return if (explain == null) "翻译服务返回错误（$code）" else "$explain（$code）"
 }
