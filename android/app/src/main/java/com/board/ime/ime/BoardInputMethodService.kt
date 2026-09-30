@@ -308,6 +308,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private fun openPhrases() {
         panelController?.showPhrases()
         panelController?.updatePhrases(phrases)
+        // 打开面板 = 主动 Pull 一次（不轮询、不常驻）
+        syncEngine?.requestPhraseSync()
     }
 
     /**
@@ -346,13 +348,20 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     /** 软删除：只留墓碑，删除才能同步传播，不会被别的设备复活 */
     private fun deletePhrase(entry: com.board.ime.database.entity.PhraseEntry) {
         serviceScope.launch {
-            phraseRepository?.delete(entry.phraseId)
-            Log.i(TAG, "phrase deleted")
+            if (phraseRepository?.delete(entry.phraseId) == true) {
+                Log.i(TAG, "phrase deleted")
+                syncEngine?.requestPhraseSync()
+            }
         }
     }
 
     private fun reorderPhrases(order: List<String>) {
-        serviceScope.launch { phraseRepository?.reorder(order) }
+        serviceScope.launch {
+            // 只有顺序真的变了才触发同步（拖动中间帧不会走到这里）
+            if (phraseRepository?.reorder(order) == true) {
+                syncEngine?.requestPhraseSync()
+            }
+        }
     }
 
     // ---------------------------------------------------------------- 翻译（v1.2 Phase 3）
@@ -582,6 +591,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         startPhraseObservation()
         registerClipboardListener()
         startSync()
+        // 常用语同步：把仓库接给 SyncEngine（独立通道，不经过剪贴板）
+        phraseRepository?.let { syncEngine?.attachPhraseRepository(it) }
 
         preferences.registerListener(preferenceListener)
         settingsRepository.registerListener(uiSettingsListener)

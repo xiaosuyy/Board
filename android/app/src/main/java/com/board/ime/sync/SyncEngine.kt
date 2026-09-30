@@ -139,6 +139,99 @@ class SyncEngine(
                 runCatching { syncClipboardOnly() }
             }
         }
+        // 常用语同步通道：**独立分组**，不会被剪贴板 / 大型词库任务长期阻塞
+        engineScope.launch {
+            phraseRequests.conflate().collect {
+                delay(PHRASE_DEBOUNCE_MS)
+                runCatching { syncPhrasesOnly() }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- 常用语同步
+
+    /**
+     * 常用语同步请求通道。
+     *
+     * **只有用户明确改动**（新增/编辑/删除/拖动排序）才会触发；
+     * Pull 合并后的 Room 变化**不会**再自动触发 Push，避免
+     * A Push → B Pull → B Push → A Pull 的无限回环。
+     */
+    private val phraseRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+
+    private var phraseRepository: com.board.ime.phrase.PhraseRepository? = null
+
+    /** 宿主在拿到仓库后接进来（不改构造函数，避免影响其它调用点） */
+    fun attachPhraseRepository(repository: com.board.ime.phrase.PhraseRepository) {
+        phraseRepository = repository
+    }
+
+    /** 用户改动常用语后调用：登记一次 Push（trailing 去抖，快速连续操作只同步一次） */
+    fun requestPhraseSync() {
+        phraseRequests.tryEmit(Unit)
+    }
+
+    /**
+     * 常用语：拉取 → 按 **phraseId** 合并 → 仅在确实有新内容时回写 → 落库。
+     *
+     * - 不回写的情形（`merged` 与远端等价）⇒ 天然防止 Pull→Push 回环；
+     * - 合并算法**只用** [SyncPhraseMerge]，这里不再复制一套；
+     * - 失败只记日志，**不动本地数据**（本地用户操作永不因同步失败而回滚）。
+     */
+    private suspend fun syncPhrasesOnly() {
+        val repository = phraseRepository ?: return
+        if (!contentGate.isEnabled(SyncContent.PHRASE)) return
+        val config = loadConfig()
+        if (!config.isConfigured) return
+        config.securityProblem()?.let { return }
+
+        syncMutex.withLock {
+            val started = System.currentTimeMillis()
+            val client = clientFactory(config)
+            client.ensureDirectory(config.normalizedDir)
+
+            val localRecords = repository.all().map { it.toSyncRecord() }
+            val response = client.getText(FILE_PHRASES)
+            val remote = when {
+                response.isOk -> SyncPhraseCodec.fromJson(response.value.orEmpty())
+                    ?: run {
+                        SyncLog.warn(SyncEvent.IGNORED_TYPE, "常用语远端文件解析失败，已安全忽略")
+                        return@withLock
+                    }
+
+                response.error == WebDavError.NOT_FOUND -> emptyList()
+                else -> {
+                    SyncLog.warn(SyncEvent.NETWORK_ERROR, "常用语拉取失败，本地数据保持不变")
+                    return@withLock
+                }
+            }
+
+            val merged = SyncPhraseMerge.merge(localRecords, remote)
+
+            // 只在"远端不等于合并结果"时回写 → 等价内容不会反复上传
+            if (SyncPhraseMerge.needsPush(localRecords, remote)) {
+                val put = client.putText(
+                    FILE_PHRASES,
+                    SyncPhraseCodec.toJson(localDeviceLabel(), merged),
+                    CONTENT_TYPE_JSON,
+                )
+                if (!put.isOk) {
+                    SyncLog.warn(SyncEvent.NETWORK_ERROR, "常用语上传失败，本地数据保持不变")
+                    return@withLock
+                }
+            }
+
+            repository.mergeFromSync(merged.map { it.toEntry() })
+            // 只记数量与耗时，绝不打正文
+            SyncLog.event(
+                SyncEvent.UPLOAD,
+                "常用语同步：本地=${localRecords.size} 远端=${remote.size} " +
+                    "合并=${merged.size} 耗时=${System.currentTimeMillis() - started}ms",
+            )
+        }
     }
 
     /**
@@ -715,7 +808,9 @@ class SyncEngine(
             groups += WordGroup(FILE_DICTIONARY, "用户词库", dictionaryTypes.toList())
         }
         if (contentGate.isEnabled(SyncContent.PHRASE)) {
-            groups += WordGroup(FILE_PHRASES, "常用语", listOf(WordType.PHRASE))
+            // 常用语**不再**走词库分组：它有自己的表 PhraseEntry 与同步通道
+            // （requestPhraseSync / syncPhrasesOnly），否则同一文件会有两个写入者。
+            // 词库里既有的 PHRASE 行保留在库中不动，只是不再参与本条同步。
         }
         return groups
     }
@@ -1107,6 +1202,9 @@ class SyncEngine(
         const val FILE_DICTIONARY = "board_dictionary.json"
         const val FILE_LEARNED = "board_learned.json"
         const val FILE_PHRASES = "board_phrases.json"
+
+        /** 常用语去抖窗口：连续拖动/连续编辑只同步一次 */
+        const val PHRASE_DEBOUNCE_MS = 1500L
         const val LEARNED_EXPORT_FILE = "board_learned_export.txt"
 
         /** 最近这么久内有输入，就先不导出学习词（避免打断组词） */

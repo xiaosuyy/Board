@@ -184,6 +184,8 @@ dependencies {
     implementation(libs.androidx.security.crypto)
 
     testImplementation(libs.junit)
+    // JVM 单测需要真正的 org.json（Android 运行时自带，但单元测试里是打桩会抛 not mocked）
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

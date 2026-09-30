@@ -91,11 +91,16 @@ class PhraseEditActivity : Activity() {
                         return@setOnClickListener
                     }
                     scope.launch {
-                        if (phraseId == null) {
-                            repository.add(text)
+                        val changed = if (phraseId == null) {
+                            repository.add(text) != null
                         } else {
                             // 编辑：保留 phraseId 与排序位置，只更新正文与 updatedAt
                             repository.updateText(phraseId, text)
+                        }
+                        if (changed) {
+                            // 本地事务已完成 → 登记一次 Phrase Push（由 SyncEngine 去抖后执行）
+                            com.board.ime.sync.SyncEngineHolder.get(this@PhraseEditActivity)
+                                .requestPhraseSync()
                         }
                         withContext(Dispatchers.Main) { finish() }
                     }
