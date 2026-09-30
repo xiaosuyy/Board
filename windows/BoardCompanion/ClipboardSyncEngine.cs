@@ -330,8 +330,18 @@ namespace BoardCompanion
         /// <summary>清单路径：与 Android 一致 = `&lt;syncDir&gt;/SyncClipboard.json`</summary>
         private string ManifestPath()
         {
-            var dir = config == null ? null : config.syncDir;
             var name = SyncClipboardProvider.MANIFEST_NAME;
+            var dir = config == null ? null : config.syncDir;
+            var baseUrl = config == null ? null : config.baseUrl;
+
+            // baseUrl 可能**已经包含**同步目录（用户按设置页提示直接填到目录为止），
+            // 这时再拼一次 syncDir 就会变成 /boardkey1/boardkey1/，Android 将永远看不到。
+            if (!string.IsNullOrEmpty(dir) && !string.IsNullOrEmpty(baseUrl))
+            {
+                var trimmedBase = baseUrl.TrimEnd('/');
+                var suffix = "/" + dir.Trim('/');
+                if (trimmedBase.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return name;
+            }
             if (string.IsNullOrEmpty(dir)) return name;
             return dir.Trim('/') + "/" + name;
         }
