@@ -1,5 +1,7 @@
 package com.board.ime.ui.panel
 
+import com.board.ime.voice.VoiceState
+
 import android.animation.ValueAnimator
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -40,6 +42,7 @@ class TopPanelController(
     private val morePanel: MorePanel,
     private val clipboardHeader: ClipboardHeader,
     private val clipboardPanel: ClipboardPanel,
+    private val voiceHeader: VoiceHeader,
 ) {
 
     var onMoreAction: ((MorePanel.Action) -> Unit)? = null
@@ -71,6 +74,33 @@ class TopPanelController(
 
     /** 「收起键盘」：宿主调用 InputMethodService 的隐藏能力 */
     var onCollapseKeyboard: (() -> Unit)? = null
+
+    // ---------------------------------------------------------------- 语音
+
+    /** 语音面板里的「←」：取消当前识别 */
+    var onVoiceCancel: (() -> Unit)? = null
+
+    /** 语音面板里的「✓」：结束收音（已返回的结果照常上屏） */
+    var onVoiceStop: (() -> Unit)? = null
+
+    /** 打开语音面板（与其它状态共用同一个固定高度） */
+    fun showVoice() {
+        state = TopPanelState.VOICE
+        applyState()
+    }
+
+    /** 刷新语音面板（partial 预览 / 状态文字） */
+    fun updateVoice(state: VoiceState, text: String) {
+        voiceHeader.render(state, text)
+    }
+
+    /** 关闭语音面板，回到工具栏/候选栏 */
+    fun closeVoice() {
+        if (this.state != TopPanelState.VOICE) return
+        voiceHeader.render(VoiceState.IDLE, "")
+        this.state = derivedState()
+        applyState()
+    }
 
     /** 布局变化（宿主负责持久化） */
     var onToolLayoutChanged: ((ToolLayout) -> Unit)? = null
@@ -153,6 +183,8 @@ class TopPanelController(
         candidateBar.onComposingClicked = { onComposingClicked?.invoke() }
 
         clipboardHeader.onBack = { handleClipboardBack() }
+        voiceHeader.onBack = { onVoiceCancel?.invoke() }
+        voiceHeader.onFinish = { onVoiceStop?.invoke() }
         clipboardHeader.onToggleEdit = { toggleClipboardEdit() }
         clipboardHeader.onToggleSearch = { toggleSearch() }
         clipboardHeader.onClearSearch = { stopSearch() }
@@ -180,7 +212,8 @@ class TopPanelController(
 
         when {
             // 剪贴板是用户显式打开的，不被输入状态打断
-            state == TopPanelState.CLIPBOARD -> Unit
+            // 剪贴板 / 语音都是用户显式打开的，不被输入状态打断
+            state == TopPanelState.CLIPBOARD || state == TopPanelState.VOICE -> Unit
             // 一开始输入就切到候选栏
             composing.isNotEmpty() -> state = TopPanelState.CANDIDATES
             // 输入结束（composing 清空）后从候选栏退回工具栏
@@ -266,6 +299,7 @@ class TopPanelController(
         morePanel.applyTheme(theme)
         clipboardHeader.applyTheme(theme)
         clipboardPanel.applyTheme(theme)
+        voiceHeader.applyTheme(theme)
     }
 
     // ---------------------------------------------------------------- 搜索 / 筛选
@@ -390,6 +424,7 @@ class TopPanelController(
         if (previousState != state) {
             appliedState = state
             toolbar.visibility = visibleIf(state == TopPanelState.TOOLBAR)
+            voiceHeader.visibility = visibleIf(state == TopPanelState.VOICE)
             candidateBar.visibility = visibleIf(state == TopPanelState.CANDIDATES)
             morePanel.visibility = visibleIf(state == TopPanelState.MORE)
             clipboardHeader.visibility = visibleIf(state == TopPanelState.CLIPBOARD)
@@ -407,6 +442,7 @@ class TopPanelController(
         TopPanelState.CANDIDATES -> candidateBar
         TopPanelState.MORE -> morePanel
         TopPanelState.CLIPBOARD -> clipboardHeader
+        TopPanelState.VOICE -> voiceHeader
     }
 
     /**

@@ -1,5 +1,11 @@
 package com.board.ime.ime
 
+import android.net.Uri
+import android.provider.Settings
+import android.view.inputmethod.InputConnection
+import com.board.ime.voice.VoiceInputSession
+import com.board.ime.voice.VoiceState
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -87,6 +93,57 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private val settingsRepository: SettingsRepository by lazy { SettingsRepository(this) }
 
     private var engine: InputEngine = BasicEngine(InputMode.ENGLISH)
+
+    // ---------------------------------------------------------------- 语音输入（v1.2 Phase 2）
+
+    private var voiceSession: VoiceInputSession? = null
+
+    /**
+     * 语音流程与输入法之间的桥。只暴露最小接口，
+     * 不把 SpeechRecognizer 细节泄漏进服务，也不碰 Rime / Clipboard / 存储。
+     */
+    private val voiceHost = object : VoiceInputSession.Host {
+        override val isChineseMode: Boolean
+            get() = controller.letterMode == InputMode.CHINESE
+
+        override val inputConnection: InputConnection?
+            get() = currentInputConnection
+
+        override fun discardComposition() = controller.discardComposition()
+
+        override fun showVoicePanel() {
+            panelController?.showVoice()
+        }
+
+        override fun hideVoicePanel() {
+            panelController?.closeVoice()
+        }
+
+        override fun updateVoicePanel(state: VoiceState, text: String) {
+            panelController?.updateVoice(state, text)
+        }
+
+        /** 权限被拒：只给一条提示 + 去系统设置，不反复弹窗 */
+        override fun requestMicPermission() {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(Uri.fromParts("package", packageName, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.onFailure { Log.w(TAG, "打开系统设置失败：${it.message}") }
+        }
+
+        override fun notify(message: String) {
+            Toast.makeText(this@BoardInputMethodService, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 语音工具入口：点一次开始；识别中再点一次 = 结束收音（结果照常上屏） */
+    private fun onVoiceTool() {
+        val session = voiceSession ?: VoiceInputSession(this, voiceHost).also { voiceSession = it }
+        session.toggle()
+    }
     private var rimeEngine: RimeEngine? = null
     private var controller = InputController(engine)
     private var appliedEngineKind: EngineKind? = null
@@ -188,6 +245,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             morePanel = binding.morePanel,
             clipboardHeader = binding.clipboardHeader,
             clipboardPanel = binding.clipboardPanel,
+            voiceHeader = binding.voiceHeader,
         )
         panel.onCandidateSelected = { index -> controller.pickCandidate(index) }
         panel.onComposingClicked = { controller.commitCompositionAsIs() }
@@ -205,6 +263,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             observeClipboard(panel.searchQuery, remoteOnly)
         }
         panel.onCollapseKeyboard = { collapseKeyboard() }
+        panel.onVoiceCancel = { voiceSession?.cancel() }
+        panel.onVoiceStop = { voiceSession?.toggle() }
         panel.onToolLayoutChanged = { layout ->
             // 复用现有 SharedPreferences（不新增数据库 / 表）
             preferences.toolbarTools = layout.encodeToolbar()
@@ -287,6 +347,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         stopClipboardObservation()
         serviceScope.cancel()
+        // 语音识别必须先于其它资源释放：停止收音 → destroy → 置空（避免麦克风/监听器泄漏）
+        voiceSession?.release()
+        voiceSession = null
         RimeRuntime.close()
         binding = null
         panelController = null
@@ -335,7 +398,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             MorePanel.Action.THEME, MorePanel.Action.SETTINGS -> openSettings()
             // 尚未开发的功能：明确告知，不伪装成可用
             MorePanel.Action.TRANSLATE -> notifyNotImplemented("翻译")
-            MorePanel.Action.VOICE -> notifyNotImplemented("语音")
+            MorePanel.Action.VOICE -> onVoiceTool()
             MorePanel.Action.PHRASES -> notifyNotImplemented("常用语")
             // CLOSE / CLIPBOARD 由 TopPanelController 内部处理
             MorePanel.Action.CLOSE, MorePanel.Action.CLIPBOARD -> Unit

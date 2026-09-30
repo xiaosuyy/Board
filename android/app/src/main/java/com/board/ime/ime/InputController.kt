@@ -201,6 +201,24 @@ class InputController(
         if (key.type == KeyType.BACKSPACE) onBackspace()
     }
 
+    /**
+     * 语音等**外部输入**写入前调用：丢弃当前组词（不把拼音当文本上屏）。
+     *
+     * 只用引擎公开的 reset + InputConnection，不触碰 Rime 内部状态、不销毁会话。
+     * 目的：避免“zhongguo + 你好”这类残留。
+     */
+    fun discardComposition() {
+        val connection = inputConnection
+        val hadComposition = engine.composing.isNotEmpty()
+        engine.reset()
+        if (hadComposition) {
+            connection?.setComposingText("", CURSOR_AT_END)
+            connection?.finishComposingText()
+        }
+        clearModifiers()
+        notifyStateChanged()
+    }
+
     fun pickCandidate(index: Int) {
         applyEngineResult(engine.pickCandidate(index))
         clearModifiers()
