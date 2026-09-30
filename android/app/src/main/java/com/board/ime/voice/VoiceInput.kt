@@ -258,16 +258,19 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
 
     private fun start() {
         if (!controller.isAvailable()) {
-            host.notify("此设备没有可用的语音识别服务")
+            // 面板**留在原地**并把原因写清楚：只弹一条瞬时 Toast 用户会以为“点了没反应”
             state = VoiceState.IDLE
-            host.hideVoicePanel()
+            host.showVoicePanel()
+            host.updateVoicePanel(VoiceState.ERROR, "此设备没有可用的语音识别服务")
+            host.notify("此设备没有可用的语音识别服务")
             return
         }
         if (!hasMicPermission()) {
+            state = VoiceState.IDLE
+            host.showVoicePanel()
+            host.updateVoicePanel(VoiceState.ERROR, "需要麦克风权限才能使用语音输入")
             host.notify("需要麦克风权限才能使用语音输入")
             host.requestMicPermission()
-            state = VoiceState.IDLE
-            host.hideVoicePanel()
             return
         }
         state = VoiceState.LISTENING
