@@ -305,11 +305,28 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }
     }
 
+    /** 打开常用语面板：① 立刻显示本地快照 ② 发起一次 Pull ③ Pull 完成后再刷新一次 */
     private fun openPhrases() {
         panelController?.showPhrases()
         panelController?.updatePhrases(phrases)
-        // 打开面板 = 主动 Pull 一次（不轮询、不常驻）
         syncEngine?.requestPhraseSync()
+    }
+
+    /**
+     * Pull + merge 之后**显式**重读数据库并刷新面板。
+     *
+     * 不再"假设 Room Flow 一定会刷新"：面板可能是刚打开、collector 刚启动，
+     * 或者 Flow 的首个快照早于 merge —— 都会造成"第一次进入看不到最新内容，退出再进才有"。
+     */
+    private fun refreshPhrasesFromDatabase() {
+        val repository = phraseRepository ?: return
+        serviceScope.launch {
+            val list = repository.all()
+                .filter { it.deletedAt == null }
+                .sortedWith(compareBy({ it.sortOrder }, { it.updatedAt }, { it.phraseId }))
+            phrases = list
+            mainHandler.post { panelController?.updatePhrases(list) }
+        }
     }
 
     /**
@@ -592,7 +609,11 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         registerClipboardListener()
         startSync()
         // 常用语同步：把仓库接给 SyncEngine（独立通道，不经过剪贴板）
-        phraseRepository?.let { syncEngine?.attachPhraseRepository(it) }
+        phraseRepository?.let { repository ->
+            syncEngine?.attachPhraseRepository(repository)
+            // Pull 完成 → 显式刷新面板（解决"第一次进入不刷新"）
+            syncEngine?.onPhrasesApplied = { refreshPhrasesFromDatabase() }
+        }
 
         preferences.registerListener(preferenceListener)
         settingsRepository.registerListener(uiSettingsListener)

@@ -169,6 +169,14 @@ class SyncEngine(
         phraseRepository = repository
     }
 
+    /**
+     * Pull + merge 落库完成后的回调。
+     *
+     * 有了它就不必"依赖 Room Flow 一定会帮我刷新"：宿主收到回调后**显式重读数据库并刷新面板**，
+     * 这样第一次打开面板就能看到刚同步下来的内容（一次 Pull，不重复请求）。
+     */
+    var onPhrasesApplied: (() -> Unit)? = null
+
     /** 用户改动常用语后调用：登记一次 Push（trailing 去抖，快速连续操作只同步一次） */
     fun requestPhraseSync() {
         phraseRequests.tryEmit(Unit)
@@ -225,6 +233,8 @@ class SyncEngine(
             }
 
             repository.mergeFromSync(merged.map { it.toEntry() })
+            // 显式通知宿主刷新（不依赖 Flow 时序）：第一次进入面板就能看到最新内容
+            onPhrasesApplied?.invoke()
             // 只记数量与耗时，绝不打正文
             SyncLog.event(
                 SyncEvent.UPLOAD,
