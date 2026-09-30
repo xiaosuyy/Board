@@ -96,6 +96,10 @@ namespace BoardCompanion
                 "• 密码使用 Windows DPAPI（当前用户）加密保存，不写明文。\n" +
                 "• 服务端的数据处理与留存由你自己的服务器决定。",
                 "隐私说明")));
+            buttons.Controls.Add(MakeButton("高级 · 日志", (s, e) =>
+            {
+                using (var log = new LogForm()) log.ShowDialog(this);
+            }));
             panel.Controls.Add(buttons, 1, panel.RowCount);
             panel.RowCount++;
 

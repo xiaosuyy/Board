@@ -31,11 +31,11 @@ $refs = @(
     '/r:System.Security.dll',
     '/r:System.Windows.Forms.dll'
 )
-$common = @('/nologo', '/target:exe', '/platform:anycpu', '/optimize+')
+$common = @('/nologo', '/platform:anycpu', '/optimize+')
 
-# 3) main app (skeleton: starts and exits normally)
+# 3) main app：**WinExe**（启动不出现控制台黑窗口），后台托盘运行
 $mainOut = Join-Path $build 'BoardCompanion.exe'
-& $csc @common @refs "/out:$mainOut" `
+& $csc '/target:winexe' @common @refs "/out:$mainOut" `
     "$root\Program.cs" `
     "$root\ClipboardHasher.cs" `
     "$root\ClipboardPayload.cs" `
@@ -46,7 +46,9 @@ $mainOut = Join-Path $build 'BoardCompanion.exe'
     "$root\ClipboardMonitor.cs" `
     "$root\ClipboardSyncEngine.cs" `
     "$root\TrayController.cs" `
-    "$root\SettingsForm.cs"
+    "$root\SettingsForm.cs" `
+    "$root\StatusForm.cs" `
+    "$root\LogForm.cs"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: main build failed (exit=$LASTEXITCODE)"
     exit 1
@@ -59,7 +61,7 @@ Write-Host "sha256: $sha"
 
 # 4) tests (reference the main exe instead of recompiling the sources)
 $testOut = Join-Path $build 'BoardCompanion.Tests.exe'
-& $csc @common @refs "/r:$mainOut" "/out:$testOut" "$root\Tests\Program.cs"
+& $csc '/target:exe' @common @refs "/r:$mainOut" "/out:$testOut" "$root\Tests\Program.cs"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: test build failed (exit=$LASTEXITCODE)"
     exit 1

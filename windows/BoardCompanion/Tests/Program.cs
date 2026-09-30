@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Text;
 using BoardCompanion;
@@ -38,6 +40,7 @@ namespace BoardCompanionTests
             TestHash();
             TestJson();
             TestUrlPolicy();
+            TestLifecycle();
 
             Console.WriteLine();
             Console.WriteLine("PASS " + passed);
@@ -180,6 +183,78 @@ namespace BoardCompanionTests
             Check("empty-json",
                 SyncClipboardProvider.Deserialize("").Status == PayloadParseStatus.InvalidJson,
                 "空串应 InvalidJson");
+        }
+
+        // ------------------------------------------------------------ 生命周期 / UI
+
+        /// <summary>
+        /// Phase 1-C 的生命周期检查（能自动化的部分）：
+        /// - 主程序必须是 GUI 子系统（= 启动没有控制台黑窗口）；
+        /// - 主程序能在"没有界面"的情况下后台存活（托盘服务持续运行）。
+        ///
+        /// 需要人点托盘的那些（关闭面板不退出、点退出才结束）无法在这里自动化，
+        /// 按规则记为 NOT VERIFIED，需人工确认。
+        /// </summary>
+        private static void TestLifecycle()
+        {
+            Console.WriteLine("[lifecycle]");
+
+            var dir = Path.GetDirectoryName(typeof(Program).Assembly.Location);
+            var exe = Path.Combine(dir, "BoardCompanion.exe");
+            Check("main-exe-exists", File.Exists(exe), "找不到 " + exe);
+            if (!File.Exists(exe)) return;
+
+            // PE OptionalHeader.Subsystem：2=Windows GUI，3=Console
+            int subsystem = PeSubsystem(exe);
+            Check("no-console-window(pe-subsystem=" + subsystem + ")", subsystem == 2,
+                "期望 2(GUI)，实际 " + subsystem);
+
+            // 后台存活：启动后数秒仍在运行（没有主窗口也不退出）
+            var before = Process.GetProcessesByName("BoardCompanion").Length;
+            Process started = null;
+            try
+            {
+                started = Process.Start(exe);
+                System.Threading.Thread.Sleep(4000);
+                var alive = started != null && !started.HasExited;
+                if (!alive && before > 0)
+                {
+                    // 已有实例在跑：新进程按单实例策略立刻退出，这也是预期行为
+                    Check("background-stays-alive", true, "已有实例在运行（单实例策略）");
+                }
+                else
+                {
+                    Check("background-stays-alive", alive, "进程启动后 4 秒内退出了");
+                }
+            }
+            catch (Exception ex)
+            {
+                Check("background-stays-alive", false, ex.GetType().Name);
+            }
+            finally
+            {
+                // 只结束"本次测试启动的"那个进程，绝不动用户已经在用的实例
+                if (started != null && !started.HasExited)
+                {
+                    try { started.Kill(); } catch (Exception) { }
+                }
+            }
+        }
+
+        /// <summary>读取 PE 的 Subsystem 字段（2=GUI，3=Console）</summary>
+        private static int PeSubsystem(string exePath)
+        {
+            try
+            {
+                var bytes = File.ReadAllBytes(exePath);
+                int peOffset = BitConverter.ToInt32(bytes, 0x3C);
+                int optional = peOffset + 4 + 20; // Signature + FileHeader
+                return BitConverter.ToUInt16(bytes, optional + 68);
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
         }
 
         // ------------------------------------------------------------ URL policy

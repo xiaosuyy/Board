@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -7,31 +6,37 @@ using System.Windows.Forms;
 namespace BoardCompanion
 {
     /// <summary>
-    /// Board Windows Companion（v2.0）。
+    /// Board Windows Companion（v2.0，Phase 1-C：后台托盘化）。
     ///
-    /// 启动顺序：单实例 → 读凭据 → 剪贴板监听 → 同步引擎 → 托盘 → 消息循环。
-    /// 自动同步开启时，启动后做一次同步（Push 本地未同步的变更 + Pull 云端收敛）。
+    /// 编译为 **WinExe**：启动**不出现控制台黑窗口**；默认**后台运行**，只在托盘可见；
+    /// 需要时才弹出极简状态面板（托盘左键 / 菜单）。关闭面板只是隐藏，**不退出**。
+    /// 只有托盘/面板里的「退出」才真正结束进程。
     ///
-    /// 命令行（用于自动化验证，不需要点托盘）：
-    ///   --sync-once    读配置 → 做一次同步 → 退出（0=成功，1=失败）
+    /// 日志：写 `%APPDATA%\BoardCompanion\companion.log`（不含剪贴板正文），
+    /// 界面入口在 设置 → 高级 → 日志。
     ///
-    /// 隐私：不落盘剪贴板正文；日志只含长度/状态/耗时。
+    /// 自动化入口（沿用 Phase 1-B）：
+    ///   --sync-once   读配置 → 做一次同步 → 退出（0=成功，1=失败）
     /// </summary>
     internal static class Program
     {
         private const string MutexName = "BoardCompanion.SingleInstance";
 
+        private static ClipboardMonitor monitor;
+        private static TrayController tray;
+        private static ClipboardSyncEngine engine;
+        private static StatusForm statusForm;
+        private static SettingsForm settingsForm;
+        private static DateTime? lastSyncAt;
+
         [STAThread]
         private static int Main(string[] args)
         {
-            Console.OutputEncoding = Encoding.UTF8;
-
             var syncOnce = false;
             foreach (var arg in args)
             {
                 if (string.Equals(arg, "--sync-once", StringComparison.OrdinalIgnoreCase)) syncOnce = true;
             }
-
             if (syncOnce) return RunSyncOnce();
 
             bool isFirst;
@@ -39,7 +44,7 @@ namespace BoardCompanion
             {
                 if (!isFirst)
                 {
-                    MessageBox.Show("Board Companion 已在运行（见系统托盘）。", "Board");
+                    // 已有实例：这里没有控制台，也不再弹窗打扰；直接退出
                     return 0;
                 }
 
@@ -48,46 +53,71 @@ namespace BoardCompanion
 
                 var store = new CredentialStore();
                 var config = store.Load();
-                var engine = new ClipboardSyncEngine(config, store.LoadPassword());
+                engine = new ClipboardSyncEngine(config, store.LoadPassword());
+                engine.StateChanged += (s, e) =>
+                {
+                    if (engine.State == SyncState.Idle) lastSyncAt = DateTime.Now;
+                };
 
-                var monitor = new ClipboardMonitor();
+                monitor = new ClipboardMonitor();
                 monitor.ClipboardChanged += (s, e) => engine.OnClipboardChanged();
                 monitor.Start();
 
-                TrayController tray = null;
-                SettingsForm form = null;
-
                 Action openSettings = () =>
                 {
-                    if (form == null || form.IsDisposed || !form.Visible)
+                    if (settingsForm == null || settingsForm.IsDisposed)
                     {
-                        form = new SettingsForm(engine, () => tray.UpdateState());
-                        form.Show();
+                        settingsForm = new SettingsForm(engine, () => { if (tray != null) tray.UpdateState(); });
                     }
-                    else
-                    {
-                        form.Activate();
-                    }
+                    if (!settingsForm.Visible) settingsForm.Show();
+                    settingsForm.Activate();
                 };
 
-                tray = new TrayController(engine, openSettings, () =>
+                Action openPanel = () =>
                 {
-                    monitor.Stop();
-                    monitor.Dispose();
-                    tray.Dispose();
-                    Application.Exit();
-                });
+                    if (statusForm == null || statusForm.IsDisposed)
+                    {
+                        statusForm = new StatusForm(engine, () => lastSyncAt, openSettings);
+                        statusForm.OnExitRequested = ExitApplication;
+                    }
+                    if (!statusForm.Visible) statusForm.Show();
+                    statusForm.Activate();
+                    statusForm.Refresh2();
+                };
+
+                tray = new TrayController(engine, openPanel, openSettings, ExitApplication);
 
                 Log.Info("started deviceId=" + engine.DeviceId +
-                         " configured=" + (!string.IsNullOrEmpty(config.baseUrl)));
+                         " configured=" + (!string.IsNullOrEmpty(config.baseUrl)) + " mode=winexe-tray");
 
                 if (config.autoSync) engine.SyncNow();
 
+                // 无主窗体：消息循环照常运行（托盘 + 剪贴板通知都要它）
                 Application.Run();
 
-                engine.Dispose();
-                tray.Dispose();
+                Cleanup();
                 return 0;
+            }
+        }
+
+        private static void ExitApplication()
+        {
+            Cleanup();
+            Application.Exit();
+        }
+
+        private static void Cleanup()
+        {
+            try
+            {
+                if (monitor != null) { monitor.Stop(); monitor.Dispose(); monitor = null; }
+                if (engine != null) { engine.Dispose(); engine = null; }
+                if (tray != null) { tray.Dispose(); tray = null; }
+                Log.Info("exited");
+            }
+            catch (Exception)
+            {
+                // 退出路径不抛
             }
         }
 
@@ -98,25 +128,23 @@ namespace BoardCompanion
             var config = store.Load();
             if (string.IsNullOrEmpty(config.baseUrl))
             {
-                Console.WriteLine("未配置 WebDAV 地址");
+                Log.Warn("sync-once aborted: not configured");
                 return 1;
             }
             var problem = WebDavUrlPolicy.Evaluate(config.baseUrl, config.allowCleartextHttp);
             if (problem != null)
             {
-                Console.WriteLine("传输安全=拒绝：" + problem);
+                Log.Warn("sync-once aborted: url policy rejected");
                 return 1;
             }
 
-            var engine = new ClipboardSyncEngine(config, store.LoadPassword());
-            var task = engine.SyncNowAsync();
+            var localEngine = new ClipboardSyncEngine(config, store.LoadPassword());
+            var task = localEngine.SyncNowAsync();
             var finished = task.Wait(30000);
-            Thread.Sleep(300); // 让日志落盘
-            Log.Info("sync-once finished=" + finished + " state=" + engine.State);
-
-            var ok = finished && engine.State != SyncState.Error && engine.State != SyncState.NotConfigured;
-            Console.WriteLine("sync-once finished=" + finished + " state=" + engine.State + " ok=" + ok);
-            engine.Dispose();
+            Thread.Sleep(300);
+            Log.Info("sync-once finished=" + finished + " state=" + localEngine.State);
+            var ok = finished && localEngine.State != SyncState.Error && localEngine.State != SyncState.NotConfigured;
+            localEngine.Dispose();
             return ok ? 0 : 1;
         }
     }
