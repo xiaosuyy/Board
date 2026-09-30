@@ -89,13 +89,24 @@ class TopPanelController(
         applyState()
     }
 
+    /**
+     * 语音面板处于「异常提示」时为 true。
+     *
+     * 这类提示（没有识别服务 / 没有麦克风权限 / 服务暂不可用）由**用户明确退出**才消失：
+     * 输入视图刷新、onStartInputView、layout 变化都不得把它冲掉，否则用户什么也看不到
+     * （真机上 Toast 还会被系统抑制，等于完全静默失败）。
+     */
+    private var voiceSticky = false
+
     /** 刷新语音面板（partial 预览 / 状态文字） */
     fun updateVoice(state: VoiceState, text: String) {
+        voiceSticky = state == VoiceState.ERROR
         voiceHeader.render(state, text)
     }
 
-    /** 关闭语音面板，回到工具栏/候选栏 */
+    /** 关闭语音面板（用户返回 / 识别成功 / 切换其它工具） */
     fun closeVoice() {
+        voiceSticky = false
         if (this.state != TopPanelState.VOICE) return
         voiceHeader.render(VoiceState.IDLE, "")
         this.state = derivedState()
@@ -276,7 +287,7 @@ class TopPanelController(
         closeClipboard()
     }
 
-    /** 输入框切换 / 失去焦点：回到初始状态 */
+    /** 输入框切换 / 失去焦点：回到初始状态（语音异常提示除外，见 voiceSticky） */
     fun resetToIdle() {
         composing = ""
         candidateBar.clear()
@@ -284,7 +295,8 @@ class TopPanelController(
         stopSearch(notify = false)
         remoteOnly = false
         clipboardHeader.setRemoteFilter(false)
-        state = TopPanelState.TOOLBAR
+        // 语音不可用的提示必须留到用户明确退出为止，不能被输入视图刷新冲掉
+        state = if (voiceSticky) TopPanelState.VOICE else TopPanelState.TOOLBAR
         applyState()
     }
 

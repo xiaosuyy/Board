@@ -59,7 +59,7 @@ class VoiceHeader @JvmOverloads constructor(
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
         previewView.apply {
-            maxLines = 1
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
         column.addView(titleView)
@@ -96,7 +96,7 @@ class VoiceHeader @JvmOverloads constructor(
             VoiceState.LISTENING -> "正在听……"
             VoiceState.PROCESSING -> "识别中……"
             VoiceState.SUCCESS -> "已识别"
-            VoiceState.ERROR -> "识别失败"
+            VoiceState.ERROR -> "语音不可用"
             VoiceState.IDLE -> ""
         }
         titleView.setTextColor(if (listening) theme.iconColor else theme.candidateMutedText)

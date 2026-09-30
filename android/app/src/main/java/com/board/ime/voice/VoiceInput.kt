@@ -259,18 +259,16 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
     private fun start() {
         if (!controller.isAvailable()) {
             // 面板**留在原地**并把原因写清楚：只弹一条瞬时 Toast 用户会以为“点了没反应”
+            // （真机上 Board 的 Toast 还可能被系统抑制，所以面板才是唯一可靠的提示面）
             state = VoiceState.IDLE
             host.showVoicePanel()
-            host.updateVoicePanel(VoiceState.ERROR, "此设备没有可用的语音识别服务")
-            host.notify("此设备没有可用的语音识别服务")
+            host.updateVoicePanel(VoiceState.ERROR, UNAVAILABLE_MESSAGE)
             return
         }
         if (!hasMicPermission()) {
             state = VoiceState.IDLE
             host.showVoicePanel()
-            host.updateVoicePanel(VoiceState.ERROR, "需要麦克风权限才能使用语音输入")
-            host.notify("需要麦克风权限才能使用语音输入")
-            host.requestMicPermission()
+            host.updateVoicePanel(VoiceState.ERROR, PERMISSION_MESSAGE)
             return
         }
         state = VoiceState.LISTENING
@@ -315,6 +313,12 @@ class VoiceInputSession(private val context: Context, private val host: Host) {
         const val LANGUAGE_ZH = "zh-CN"
         const val LANGUAGE_EN = "en-US"
         private const val CURSOR_AT_END = 1
+
+        /** 无服务 / 无权限：面板上两行说明（不依赖 Toast、不依赖通知权限） */
+        const val UNAVAILABLE_MESSAGE =
+            "当前设备没有可用的语音识别服务\n请安装支持语音识别的服务后重试"
+        const val PERMISSION_MESSAGE =
+            "需要麦克风权限才能使用语音输入\n可再次点击语音按钮授权"
 
         /** 仅用于老版本兼容判断，避免直接引用可能不存在的常量 */
         @Suppress("unused")
