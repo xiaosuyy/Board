@@ -147,6 +147,9 @@ class VoiceInputController(
 
                 is VoiceRecognitionEvent.Final -> emit(VoiceState.RESULT, event.text)
 
+                // 用户已点停止、正在等收尾：保持"识别中"外观（麦克风仍在），不会被当成错误
+                is VoiceRecognitionEvent.Stopping -> emit(VoiceState.PROCESSING, event.text)
+
                 is VoiceRecognitionEvent.Failed -> {
                     listening = false
                     emit(VoiceState.ERROR, event.failure.message)

@@ -57,9 +57,13 @@ class BaiduRealtimeVoiceRecognitionProvider(
     @Volatile
     private var finishing = false
 
-    private val finalText = StringBuilder()
-    private var currentPartial: String = ""
+    /** 文本组装：partial 覆盖、段级 final 只追加一次（见 VoiceTranscriptAssembler） */
+    private val transcript = VoiceTranscriptAssembler()
     private var startedAt = 0L
+    private var segmentIndex = 0
+
+    /** 用户点停止后的收尾兜底：服务端若没主动断开，也要在合理时间内结束会话 */
+    private val endHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun isConfigured(): Boolean = credentialsProvider().isComplete
 
@@ -76,8 +80,8 @@ class BaiduRealtimeVoiceRecognitionProvider(
         synchronized(lock) {
             sessionActive = true
             finishing = false
-            finalText.setLength(0)
-            currentPartial = ""
+            segmentIndex = 0
+            transcript.reset()
         }
         startedAt = System.currentTimeMillis()
 
@@ -95,10 +99,40 @@ class BaiduRealtimeVoiceRecognitionProvider(
                 true
             }
         }
+        // 只允许发一次停止：重复点不会重复发 FINISH
         if (!wasActive) return
         // 先把最后不足一帧的音频补发出去，再发 FINISH（顺序不能反）
         stopRecording()
         runCatching { webSocket?.send(FINISH_FRAME) }
+        // 告诉 UI：正在收尾（麦克风保持显示，不出现对勾）
+        emit(VoiceRecognitionEvent.Stopping(transcript.displayText))
+        Log.i(TAG, "voice user stop, waiting for final")
+        // 兜底：服务端若没主动断开，也在合理时间内收尾
+        endHandler.removeCallbacksAndMessages(null)
+        endHandler.postDelayed({ finishSession() }, ENDING_GRACE_MS)
+    }
+
+    /**
+     * 会话真正结束（用户已点停止，且服务端收尾完成/超时）：
+     * 这时才有资格进入 RESULT。
+     */
+    private fun finishSession() {
+        val active = synchronized(lock) {
+            val was = sessionActive
+            sessionActive = false
+            finishing = false
+            was
+        }
+        if (!active) return
+        endHandler.removeCallbacksAndMessages(null)
+        val text = transcript.settledText.ifEmpty { transcript.displayText }
+        teardown(closeSocket = true)
+        if (text.isNotEmpty()) {
+            Log.i(TAG, "voice session end chars=${text.length} segment=$segmentIndex")
+            emit(VoiceRecognitionEvent.Final(text))
+        } else {
+            emit(VoiceRecognitionEvent.Failed(VoiceFailure.NoSpeech))
+        }
     }
 
     override fun cancel() {
@@ -144,16 +178,30 @@ class BaiduRealtimeVoiceRecognitionProvider(
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 onSocketGone()
+                // 用户已点停止 → 这就是收尾完成；否则是异常断连
+                if (synchronized(lock) { finishing }) {
+                    finishSession()
+                } else if (synchronized(lock) { sessionActive }) {
+                    Log.w(TAG, "voice error kind=closed")
+                    synchronized(lock) { sessionActive = false }
+                    stopRecording()
+                    emit(VoiceRecognitionEvent.Failed(VoiceFailure.Disconnected))
+                }
             }
 
             override fun onFailure(webSocket: WebSocket, throwable: Throwable, response: Response?) {
-                // 注意：不打印 throwable 之外的任何内容；throwable.message 也不含音频/凭据
+                // 注意：不打印音频/凭据；只记异常类型
                 Log.w(TAG, "voice error kind=${throwable.javaClass.simpleName}")
-                val active = synchronized(lock) { sessionActive }
-                if (active && !finishing) {
+                val wasFinishing = synchronized(lock) { finishing }
+                onSocketGone()
+                if (wasFinishing) {
+                    // 已收到用户停止：尽量把已有文本交出去，而不是报错
+                    finishSession()
+                } else if (synchronized(lock) { sessionActive }) {
+                    synchronized(lock) { sessionActive = false }
+                    stopRecording()
                     emit(VoiceRecognitionEvent.Failed(VoiceFailure.Disconnected))
                 }
-                onSocketGone()
             }
         }
 
@@ -192,15 +240,24 @@ class BaiduRealtimeVoiceRecognitionProvider(
                 val result = json.optString("result")
                 if (result.isEmpty()) return
                 if (type == "MID_TEXT") {
-                    currentPartial = result
-                    // partial 只更新 UI：把「已确定句 + 当前临时句」一起给出去，界面始终显示完整进度
-                    emit(VoiceRecognitionEvent.Partial(finalText.toString() + currentPartial))
+                    // 官方语义：MID_TEXT 是「这一句的累计文本」→ **覆盖**显示，不能 append
+                    transcript.onPartial(result)
+                    emit(VoiceRecognitionEvent.Partial(transcript.displayText))
                 } else {
-                    finalText.append(result)
-                    currentPartial = ""
-                    val elapsed = System.currentTimeMillis() - startedAt
-                    Log.i(TAG, "voice final chars=${finalText.length} elapsedMs=$elapsed")
-                    emit(VoiceRecognitionEvent.Final(finalText.toString()))
+                    // 官方语义：FIN_TEXT 是「一句话的最终结果」，
+                    // 它**不代表用户结束语音** —— 只把这一段定下来，会话继续保持 LISTENING。
+                    val key = VoiceTranscriptAssembler.segmentKeyOf(
+                        json.optString("sn").takeIf { it.isNotBlank() },
+                        json.optLong("start_time", 0L),
+                    )
+                    transcript.onSegmentFinal(result, key)
+                    segmentIndex++
+                    // 只记类型/长度/段号，绝不打印识别正文
+                    Log.i(
+                        TAG,
+                        "voice message type=FINAL chars=${result.length} segment=$segmentIndex",
+                    )
+                    emit(VoiceRecognitionEvent.Partial(transcript.displayText))
                 }
             }
         }
@@ -316,6 +373,9 @@ class BaiduRealtimeVoiceRecognitionProvider(
 
         /** 文档示例里明确标注的错误码：-3004 = asr authentication failed */
         const val ERR_AUTH = -3004
+
+        /** 用户点停止后，最多再等这么久就收尾（服务端通常会更快关闭连接） */
+        const val ENDING_GRACE_MS = 3000L
 
         const val AUDIO_JOIN_MS = 500L
 

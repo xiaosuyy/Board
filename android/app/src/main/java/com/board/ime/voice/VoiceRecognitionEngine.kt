@@ -55,6 +55,9 @@ sealed interface VoiceRecognitionEvent {
     /** 已确定的整句结果（可多次到达，调用方按累计文本处理） */
     data class Final(val text: String) : VoiceRecognitionEvent
 
+    /** 用户已要求结束，正在等服务端收尾（**不是**确认，也不代表已经有结果） */
+    data class Stopping(val text: String) : VoiceRecognitionEvent
+
     data class Failed(val failure: VoiceFailure) : VoiceRecognitionEvent
 }
 
