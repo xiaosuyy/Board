@@ -370,15 +370,25 @@ namespace BoardCompanionTests
             Check("cleanup-second-run-noop", !BoardCompanion.Program.Cleanup(), "第二次应直接返回 false（不再打印 exited）");
         }
 
-        /// <summary>构造一个含中文 / Emoji / 换行的指定字节量级文本</summary>
+        /// <summary>
+        /// 构造一个含中文 / Emoji / 换行的指定字节量级文本。
+        ///
+        /// **O(n)**：块字节数只算一次，循环里用计数累加，最后只做一次 ToString()。
+        /// （旧写法每次循环都 `sb.ToString()` 再量长度，是 O(n²)，5 MiB 时让测试跑了 4 分多钟。）
+        /// 生成的内容与旧实现**逐字节相同**。
+        /// </summary>
         private static string BuildLargeText(int targetBytes)
         {
-            var sb = new StringBuilder(targetBytes);
-            while (ClipboardHasher.Utf8Length(sb.ToString()) < targetBytes)
+            const string chunk = "你好👋世界\n";
+            var chunkBytes = (int)ClipboardHasher.Utf8Length(chunk);
+            var builder = new StringBuilder(targetBytes + chunk.Length);
+            long bytes = 0;
+            while (bytes < targetBytes)
             {
-                sb.Append("你好👋世界\n");
+                builder.Append(chunk);
+                bytes += chunkBytes;
             }
-            return sb.ToString();
+            return builder.ToString();
         }
 
         // ------------------------------------------------------------ URL policy
