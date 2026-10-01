@@ -27,7 +27,11 @@ namespace BoardCompanion
 
         private static System.Windows.Forms.Timer backgroundPull;
 
+        /// <summary>全局快捷键「立即同步」的注册 id（进程内唯一即可）</summary>
+        private const int HotKeyId = 0x0B0A;
+
         private static ClipboardMonitor monitor;
+        private static HotKey hotKey;
         private static TrayController tray;
         private static ClipboardSyncEngine engine;
         private static StatusForm statusForm;
@@ -92,6 +96,11 @@ namespace BoardCompanion
 
                 tray = new TrayController(engine, openPanel, openSettings, ExitApplication);
 
+                // 全局快捷键 **Ctrl + Alt + S** = 与托盘菜单 / 状态面板**同一个**「立即同步」入口。
+                // 注册失败（被别的程序占用等）**不影响启动**，只记一行日志、不弹窗。
+                hotKey = new HotKey(HotKeyId, () => engine.SyncNow());
+                if (!hotKey.RegisterDefault()) Log.Warn("hotkey register failed");
+
                 // 低频后台拉取：让 PC 在"没人点同步"时也能收到其它端的内容。
                 // 60 秒一次（**不做秒级轮询**）；本机剪贴板没变时这一趟只会 GET + 必要时写回，
                 // 不会产生多余 PUT。暂停时整体跳过。
@@ -135,6 +144,7 @@ namespace BoardCompanion
             try
             {
                 if (backgroundPull != null) { backgroundPull.Stop(); backgroundPull.Dispose(); backgroundPull = null; }
+                if (hotKey != null) { hotKey.Dispose(); hotKey = null; }
                 if (monitor != null) { monitor.Stop(); monitor.Dispose(); monitor = null; }
                 if (engine != null) { engine.Dispose(); engine = null; }
                 if (tray != null) { tray.Dispose(); tray = null; }

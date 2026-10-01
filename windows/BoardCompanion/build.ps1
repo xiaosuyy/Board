@@ -47,6 +47,7 @@ $mainOut = Join-Path $build 'BoardCompanion.exe'
     "$root\CredentialStore.cs" `
     "$root\AutoStart.cs" `
     "$root\ClipboardMonitor.cs" `
+    "$root\HotKey.cs" `
     "$root\ClipboardSyncEngine.cs" `
     "$root\TrayController.cs" `
     "$root\SettingsForm.cs" `

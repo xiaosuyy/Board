@@ -43,6 +43,7 @@ namespace BoardCompanionTests
             TestLifecycle();
             TestPhase1D();
             TestPhase1E();
+            TestHotKey();
 
             Console.WriteLine();
             Console.WriteLine("PASS " + passed);
@@ -300,6 +301,63 @@ namespace BoardCompanionTests
                 "图片清单应为 type=Image/hasData=true/text=null/dataName=<hash>.png");
             Check("image-manifest-has-no-body",
                 json.Length < 512, "清单里不得含图片二进制，实际长度 " + json.Length);
+        }
+
+        // ------------------------------------------------------------ 全局快捷键（Phase 1-G）
+
+        /// <summary>
+        /// 全局快捷键：注册 / 命令路径 / 注销 / 冲突与失败的安全性。
+        ///
+        /// 真实按键（WM_HOTKEY）需要消息泵，这里用与之一致的 `Trigger()` 走**同一条命令路径**；
+        /// 注册本身是真实的 `RegisterHotKey` 调用（桌面会话下应成功）。
+        /// </summary>
+        private static void TestHotKey()
+        {
+            Console.WriteLine("[hotkey]");
+
+            var fired = 0;
+            var first = new HotKey(0x4A01, () => fired++);
+            var ok = first.RegisterDefault();
+            Check("hotkey-registers", ok, "RegisterHotKey(Ctrl+Alt+S) 应成功");
+
+            // 命令路径：与收到 WM_HOTKEY 完全一致
+            first.Trigger();
+            Check("hotkey-invokes-command", fired == 1, "Trigger 应恰好调用一次命令，实际 " + fired);
+
+            // 同一组合被占用：第二个必须失败且**不抛**（确定性：first 仍持有 Ctrl+Alt+S）
+            var second = new HotKey(0x4A02, () => { });
+            bool conflictSafe;
+            try { conflictSafe = !second.RegisterDefault(); }
+            catch (Exception) { conflictSafe = false; }
+            Check("hotkey-conflict-safe", conflictSafe, "同组合重复注册应返回 false 而不是抛异常");
+            second.Dispose();
+
+            // 注册失败**不影响启动**：失败返回 false、不抛，之后 Unregister/Dispose 依旧安全
+            var bad = new HotKey(0x4A04, () => { });
+            bool failureSafe;
+            try
+            {
+                var failed = !bad.Register(HotKey.MOD_CONTROL | HotKey.MOD_ALT, HotKey.VK_S);
+                bad.Unregister();
+                bad.Dispose();
+                failureSafe = failed;
+            }
+            catch (Exception) { failureSafe = false; }
+            Check("hotkey-failure-does-not-throw", failureSafe, "注册失败应返回 false 且不抛异常");
+            if (fired != 1) Check("hotkey-failed-object-does-not-fire", false, "失败的注册不应触发命令");
+
+            // 注销幂等
+            bool unregisterSafe;
+            try { first.Unregister(); first.Unregister(); unregisterSafe = true; }
+            catch (Exception) { unregisterSafe = false; }
+            Check("hotkey-unregister-idempotent", unregisterSafe, "重复 Unregister 不应抛异常");
+            first.Dispose();
+
+            // 注销后应能重新注册同一组合（证明确实释放了）
+            var third = new HotKey(0x4A03, () => { });
+            var again = third.RegisterDefault();
+            Check("hotkey-reregister-after-unregister", again, "注销后应能重新注册同一组合");
+            third.Dispose();
         }
 
         private static bool ByteEquals(byte[] a, byte[] b)

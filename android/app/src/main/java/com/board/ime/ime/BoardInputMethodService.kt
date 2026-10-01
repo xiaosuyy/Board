@@ -1010,11 +1010,12 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             return
         }
 
+        // ⚠️ **不 trim**：hash 必须与协议 / `applyRemote` 对齐（Board 自己写回的是**原样正文**）。
+        // 这里一旦 trim，回调算出的 hash 就与 CLOUD 行不一致 → 找不到原条目 → 多一条 LOCAL。
         val text = runCatching { clip.getItemAt(0).coerceToText(this)?.toString() }
             .getOrNull()
-            ?.trim()
             .orEmpty()
-        if (text.isEmpty()) return
+        if (text.isBlank()) return
         serviceScope.launch {
             val result = clipboardRepository?.capture(text, enqueuePush = pushToCloud)
             if (result == ClipboardCaptureResult.SKIPPED_SENSITIVE) {

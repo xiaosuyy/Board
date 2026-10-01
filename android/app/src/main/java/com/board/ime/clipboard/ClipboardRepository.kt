@@ -215,8 +215,10 @@ class ClipboardRepository(
          */
         enqueuePush: Boolean = true,
     ): ClipboardCaptureResult {
-        val text = content.trim()
-        if (text.isEmpty()) return ClipboardCaptureResult.SKIPPED_EMPTY
+        // ⚠️ 同样**原样**处理（不 trim）：`hash` 必须与协议 / `applyRemote` 对齐，
+        // 否则 Board 自己写回的正文在回调里会被算成另一个 hash → 误判为新内容 → 多一条 LOCAL。
+        val text = content
+        if (text.isBlank()) return ClipboardCaptureResult.SKIPPED_EMPTY
 
         // 敏感判定 / 类型判定只看开头一段：正文可能有几十 MB，
         // 没有任何理由为「是不是验证码」「是不是链接」去扫描整段内容。
@@ -258,6 +260,17 @@ class ClipboardRepository(
                 }
                 Log.i(TAG, "剪贴板内容已存在（hash=${SyncLog.shortHash(hash)}），刷新时间")
                 if (!fromSync && enqueuePush) enqueueClipboardPush(existing.id)
+                return@withLock ClipboardCaptureResult.UPDATED
+            }
+
+            // 来自同步（Board 自己写回系统剪贴板）但本地没有对应行时，**绝不新建 LOCAL**：
+            // 否则就会出现 [CLOUD][LOCAL] 两条相同内容（与图片路径的既有保护对齐）。
+            // 真正的用户本地复制 hash 全新、fromSync=false，不受影响。
+            if (fromSync) {
+                SyncLog.event(
+                    SyncEvent.SUPPRESS_LOOP,
+                    "文本 hash=${SyncLog.shortHash(hash)} 来自同步且本地无同条目，不重复入库",
+                )
                 return@withLock ClipboardCaptureResult.UPDATED
             }
 
@@ -329,8 +342,13 @@ class ClipboardRepository(
         originDeviceId: String? = null,
         originType: String? = null,
     ): ClipboardSummary? {
-        val text = content.trim()
-        if (text.isEmpty()) return null
+        // ⚠️ **原样存储，绝不 trim**。
+        // SyncClipboard 协议里的 hash 是对**原样正文**算的；一旦这里 trim，
+        // “行的 content” 与 “行的 contentHash” 就不再一致，
+        // 系统回调（用原样正文再算 hash）将**永远找不到**这条 CLOUD → 落空 → 多出一条 LOCAL。
+        // （实测证据：REMOTE 行的 contentHash ≠ sha256(该行 content)。）
+        val text = content
+        if (text.isBlank()) return null
         val hash = remoteHash?.takeIf { it.isNotBlank() } ?: ClipboardHasher.hash(text)
 
         // 先登记抑制：写入后系统剪贴板回调不该再触发上传
@@ -389,12 +407,14 @@ class ClipboardRepository(
             val existing = dao.findSummaryByHash(hash)
             if (existing != null) {
                 dao.touchAndRestore(id = existing.id, updatedAt = System.currentTimeMillis())
-                SyncLog.event(
-                    SyncEvent.SUPPRESS_LOOP,
-                    "图片来自 Board 自己的写回，保持原条目（不新建 LOCAL）",
-                )
-                return ClipboardCaptureResult.UPDATED
             }
+            // 关键：这个 URI 是 **Board 自己**写回系统剪贴板的（FileProvider 固定路径），
+            // 无论原历史行是否还在，都**绝不**再生成一条 LOCAL —— 来源身份必须保持稳定。
+            SyncLog.event(
+                SyncEvent.SUPPRESS_LOOP,
+                "图片来自 Board 自己的写回，不新建历史（matched=${existing != null}）",
+            )
+            return ClipboardCaptureResult.UPDATED
         }
 
         val processed = ClipboardImageCodec.processUri(resolver, uri) ?: return null
