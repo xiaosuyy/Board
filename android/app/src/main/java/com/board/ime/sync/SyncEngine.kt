@@ -1,6 +1,7 @@
 package com.board.ime.sync
 
 import android.os.Build
+import com.board.ime.clipboard.ClipboardContentStorage
 import com.board.ime.clipboard.ClipboardContentType
 import com.board.ime.clipboard.ClipboardHasher
 import com.board.ime.clipboard.ClipboardRepository
@@ -35,6 +36,8 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 同步引擎。
@@ -73,6 +76,11 @@ class SyncEngine(
     /** 大型词库文件同步（可选：老调用点不传也能工作） */
     private val dictionarySyncProvider: ((WebDavClient) -> DictionarySyncBinding?)? = null,
     private val clientFactory: (WebDavConfig) -> WebDavClient = { OkHttpWebDavClientFactory.create(it) },
+    /**
+     * B1：本机稳定设备 id（用于 `/clipboard-log/<deviceId>.json` 命名）。
+     * 为 null（未注入）时，增量历史整体关闭，行为与以前**完全一致**。
+     */
+    private val clipboardLogDeviceId: String? = null,
 ) {
 
     private val _status = MutableStateFlow(SyncStatus())
@@ -100,6 +108,31 @@ class SyncEngine(
      * **不等待**词库上传 / 学习词合并，也不会被它们阻塞。
      */
     private val clipboardMutex = Mutex()
+
+    // ---------------------------------------------------------------- B1 增量历史
+
+    /** B1：设备本地 seq 分配器（跨重启单调）；首次使用时从持久化恢复 */
+    private var historySequence = ClipboardLogSequence(0L)
+
+    /** B1：待发布的增量历史事件 —— **只在内存**（绝不把正文落盘） */
+    private val historyPending = ArrayList<ClipboardLogEvent>()
+
+    /** B1：追加 / 发布 / 水位的串行化锁（同一 device log 绝不并发 GET→modify→PUT） */
+    private val historyGate = Any()
+
+    /**
+     * B1：**发布 / 消费的协程级串行化**。
+     *
+     * `syncNow`（Worker）走 `syncMutex`，复制触发的 `syncClipboardOnly` 走 `clipboardMutex`，
+     * 两者**互不排斥**；没有这把锁，它们就可能同时对同一个 device log 做
+     * GET→modify→PUT，造成丢事件。
+     */
+    private val historyMutex = Mutex()
+
+    private var historyLoaded = false
+
+    /** B1：各远端设备的 lastSeenSeq（只存 metadata，不存远端正文） */
+    private var lastSeenSeq: Map<String, Long> = emptyMap()
 
     /**
      * 剪贴板同步请求。用 `conflate()` 实现 **trailing-edge 合并**：
@@ -414,12 +447,18 @@ class SyncEngine(
                 return@withLock push
             }
 
+            // B1：发布本机增量历史（与 latest-state 完全独立）
+            publishClipboardLog(client)
+
             val pull = pullRemote(client)
             val tPull = System.currentTimeMillis()
             if (pull is PullOutcome.Failed) {
                 publishTransient(_status.value.copy(clipboard = SyncPart(SyncPartState.FAILED, pull.result.status.lastError)))
                 return@withLock pull.result
             }
+
+            // B1：消费远端增量历史（只入 History，不写系统剪贴板）
+            pullClipboardLogs(client)
 
             val downloaded = (pull as? PullOutcome.Applied)?.applied ?: 0
             val conflicts = (pull as? PullOutcome.Applied)?.conflicts ?: 0
@@ -659,6 +698,261 @@ class SyncEngine(
             }
 
             else -> failPush(operation, response)
+        }
+    }
+
+    // ---------------------------------------------------------------- B1 增量历史
+
+    /**
+     * B1：本机**真实**产生了一条新的历史条目 ⇒ 记一条增量事件。
+     *
+     * **只入内存，不联网、不落盘**（隐私：绝不把正文持久化到本地磁盘）。
+     * 与 latest-state 去抖**完全无关** —— 即使 A/B 连续复制、去抖最终只 PUT B，
+     * 这里仍然留下 A、B 两条事件。
+     */
+    fun noteLocalClipboardHistoryItem(item: ClipboardItem) {
+        val deviceId = clipboardLogDeviceId ?: return
+        if (item.contentType != ClipboardContentType.TEXT && item.contentType != ClipboardContentType.LINK) return
+        if (item.contentStorage != ClipboardContentStorage.INLINE) return
+        val text = item.content
+        if (text.isEmpty()) return
+        val size = ClipboardHasher.utf8Length(text)
+        if (!ClipboardLogRecords.shouldRecord(ClipboardLogRecords.TYPE_TEXT, size)) return
+
+        ensureHistoryLoaded()
+        val hash = item.contentHash.ifEmpty { ClipboardHasher.hash(text) }
+        var seq = 0L
+        synchronized(historyGate) {
+            seq = historySequence.next()
+            historyPending.add(
+                ClipboardLogEvent(
+                    seq = seq,
+                    itemId = ClipboardLogRecords.itemIdFor(deviceId, seq),
+                    hash = hash,
+                    createdAt = System.currentTimeMillis(),
+                    size = size,
+                    text = text,
+                ),
+            )
+        }
+        SyncLog.event(SyncEvent.DONE, "clipboard history queued seq=$seq bytes=$size")
+    }
+
+    private fun ensureHistoryLoaded() {
+        if (historyLoaded) return
+        synchronized(historyGate) {
+            if (historyLoaded) return
+            historySequence = ClipboardLogSequence(configStore.loadLogSeq())
+            lastSeenSeq = configStore.loadLastSeenSeq()
+            historyLoaded = true
+        }
+    }
+
+    /**
+     * B1：把内存 pending 发布到 `/clipboard-log/<me>.json`。
+     *
+     * 顺序：GET 自己的日志 → 合并（按 itemId 去重）→ 裁剪 → PUT。
+     * 失败 ⇒ **保留 pending**（内存内重试）；seq **绝不回收**。
+     * 只写**本设备自己的**文件，绝不触碰别人的 log。
+     */
+    private suspend fun publishClipboardLog(client: WebDavClient) {
+        historyMutex.withLock { publishClipboardLogLocked(client) }
+    }
+
+    private suspend fun publishClipboardLogLocked(client: WebDavClient) {
+        val deviceId = clipboardLogDeviceId ?: return
+        ensureHistoryLoaded()
+        var batch: List<ClipboardLogEvent> = emptyList()
+        synchronized(historyGate) { batch = ArrayList(historyPending) }
+        if (batch.isEmpty()) return
+
+        val path = ClipboardLogRecords.pathFor(deviceId)
+        val response = client.getText(path)
+        val existing = when {
+            response.isOk -> ClipboardLogRecords.parse(response.value) ?: run {
+                SyncLog.warn(SyncEvent.IGNORED_TYPE, "增量历史日志解析失败，保留待发事件")
+                return
+            }
+
+            response.error == WebDavError.NOT_FOUND ->
+                ClipboardLogFile(deviceId = ClipboardLogRecords.sanitizeToken(deviceId), deviceType = "Android")
+
+            else -> {
+                SyncLog.warn(SyncEvent.NETWORK_ERROR, "增量历史读取失败，保留待发事件")
+                return
+            }
+        }
+
+        // 崩溃窗口防御（seq 复用）：远端水位更高时先抬内存水位；
+        // 再对「同 itemId 但内容不同」的待发事件换全新 seq。
+        val remoteMax = existing.events.maxOfOrNull { it.seq } ?: 0L
+        if (remoteMax > historySequence.value) {
+            historySequence = ClipboardLogSequence(remoteMax)
+            SyncLog.warn(SyncEvent.IGNORED_TYPE, "clipboard history seq bumped to remote max=$remoteMax")
+        }
+        val publish = ClipboardLogRecords.reassignReusedSequences(
+            batch = batch,
+            remoteEvents = existing.events,
+            deviceId = deviceId,
+            sequence = historySequence,
+        )
+
+        // **先落盘 seq，再做 PUT**：只要 PUT 成功过，重启后绝不可能再分配同一个 seq。
+        configStore.saveLogSeq(historySequence.value)
+
+        val known = HashSet<String>()
+        for (event in existing.events) if (event.itemId.isNotEmpty()) known.add(event.itemId)
+        val merged = ArrayList(existing.events)
+        var added = 0
+        for (event in publish) {
+            if (known.add(event.itemId)) {
+                merged.add(event)
+                added++
+            }
+        }
+        val now = System.currentTimeMillis()
+        val compacted = ClipboardLogRecords.compact(existing.copy(events = merged), now)
+
+        val put = client.putText(path, ClipboardLogRecords.serialize(compacted), CONTENT_TYPE_JSON)
+        if (!put.isOk) {
+            SyncLog.warn(SyncEvent.NETWORK_ERROR, "增量历史发布失败，保留待发事件")
+            return
+        }
+        synchronized(historyGate) {
+            // 用**原始** id 清理 pending（重新分配过的条目也一并清掉）
+            val published = batch.map { it.itemId }.toHashSet()
+            historyPending.removeAll { published.contains(it.itemId) }
+        }
+        SyncLog.event(SyncEvent.UPLOAD, "clipboard history published count=$added seq=${historySequence.value}")
+    }
+
+    /**
+     * B1：消费远端各设备的增量历史。
+     *
+     * **只写本地 History，不写系统剪贴板** ⇒ 不触发系统回调 ⇒ **零回环**。
+     * 水位 `lastSeenSeq` 只在「本轮全部成功」后才一次性推进；404 / 坏 JSON 一律不推进。
+     */
+    private suspend fun pullClipboardLogs(client: WebDavClient) {
+        historyMutex.withLock { pullClipboardLogsLocked(client) }
+    }
+
+    private suspend fun pullClipboardLogsLocked(client: WebDavClient) {
+        val self = clipboardLogDeviceId ?: return
+        ensureHistoryLoaded()
+        if (!registerInDeviceRegistry(client, self)) return
+
+        val response = client.getText(DEVICES_PATH)
+        if (!response.isOk) {
+            if (response.error != WebDavError.NOT_FOUND) {
+                SyncLog.warn(SyncEvent.IGNORED_TYPE, "远端设备注册表不可读，本轮跳过增量历史")
+            }
+            return
+        }
+        val deviceIds = parseDeviceIds(response.value)
+        if (deviceIds.isEmpty()) return
+
+        val me = ClipboardLogRecords.sanitizeToken(self)
+        val advanced = HashMap<String, Long>()
+        for (deviceId in deviceIds) {
+            if (deviceId == me) continue
+            val seen = lastSeenSeq[deviceId] ?: 0L
+            val logResponse = client.getText(ClipboardLogRecords.pathFor(deviceId))
+            // 404：不报错、不推进水位
+            if (logResponse.error == WebDavError.NOT_FOUND) continue
+            if (!logResponse.isOk) {
+                SyncLog.warn(SyncEvent.NETWORK_ERROR, "增量历史读取失败，本轮不推进水位")
+                return
+            }
+            val file = ClipboardLogRecords.parse(logResponse.value)
+            if (file == null) {
+                SyncLog.warn(SyncEvent.IGNORED_TYPE, "增量历史日志损坏，本轮跳过且不推进水位")
+                return
+            }
+            if (ClipboardLogRecords.gapDetected(seen, file)) {
+                // 不猜测缺失内容、不伪造 event、不用 latest-state 冒充历史
+                SyncLog.warn(
+                    SyncEvent.IGNORED_TYPE,
+                    "clipboard history log gap detected minSeq=${file.minSeq} seen=$seen",
+                )
+            }
+
+            val candidates = ClipboardLogRecords.candidatesFor(seen, file)
+            if (candidates.isEmpty()) continue
+
+            val processed = ArrayList<Long>(candidates.size)
+            for (event in candidates) {
+                val text = event.text
+                if (text.isNullOrEmpty()) {
+                    processed.add(event.seq)
+                    continue
+                }
+                val computed = ClipboardHasher.hash(text)
+                if (event.hash.isNotEmpty() && event.hash != computed) {
+                    SyncLog.warn(SyncEvent.CONFLICT, "增量历史 hash 与内容不一致，跳过该条")
+                    processed.add(event.seq)
+                    continue
+                }
+                // **只入 History，不写系统剪贴板** —— 回环抑制的关键
+                clipboardRepository.applyRemote(
+                    content = text,
+                    contentType = ClipboardContentType.TEXT,
+                    remoteHash = computed,
+                    originDeviceId = deviceId,
+                    originType = deviceId,
+                )
+                processed.add(event.seq)
+            }
+            advanced[deviceId] = ClipboardLogRecords.advanceWatermark(seen, processed, true)
+        }
+
+        if (advanced.isEmpty()) return
+        val updated = HashMap(lastSeenSeq)
+        updated.putAll(advanced)
+        lastSeenSeq = updated
+        configStore.saveLastSeenSeq(updated)
+        SyncLog.event(SyncEvent.DOWNLOAD, "clipboard history consumed devices=${advanced.size}")
+    }
+
+    /**
+     * B1：把自己登记进共享设备注册表 `/library/devices.json`（读改写取并集）。
+     * 复用 1-H 同一份注册表，**不新增第二套**。
+     */
+    private suspend fun registerInDeviceRegistry(client: WebDavClient, self: String): Boolean {
+        val me = ClipboardLogRecords.sanitizeToken(self)
+        val response = client.getText(DEVICES_PATH)
+        val ids = when {
+            response.isOk -> parseDeviceIds(response.value)
+            response.error == WebDavError.NOT_FOUND -> ArrayList()
+            else -> {
+                SyncLog.warn(SyncEvent.IGNORED_TYPE, "设备注册表不可读，本轮跳过增量历史")
+                return false
+            }
+        }
+        if (ids.contains(me)) return true
+        ids.add(me)
+        val json = JSONObject().apply {
+            put("schema", 1)
+            put("devices", JSONArray(ids))
+        }.toString()
+        val put = client.putText(DEVICES_PATH, json, CONTENT_TYPE_JSON)
+        return put.isOk
+    }
+
+    /** 只解析设备 id；坏 JSON 一律当作空（安全忽略） */
+    private fun parseDeviceIds(json: String?): MutableList<String> {
+        val result = ArrayList<String>()
+        if (json.isNullOrEmpty()) return result
+        return try {
+            val array = JSONObject(json).optJSONArray("devices") ?: JSONArray()
+            for (index in 0 until array.length()) {
+                val raw = array.optString(index)
+                if (raw.isBlank()) continue
+                val id = ClipboardLogRecords.sanitizeToken(raw)
+                if (!result.contains(id)) result.add(id)
+            }
+            result
+        } catch (throwable: Throwable) {
+            result
         }
     }
 
@@ -1200,6 +1494,9 @@ class SyncEngine(
                     return@withLock push
                 }
 
+                // B1：发布本机增量历史（与 latest-state 完全独立）
+                publishClipboardLog(client)
+
                 val pull = pullRemote(client)
                 if (pull is PullOutcome.Failed) {
                     publishClipboardState(
@@ -1208,6 +1505,9 @@ class SyncEngine(
                     )
                     return@withLock pull.result
                 }
+
+                // B1：消费远端增量历史（只入 History，不写系统剪贴板）
+                pullClipboardLogs(client)
 
                 val pushed = pushedHashThisRun
                 if (pushCount > 0 && pushed != null) {
@@ -1351,6 +1651,9 @@ class SyncEngine(
         const val FILE_DICTIONARY = "board_dictionary.json"
         const val FILE_LEARNED = "board_learned.json"
         const val FILE_PHRASES = "board_phrases.json"
+
+        /** B1：共享设备注册表（1-H 已存在，只读复用，不新增第二套） */
+        const val DEVICES_PATH = "library/devices.json"
 
         /** 常用语去抖窗口：连续拖动/连续编辑只同步一次 */
         const val PHRASE_DEBOUNCE_MS = 1500L

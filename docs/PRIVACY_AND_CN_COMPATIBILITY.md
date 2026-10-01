@@ -139,3 +139,41 @@
 | 翻译凭据 | 通过 | 代码 / BuildConfig / assets / manifest / native 中**无任何内置 Key**；用户自备，存 `EncryptedSharedPreferences` |
 | 翻译真实 API | **未验证** | 没有百度 APPID / 密钥，本阶段未发起任何真实翻译请求 |
 | 第三方服务端留存政策 | **未确认** | 同上，无法核实 |
+
+---
+
+## 附：B1 增量剪贴板历史（`/clipboard-log/`）隐私行为
+
+> 如实记录 **B1（增量 Clipboard History v1）** 新增的数据行为，便于提交前复核。
+
+### 远端
+
+- 新增目录 **`/clipboard-log/<deviceId>.json`**（与 `/file/`、`/library/` **完全独立**）。
+- 每台设备**只写自己的一份**；内容是该设备最近产生的 **Text** 事件。
+- `≤256 KiB` 的 Text 以 **inline `text` 明文**存放在远端 JSON 中（与 `SyncClipboard.json` 的内联语义一致）；
+  `>256 KiB` 的 Text **不产生事件**（不引用 `/file/`）。
+- 该文件**会暂存近期文本明文**；保留上限 **200 条**。
+- **compaction 在“本设备 publish 时”触发**，**不是严格每 7 天定时删除**；
+  长期不再产生事件的设备，其 log 会停在 ≤200 条（有界，但不会自动按时间收缩）。
+- 设备注册表复用 **`/library/devices.json`**（不新增第二套 registry）。
+
+### 本地（Android / Windows）
+
+- **不落任何 plaintext queue / outbox / 临时 txt**：待发正文只存在于**内存** pending 与 HTTP body。
+- 本地新增的持久化**只有数字/metadata**：
+  - `clipboard_log_seq`（Windows 为 `config.json` 的 `logSeq`）——本机 seq 水位；
+  - `clipboard_log_last_seen_seq`——各远端设备的已消费水位（形如 `deviceId:seq`）。
+- 日志只记录 `seq` / `bytes` / `count` / `status` / `minSeq` 等**不含正文**的字段。
+- 远端历史事件到达后**只写入本地历史库，不写系统剪贴板**，因此不产生回环事件。
+- `seq` 一旦分配只增不减；且**先落盘 seq 再做 PUT**，崩溃后不会重复分配已成功发布的 `seq`。
+
+### 核查结论（B1）
+
+| 项目 | 结论 | 依据 |
+|---|---|---|
+| 本地是否存在明文 outbox | 通过 | 真机 `files/` 与 `%APPDATA%` 下无 queue/txt/json outbox；待发正文仅在内存 |
+| 远端是否暂存近期文本 | **是（如实披露）** | `/clipboard-log/<deviceId>.json` 含 ≤256 KiB inline Text |
+| log 是否有界 | 通过 | `MAX_EVENTS = 200` |
+| 是否严格 7 天定时删除 | **否** | compaction 由本设备 publish 触发 |
+| 本地是否只存 metadata | 通过 | 仅 `logSeq` / `lastSeenSeq` |
+| 远端 history 是否写回系统剪贴板 | 否 | 只入本地历史库（无回环） |

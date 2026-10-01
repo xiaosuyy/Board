@@ -69,7 +69,7 @@ namespace BoardCompanion
                 };
 
                 monitor = new ClipboardMonitor();
-                monitor.ClipboardChanged += (s, e) => engine.OnClipboardChanged();
+                monitor.ClipboardChanged += (s, e) => engine.OnClipboardChanged(e);
                 monitor.Start();
 
                 Action openSettings = () =>

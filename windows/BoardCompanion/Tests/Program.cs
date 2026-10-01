@@ -47,6 +47,10 @@ namespace BoardCompanionTests
             TestHotKey();
             TestPhase1H();
             TestCloudLibrary();
+            TestClipboardLog();
+            TestSeqCrashWindow();
+            TestNotify();
+            TestCoalesce();
 
             Console.WriteLine();
             Console.WriteLine("PASS " + passed);
@@ -99,6 +103,175 @@ namespace BoardCompanionTests
             Check("stable",
                 ClipboardHasher.Hash("Hello 世界") == ClipboardHasher.Hash("Hello 世界"),
                 "same input → same hash");
+        }
+
+        // ------------------------------------------------------------ 通知去重 / 合并补跑
+
+        // ------------------------------------------------------------ seq 崩溃窗口
+
+        private static void TestSeqCrashWindow()
+        {
+            Console.WriteLine("[seqcrash]");
+
+            // 复现崩溃窗口：seq=7 已成功发布（远端有 dev:7 / HASH-OLD），
+            // 但落盘 seq 之前崩溃 → 重启后本地水位=6 → 又分配了 7（内容 HASH-NEW）。
+            var remote = new ClipboardLogFile();
+            remote.deviceId = "dev";
+            remote.events.Add(new ClipboardLogEvent
+            {
+                seq = 7, itemId = "dev:7", hash = "HASH-OLD",
+                type = ClipboardLog.TYPE_TEXT, createdAt = 1, size = 1,
+            });
+
+            var sequence = new ClipboardLogSequence(6);
+            var reused = new ClipboardLogEvent
+            {
+                seq = sequence.Next(), itemId = ClipboardLog.ItemIdFor("dev", 7), hash = "HASH-NEW",
+                type = ClipboardLog.TYPE_TEXT, createdAt = 2, size = 1,
+            };
+            var batch = new List<ClipboardLogEvent> { reused };
+            Check("crash-window-reproduced",
+                reused.seq == 7 && reused.itemId == "dev:7" && reused.hash == "HASH-NEW",
+                "应先复现 seq 被重复分配");
+
+            var n = ClipboardLog.ReassignReusedSequences(batch, remote, "dev", sequence);
+            Check("crash-window-reassigned",
+                n == 1 && batch[0].seq == 8 && batch[0].itemId == "dev:8",
+                "seq=" + batch[0].seq + " itemId=" + batch[0].itemId);
+            Check("crash-window-content-preserved", batch[0].hash == "HASH-NEW", "内容不得丢弃");
+            Check("crash-window-no-itemid-collision", batch[0].itemId != "dev:7", "不得复用已发布的 itemId");
+            Check("crash-window-seq-monotonic", sequence.Current > 7, "分配后水位必须超过 remoteMax");
+
+            // 同 itemId 同内容（上次已发布、pending 还没清掉）⇒ 不重新分配
+            var remote2 = new ClipboardLogFile();
+            remote2.events.Add(new ClipboardLogEvent { seq = 3, itemId = "dev:3", hash = "SAME", type = ClipboardLog.TYPE_TEXT, createdAt = 1, size = 1 });
+            var seq2 = new ClipboardLogSequence(3);
+            var batch2 = new List<ClipboardLogEvent>
+            {
+                new ClipboardLogEvent { seq = 3, itemId = "dev:3", hash = "SAME", type = ClipboardLog.TYPE_TEXT, createdAt = 1, size = 1 },
+            };
+            Check("same-id-same-hash-not-reassigned",
+                ClipboardLog.ReassignReusedSequences(batch2, remote2, "dev", seq2) == 0 && batch2[0].itemId == "dev:3",
+                "同 id 同内容不应换 seq（由调用方跳过）");
+
+            // 无冲突一律不改动
+            var seq3 = new ClipboardLogSequence(10);
+            var batch3 = new List<ClipboardLogEvent>
+            {
+                new ClipboardLogEvent { seq = 11, itemId = "dev:11", hash = "X", type = ClipboardLog.TYPE_TEXT, createdAt = 1, size = 1 },
+            };
+            Check("no-conflict-not-reassigned",
+                ClipboardLog.ReassignReusedSequences(batch3, remote2, "dev", seq3) == 0 && batch3[0].seq == 11,
+                "无冲突不得改动");
+
+            // 水位抬升后严格递增（不允许回退）
+            var bumped = new ClipboardLogSequence(remote.events[0].seq);
+            Check("bump-then-monotonic",
+                bumped.Next() == 8 && bumped.Next() == 9 && bumped.Current == 9,
+                "抬升后必须从 remoteMax+1 继续");
+
+            // 边界：空批次 / null 远端
+            Check("reassign-empty-safe",
+                ClipboardLog.ReassignReusedSequences(new List<ClipboardLogEvent>(), remote, "dev", new ClipboardLogSequence(0)) == 0 &&
+                ClipboardLog.ReassignReusedSequences(batch3, null, "dev", new ClipboardLogSequence(10)) == 0,
+                "空批次 / 无远端时必须安全");
+        }
+
+        private static void TestNotify()
+        {
+            Console.WriteLine("[notify]");
+
+            // D2-1：同一次 clipboard change 的多次通知 → 只捕获一次
+            var gate = new ClipboardNotificationGate();
+            Check("same-change-once",
+                gate.ShouldCapture(100) && !gate.ShouldCapture(100) &&
+                !gate.ShouldCapture(100) && !gate.ShouldCapture(100),
+                "同一 sequence 只应捕获一次");
+
+            // D2-2：下一次真实 change（sequence+1）即使内容 hash 相同也必须再捕获
+            var gate2 = new ClipboardNotificationGate();
+            var first = gate2.ShouldCapture(200);
+            var second = gate2.ShouldCapture(201);
+            Check("next-change-same-hash-still-captured", first && second,
+                "不同 sequence 必须各捕获一次，不得因为 hash 相同而吞掉");
+
+            // D2-3：两次不同 hash（不同 sequence）
+            var gate3 = new ClipboardNotificationGate();
+            Check("two-different-changes", gate3.ShouldCapture(300) && gate3.ShouldCapture(301),
+                "两次不同内容 = 两次捕获");
+
+            // 取不到序号（0）时不参与去重 —— 宁可多捕获，不可漏
+            var gate4 = new ClipboardNotificationGate();
+            Check("zero-sequence-not-deduped", gate4.ShouldCapture(0) && gate4.ShouldCapture(0),
+                "sequence=0 不应被去重吞掉");
+
+            // D3：快照承载「通知那一刻」读到的文本（不是稍后的"当前剪贴板"）
+            var snapshot = new ClipboardSnapshot { Sequence = 7, Text = "SNAPSHOT-A" };
+            Check("snapshot-carries-text",
+                snapshot.Text == "SNAPSHOT-A" &&
+                ClipboardHasher.Hash(snapshot.Text) == ClipboardHasher.Hash("SNAPSHOT-A") &&
+                !snapshot.HasFile && !snapshot.HasImage,
+                "快照必须原样携带捕获到的文本");
+
+            var fileSnapshot = new ClipboardSnapshot { Sequence = 8, HasFile = true };
+            var imageSnapshot = new ClipboardSnapshot { Sequence = 9, HasImage = true };
+            Check("snapshot-kinds",
+                fileSnapshot.HasFile && !fileSnapshot.HasImage && imageSnapshot.HasImage && !imageSnapshot.HasFile,
+                "文件 / 图片快照必须可区分");
+
+            // D2-4：一次复制产生**两个序号**（Empty + Set）但内容相同 ⇒ 仍然只算一次
+            var gate5 = new ClipboardNotificationGate();
+            Check("burst-same-content-coalesced",
+                gate5.ShouldCapture(400) && gate5.ShouldCaptureContent("SAME", 1000) &&
+                gate5.ShouldCapture(401) && !gate5.ShouldCaptureContent("SAME", 1050),
+                "同一次复制的两个序号 + 相同内容 ⇒ 只一次");
+
+            // D2-5：不同内容即使 34ms 也必须是两次（D3 场景不受影响）
+            var gate6 = new ClipboardNotificationGate();
+            Check("burst-different-content-two",
+                gate6.ShouldCaptureContent("AAA", 1000) && gate6.ShouldCaptureContent("BBB", 1034),
+                "A→B 必须各算一次");
+
+            // D2-6：相同内容但超过合并窗口 ⇒ 必须产生新 event（不是"hash 全局去重"）
+            var gate7 = new ClipboardNotificationGate();
+            Check("same-content-after-window-two",
+                gate7.ShouldCaptureContent("SAME", 1000) &&
+                gate7.ShouldCaptureContent("SAME", 1000 + ClipboardNotificationGate.BurstMs + 1),
+                "同内容不同时间再次复制必须产生新 event");
+
+            // 非文本不受内容合并影响
+            var gate8 = new ClipboardNotificationGate();
+            Check("null-content-not-coalesced",
+                gate8.ShouldCaptureContent(null, 1000) && gate8.ShouldCaptureContent(null, 1010),
+                "非文本不受 burst 合并影响");
+        }
+
+        private static void TestCoalesce()
+        {
+            Console.WriteLine("[coalesce]");
+
+            var c = new SyncCoalescer();
+            Check("enter-when-idle", c.TryEnter() && c.IsBusy, "空闲时应取得执行权");
+            Check("second-enter-blocked",
+                !c.TryEnter() && c.HasPending,
+                "忙时不得启动第二个执行者，但要登记 pending");
+            Check("repeat-once", c.ShouldRepeat() && !c.ShouldRepeat(), "pending 只补跑一次（合并）");
+            c.Exit();
+            Check("exit-releases", !c.IsBusy && !c.HasPending, "结束后释放执行权");
+            Check("enter-again-after-exit", c.TryEnter(), "释放后可以再次进入");
+            c.Exit();
+
+            // 忙期间来多次请求 → 仍然只补跑一次
+            var d = new SyncCoalescer();
+            d.TryEnter();
+            d.TryEnter();
+            d.TryEnter();
+            d.TryEnter();
+            Check("many-requests-single-repeat",
+                d.ShouldRepeat() && !d.ShouldRepeat(),
+                "多次请求合并成一次补跑");
+            d.Exit();
+            Check("no-repeat-when-idle", !d.ShouldRepeat(), "没有 pending 时不得空转补跑");
         }
 
         private static bool IsLowerHex(string text)
@@ -1013,6 +1186,260 @@ namespace BoardCompanionTests
                 WebDavUrlPolicy.ExtractHost("http://user:pass@nas.local:5005/dav") == "nas.local" &&
                 WebDavUrlPolicy.ExtractHost("http://[::1]:8080/dav") == "::1",
                 "host 提取（含 userinfo/IPv6）");
+        }
+
+        // ------------------------------------------------------------ B1 Clipboard Log
+
+        private static ClipboardLogEvent Ev(long seq, string hash)
+        {
+            return new ClipboardLogEvent
+            {
+                seq = seq,
+                itemId = "dev:" + seq,
+                hash = hash,
+                type = ClipboardLog.TYPE_TEXT,
+                createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                size = 1,
+                text = null,
+            };
+        }
+
+        private static ClipboardLogFile BuildLog(string[] texts)
+        {
+            var file = new ClipboardLogFile();
+            file.deviceId = "win-test";
+            file.deviceType = "Windows";
+            file.updatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            for (int i = 0; i < texts.Length; i++)
+            {
+                var seq = i + 1;
+                file.events.Add(new ClipboardLogEvent
+                {
+                    seq = seq,
+                    itemId = ClipboardLog.ItemIdFor(file.deviceId, seq),
+                    hash = ClipboardHasher.Hash(texts[i]),
+                    type = ClipboardLog.TYPE_TEXT,
+                    createdAt = file.updatedAt,
+                    size = ClipboardHasher.Utf8Length(texts[i]),
+                    text = texts[i],
+                });
+            }
+            return file;
+        }
+
+        private static string LatestOf(string[] items)
+        {
+            return items[items.Length - 1];   // latest-state 语义：最后一条胜出
+        }
+
+        private static void TestClipboardLog()
+        {
+            Console.WriteLine("[clipboard-log]");
+
+            // 1) seq 单调递增
+            var sequence = new ClipboardLogSequence(0);
+            var last = 0L;
+            var monotonic = true;
+            for (int i = 0; i < 100; i++)
+            {
+                var next = sequence.Next();
+                if (next <= last) monotonic = false;
+                last = next;
+            }
+            Check("seq-monotonic", monotonic && sequence.Current == 100, "current=" + sequence.Current);
+
+            // 2) itemId 唯一（含 deviceId 前缀）
+            var ids = new HashSet<string>();
+            var idsUnique = true;
+            for (int i = 1; i <= 50; i++)
+            {
+                if (!ids.Add(ClipboardLog.ItemIdFor("android-abc", i))) idsUnique = false;
+            }
+            Check("item-id-unique",
+                idsUnique && ClipboardLog.ItemIdFor("d1", 7) == "d1:7",
+                "itemId=deviceId:seq");
+
+            // 3) A/B 快速连续复制 → 两个 event（与去抖无关）
+            var ab = BuildLog(new[] { "AAA", "BBB" });
+            Check("ab-two-events", ab.events.Count == 2, "count=" + ab.events.Count);
+
+            // 4) latest-state 仍只有 B（去抖只影响 newest，不影响 event 数量）
+            Check("latest-state-last-wins",
+                LatestOf(new[] { "AAA", "BBB" }) == "BBB" && ab.events.Count == 2,
+                "latest=B 且 log 仍有 2 条");
+
+            // 5) pull A/B → 两条候选（按 seq 升序）
+            var candidates = ClipboardLog.CandidatesFor(0, ab);
+            Check("pull-two-items",
+                candidates.Count == 2 && candidates[0].seq == 1 && candidates[1].seq == 2,
+                "count=" + candidates.Count);
+
+            // 6) 相同 hash 的两个 event 都进入候选（去重是本地 History DB 的既有语义，不在这里改）
+            var same = BuildLog(new[] { "same", "same" });
+            var sameCandidates = ClipboardLog.CandidatesFor(0, same);
+            Check("same-hash-both-candidates",
+                sameCandidates.Count == 2 &&
+                sameCandidates[0].hash == sameCandidates[1].hash &&
+                ClipboardHasher.Hash("same") == ClipboardHasher.Hash("same"),
+                "hash 去重不改动，交由本地库");
+
+            // 7) offline A/B/C → 上线后全部补齐
+            var abc = BuildLog(new[] { "A", "B", "C" });
+            Check("offline-backfill-three", ClipboardLog.CandidatesFor(0, abc).Count == 3, "backfill=3");
+
+            // 8) 多设备各写自己的 log → 路径隔离、互不覆盖
+            var pa = ClipboardLog.PathFor("win-aaa");
+            var pb = ClipboardLog.PathFor("android-bbb");
+            Check("per-device-isolation",
+                pa != pb && pa == "clipboard-log/win-aaa.json" && pb == "clipboard-log/android-bbb.json",
+                pa + " / " + pb);
+
+            // 9) 同设备并发 append → seq 不重复（ClibpoardLogSequence 内部加锁）
+            var concurrent = new ClipboardLogSequence(0);
+            var seen = new List<long>();
+            var seenGate = new object();
+            System.Threading.Tasks.Parallel.For(0, 2000, i =>
+            {
+                var seq = concurrent.Next();
+                lock (seenGate) { seen.Add(seq); }
+            });
+            var unique = new HashSet<long>(seen);
+            Check("concurrent-append-unique",
+                seen.Count == 2000 && unique.Count == 2000 && concurrent.Current == 2000,
+                "count=" + seen.Count + " unique=" + unique.Count);
+
+            // 10) PUT 失败不回收 seq（否则 itemId 复用会被对端水位跳过）
+            var failed = new ClipboardLogSequence(5);
+            var e1 = failed.Next();   // 6  —— PUT 失败，保留内存 pending
+            var e2 = failed.Next();   // 7  —— 重试仍用新 seq，绝不回退
+            var e3 = failed.Next();   // 8
+            Check("seq-not-reclaimed-on-put-failure",
+                e1 == 6 && e2 == 7 && e3 == 8 && failed.Current == 8,
+                "seq=" + e1 + "," + e2 + "," + e3);
+
+            // 11) pull 中途失败 ⇒ 不推进 lastSeenSeq
+            Check("watermark-not-advanced-on-failure",
+                ClipboardLog.AdvanceWatermark(3, new long[] { 4, 5, 6 }, false) == 3,
+                "中途失败必须保持原水位");
+            Check("watermark-advanced-on-success",
+                ClipboardLog.AdvanceWatermark(3, new long[] { 4, 5, 6 }, true) == 6,
+                "全部成功才一次性推进到 max");
+            Check("watermark-empty-stays",
+                ClipboardLog.AdvanceWatermark(9, new long[0], true) == 9,
+                "空批次不动水位");
+
+            // 12) 404 / 缺失 log 安全处理
+            Check("missing-log-safe",
+                ClipboardLog.CandidatesFor(0, null).Count == 0 &&
+                ClipboardLog.GapDetected(0, null) == false &&
+                ClipboardLog.Parse("") == null,
+                "404 不得报错、不得推进水位");
+
+            // 13) 坏 JSON 安全处理
+            Check("bad-json-safe",
+                ClipboardLog.Parse("{ this is not json ]") == null &&
+                ClipboardLog.Parse(null) == null,
+                "坏 JSON ⇒ 本轮跳过");
+
+            // 14) minSeq gap 被正确识别（不猜测、不伪造）
+            var gap = new ClipboardLogFile();
+            gap.deviceId = "android-gap";
+            gap.minSeq = 50;
+            gap.events.Add(Ev(50, "h50"));
+            Check("minSeq-gap-detected",
+                ClipboardLog.GapDetected(3, gap) == true &&
+                ClipboardLog.GapDetected(49, gap) == false &&
+                ClipboardLog.CandidatesFor(49, gap).Count == 1,
+                "gap 只记录 warning，从可得 seq 继续");
+
+            // 15/16/17) 只有 Text 且 ≤256 KiB 才产生 event
+            var limit = ClipboardPayload.INLINE_TEXT_MAX_BYTES;
+            Check("file-no-event", !ClipboardLog.ShouldRecord("File", 10), "File 不产生 event");
+            Check("image-no-event", !ClipboardLog.ShouldRecord("Image", 10), "Image B1 不产生 event");
+            Check("text-oversize-no-event",
+                !ClipboardLog.ShouldRecord(ClipboardLog.TYPE_TEXT, limit + 1),
+                ">256 KiB 不产生 event（不引用 /file/）");
+            Check("text-boundary-record",
+                ClipboardLog.ShouldRecord(ClipboardLog.TYPE_TEXT, 1) &&
+                ClipboardLog.ShouldRecord(ClipboardLog.TYPE_TEXT, limit) &&
+                !ClipboardLog.ShouldRecord(ClipboardLog.TYPE_TEXT, 0),
+                "1..256KiB 记录，0 不记录");
+            Check("file-never-auto-upload", !ClipboardSyncEngine.ShouldAutoUploadClipboardFile(), "File 永不自动上传");
+
+            // 18) 消费远端事件是只读的（不写系统剪贴板 ⇒ 不触发 ClipboardMonitor ⇒ 无回环）
+            var readOnly = BuildLog(new[] { "R1", "R2" });
+            var beforeCount = readOnly.events.Count;
+            ClipboardLog.CandidatesFor(0, readOnly);
+            Check("consume-is-read-only",
+                readOnly.events.Count == beforeCount,
+                "CandidatesFor 不修改远端日志");
+
+            // 19) 与 latest-state 并存且隔离（不同路径、不同 TTL、不同目录）
+            Check("coexist-with-latest-state",
+                ClipboardLog.PathFor("x") != SyncClipboardProvider.MANIFEST_NAME &&
+                ClipboardLog.PathFor("x").StartsWith("clipboard-log/", StringComparison.Ordinal) &&
+                !ClipboardLog.PathFor("x").StartsWith("library/", StringComparison.Ordinal),
+                "clipboard-log 与 SyncClipboard.json / library 严格隔离");
+
+            // 裁剪：只裁本设备、更新 minSeq、不重排 seq、上限 200
+            var many = new ClipboardLogFile();
+            many.deviceId = "win-many";
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            for (int i = 1; i <= 250; i++)
+            {
+                many.events.Add(new ClipboardLogEvent
+                {
+                    seq = i,
+                    itemId = ClipboardLog.ItemIdFor("win-many", i),
+                    hash = "h" + i,
+                    type = ClipboardLog.TYPE_TEXT,
+                    createdAt = now,
+                    size = 1,
+                });
+            }
+            ClipboardLog.Compact(many, now);
+            var ordered = true;
+            for (int i = 1; i < many.events.Count; i++)
+            {
+                if (many.events[i].seq <= many.events[i - 1].seq) ordered = false;
+            }
+            Check("compact-max-events",
+                many.events.Count == ClipboardLog.MAX_EVENTS &&
+                many.events[0].seq == 51 &&
+                many.minSeq == 51 &&
+                ordered,
+                "count=" + many.events.Count + " minSeq=" + many.minSeq);
+
+            // 裁剪：7 天前的事件被移除，minSeq 随之上移
+            var aged = new ClipboardLogFile();
+            aged.deviceId = "win-aged";
+            aged.events.Add(new ClipboardLogEvent
+            {
+                seq = 1, itemId = "win-aged:1", hash = "old", type = ClipboardLog.TYPE_TEXT,
+                createdAt = now - ClipboardLog.RETENTION_MS - 1000, size = 1,
+            });
+            aged.events.Add(new ClipboardLogEvent
+            {
+                seq = 2, itemId = "win-aged:2", hash = "new", type = ClipboardLog.TYPE_TEXT,
+                createdAt = now, size = 1,
+            });
+            ClipboardLog.Compact(aged, now);
+            Check("compact-retention",
+                aged.events.Count == 1 && aged.events[0].seq == 2 && aged.minSeq == 2,
+                "minSeq=" + aged.minSeq);
+
+            // 序列化往返（远端 schema）
+            var roundtrip = ClipboardLog.Parse(ClipboardLog.Serialize(ab));
+            Check("log-roundtrip",
+                roundtrip != null && roundtrip.deviceId == "win-test" &&
+                roundtrip.events.Count == 2 && roundtrip.events[0].hash == ClipboardHasher.Hash("AAA"),
+                "schema round-trip");
+
+            // deviceId 安全化：路径穿越字符不得进入远端路径
+            Check("device-id-sanitised",
+                ClipboardLog.PathFor("../../etc/passwd") == "clipboard-log/etcpasswd.json" ||
+                ClipboardLog.PathFor("../../etc/passwd").IndexOf("..") < 0,
+                ClipboardLog.PathFor("../../etc/passwd"));
         }
     }
 }

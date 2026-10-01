@@ -201,6 +201,13 @@ class ClipboardRepository(
 
     // ---------------------------------------------------------------- 抓取
 
+    /**
+     * B1：本机**真实新增**一条历史条目时的回调（只读元信息，**不联网、不落盘**）。
+     * 由 [com.board.ime.sync.SyncEngineHolder] 注入；为 null 时行为与以前完全一致。
+     */
+    @Volatile
+    var onLocalItemProduced: ((ClipboardItem) -> Unit)? = null
+
     /** 记录一段系统剪贴板文本（默认是本机用户复制） */
     suspend fun capture(
         content: String,
@@ -295,11 +302,20 @@ class ClipboardRepository(
             } else {
                 SyncLog.event(SyncEvent.SUPPRESS_LOOP, "hash=${SyncLog.shortHash(hash)} 来自同步，不上传")
             }
+            // B1：本机**真实新增**一条历史 ⇒ 记一条增量事件（只入内存，不联网）
+            if (!fromSync) notifyLocalItemProduced(id)
             if (stored.storage == ClipboardContentStorage.FILE) {
                 Log.i(TAG, "超长剪贴板已存为文件（hash=${SyncLog.shortHash(hash)} ${stored.size}B）")
             }
             ClipboardCaptureResult.INSERTED
         }
+    }
+
+    /** B1：只在**本机真实新增**时通知（`fromSync` 不通知 ⇒ 不会回环） */
+    private suspend fun notifyLocalItemProduced(id: Long) {
+        val callback = onLocalItemProduced ?: return
+        val item = dao.findById(id) ?: return
+        runCatching { callback(item) }
     }
 
     /**

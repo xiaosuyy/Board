@@ -46,11 +46,8 @@ class BoardSettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         preferences = BoardPreferences(this)
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
-        clipboardRepository = ClipboardRepository(
-            BoardDatabase.get(this).clipboardDao(),
-            contentStore = ClipboardRepository.contentStoreFor(this),
-            sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector { preferences.skipSensitiveClipboard },  // 开关必须在这里生效
-        )
+        // B1（D1）：与输入法服务 / SyncEngine 共用**同一个** repository 实例
+        clipboardRepository = com.board.ime.sync.SyncEngineHolder.clipboardRepository(this)
 
         setContentView(buildHome())
     }

@@ -173,6 +173,41 @@ class WebDavConfigStore(context: Context) {
     private fun partState(name: String): SyncPartState =
         runCatching { SyncPartState.valueOf(name) }.getOrDefault(SyncPartState.IDLE)
 
+    /**
+     * B1：增量历史的设备本地 seq（**只存一个数字，不存正文**）。
+     * 跨重启单调，避免 itemId 复用被对端水位跳过。
+     */
+    fun loadLogSeq(): Long = runCatching { plain.getLong(KEY_LOG_SEQ, 0L) }.getOrDefault(0L)
+
+    fun saveLogSeq(value: Long) {
+        runCatching { plain.edit().putLong(KEY_LOG_SEQ, value).apply() }
+    }
+
+    /**
+     * B1：各远端设备的已消费水位 `remoteDeviceId -> lastSeenSeq`。
+     * **只存 metadata，不存远端正文**；deviceId 已安全化（不含 `:`）。
+     */
+    fun loadLastSeenSeq(): Map<String, Long> = runCatching {
+        plain.getString(KEY_LAST_SEEN_SEQ, "").orEmpty()
+            .split(',')
+            .mapNotNull { entry ->
+                val index = entry.lastIndexOf(':')
+                if (index <= 0) return@mapNotNull null
+                val key = entry.substring(0, index)
+                val value = entry.substring(index + 1).toLongOrNull() ?: return@mapNotNull null
+                key to value
+            }
+            .toMap()
+    }.getOrDefault(emptyMap())
+
+    fun saveLastSeenSeq(values: Map<String, Long>) {
+        runCatching {
+            plain.edit()
+                .putString(KEY_LAST_SEEN_SEQ, values.entries.joinToString(",") { "${it.key}:${it.value}" })
+                .apply()
+        }
+    }
+
     fun clear() {
         runCatching { plain.edit().clear().apply() }
         runCatching { securePrefs?.edit()?.clear()?.apply() }
@@ -200,5 +235,8 @@ class WebDavConfigStore(context: Context) {
         const val KEY_CLIP_ERROR = "clipboard_error"
         const val KEY_LAST_PUSHED_HASH = "last_pushed_hash"
         const val KEY_LAST_PUSHED_AT = "last_pushed_at"
+        /** B1：增量历史（只存数字 / metadata，绝不含正文） */
+        const val KEY_LOG_SEQ = "clipboard_log_seq"
+        const val KEY_LAST_SEEN_SEQ = "clipboard_log_last_seen_seq"
     }
 }

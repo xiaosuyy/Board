@@ -30,6 +30,12 @@ namespace BoardCompanion
         public const string SCOPE_TEXT_IMAGE = "text-image";
 
         /// <summary>
+        /// 增量历史日志的**设备本地 seq**（B1）。只存一个数字（**不是正文**）；
+        /// 跨重启保持单调，避免 itemId 复用被对端水位跳过。
+        /// </summary>
+        public long logSeq { get; set; }
+
+        /// <summary>
         /// 上一次同步过的内容 hash（**只存 hash，绝不存正文**）。
         ///
         /// 有了它，重启/手动同步时才能区分「剪贴板没变过（不要覆盖云端）」

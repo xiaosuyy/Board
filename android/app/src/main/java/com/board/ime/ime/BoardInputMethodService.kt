@@ -597,12 +597,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
         buildController(preferences.engineKind, preferences.mode)
 
-        clipboardRepository = ClipboardRepository(
-            dao = BoardDatabase.get(this).clipboardDao(),
-            syncOperationDao = BoardDatabase.get(this).syncOperationDao(),
-            contentStore = ClipboardRepository.contentStoreFor(this),
-            sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector { preferences.skipSensitiveClipboard },  // 开关必须在这里生效
-        )
+        // B1（D1）：必须与 SyncEngine/SyncEngineHolder 使用**同一个** repository 实例。
+        // 之前这里自己 new 了一个，导致「本机新增历史」回调挂在不被使用的实例上
+        // （真机已复现：Android 端永远不产生 clipboard_log_seq）。
+        clipboardRepository = com.board.ime.sync.SyncEngineHolder.clipboardRepository(this)
         phraseRepository = com.board.ime.phrase.PhraseRepository(
             BoardDatabase.get(this).phraseDao(),
         )

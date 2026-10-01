@@ -35,10 +35,9 @@ class SyncWorker(
         // Worker 拿不到当前系统剪贴板，因此传 null → 只让**非文件型**条目过期，
         // 绝不误删仍可能被系统剪贴板引用的 PNG（保护策略见 ClipboardRepository.expireHistory）。
         runCatching {
-            ClipboardRepository(
-                dao = BoardDatabase.get(applicationContext).clipboardDao(),
-                contentStore = ClipboardRepository.contentStoreFor(applicationContext),
-            ).expireHistory(currentClipboardHash = null)
+            // B1（D1）：共用同一个 repository 实例（唯一实例原则）
+            SyncEngineHolder.clipboardRepository(applicationContext)
+                .expireHistory(currentClipboardHash = null)
         }
         val engine = SyncEngineHolder.get(applicationContext)
         val config = engine.loadConfig()

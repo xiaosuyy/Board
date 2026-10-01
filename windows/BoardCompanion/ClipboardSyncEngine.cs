@@ -91,6 +91,15 @@ namespace BoardCompanion
         /// <summary>待推送图片的**本机编码** hash（PNG 字节的 SHA-256）</summary>
         private string pendingImageHash;
 
+        /// <summary>B1：设备本地 seq 分配器（跨重启单调）</summary>
+        private ClipboardLogSequence historySequence = new ClipboardLogSequence(0);
+
+        /// <summary>B1：待发布的增量历史事件 —— **只在内存**（绝不把正文落盘）</summary>
+        private readonly List<ClipboardLogEvent> historyPending = new List<ClipboardLogEvent>();
+
+        /// <summary>B1：追加 / 发布 的串行化锁</summary>
+        private readonly object historyGate = new object();
+
         /// <summary>
         /// 本地上传范围是否包含图片（默认「仅文字」）。
         /// **只影响上传方向**：Pull 到的图片照旧写回 Windows 剪贴板，不受本设置限制。
@@ -133,7 +142,8 @@ namespace BoardCompanion
         /// </summary>
         private string lastImageRemoteHash;
 
-        private bool busy;
+        /// <summary>D4：单执行者 + 合并补跑（busy 时置 pending，结束后立即补跑一次）</summary>
+        private readonly SyncCoalescer syncCoalescer = new SyncCoalescer();
 
         public event EventHandler StateChanged;
 
@@ -164,6 +174,7 @@ namespace BoardCompanion
                     : null;
                 // 关键：沿用上次同步过的 hash，避免重启/手动同步时把云端覆盖成自己的旧剪贴板
                 localHash = (config == null || config.lastHash == null) ? string.Empty : config.lastHash;
+                historySequence = new ClipboardLogSequence(config == null ? 0L : config.logSeq);
                 State = client == null ? SyncState.NotConfigured : SyncState.Idle;
             }
             // 启动 / 配置变更时做一次缓存维护（只清无引用且过期的）
@@ -171,17 +182,23 @@ namespace BoardCompanion
             RaiseStateChanged();
         }
 
-        /// <summary>把"已同步 hash"落盘（只存 hash，不存正文）</summary>
+        /// <summary>
+        /// 把"已同步 hash"与**设备本地 seq**（只是一个数字，不是正文）落盘。
+        /// seq 必须跨重启单调，否则复用 itemId 会被对端水位跳过。
+        /// </summary>
         private void PersistHash()
         {
             try
             {
                 if (config == null) return;
-                if (config.lastHash == localHash) return;
+                var logSeq = historySequence == null ? 0L : historySequence.Current;
+                if (config.lastHash == localHash && config.logSeq == logSeq) return;
                 config.lastHash = localHash;
+                config.logSeq = logSeq;
                 var store = new CredentialStore();
                 var current = store.Load();
                 current.lastHash = localHash;
+                current.logSeq = logSeq;
                 store.Save(current, store.LoadPassword());
             }
             catch (Exception)
@@ -208,11 +225,13 @@ namespace BoardCompanion
             RaiseStateChanged();
         }
 
-        /// <summary>WM_CLIPBOARDUPDATE 回调（UI 线程）</summary>
-        public void OnClipboardChanged()
+        /// <summary>
+        /// 剪贴板变化回调（在 UI 线程上执行；快照已在**监听线程**上同步捕获，见 D3）。
+        /// </summary>
+        public void OnClipboardChanged(ClipboardSnapshot snapshot)
         {
-            if (Paused) return;
-            if (UploadsImages && ClipboardMonitor.ContainsImage())
+            if (Paused || snapshot == null) return;
+            if (UploadsImages && snapshot.HasImage)
             {
                 var image = ClipboardMonitor.ReadImagePng();
                 if (image == null)
@@ -237,14 +256,15 @@ namespace BoardCompanion
                 return;
             }
             // 剪贴板文件**永不自动上传**（Phase 1-H：它不属于剪贴板同步范畴）。
-            // 这里只在“剪贴板里是文件”时打一条日志并忽略，其余交给 Text 分支。
-            if (ClipboardMonitor.ReadSingleFile() != null)
+            if (snapshot.HasFile)
             {
                 Log.Info("clipboard changed file ignored (files never auto-upload)");
                 return;
             }
 
-            var text = ClipboardMonitor.ReadText();
+            // D3：用**通知到达那一刻**读到的文本快照，而不是"现在再读一次当前剪贴板"。
+            // 两次极快复制（如 34ms）时，后者会拿到后写的内容、把先写的丢掉。
+            var text = snapshot.Text;
             if (text == null)
             {
                 Log.Info("clipboard changed (not text, ignored)");
@@ -262,6 +282,12 @@ namespace BoardCompanion
                 Log.Info("clipboard changed chars=" + text.Length + " hashChanged=false skip");
                 return;
             }
+
+            // B1：**真实本机变化** ⇒ 追加一条增量历史事件。
+            // 放在去抖之前：**去抖只决定 latest-state 推哪一条，绝不决定历史事件是否产生**。
+            // 这里只入内存 pending（不联网、不落盘），真正的 GET/PUT 在 SyncInternal（后台 STA）里做。
+            AppendHistoryEvent(text, hash);
+
             // 去抖：短时间连续复制只处理最后稳定值
             debounce.Stop();
             debounce.Start();
@@ -355,14 +381,35 @@ namespace BoardCompanion
                     RaiseStateChanged();
                     return;
                 }
-                if (busy || Paused) return;
-                busy = true;
+                if (Paused) return;
+                // D4：不启动第二个执行者；只登记「还要再跑一次」，当前这次结束后立刻补跑（coalesced）
+                if (!syncCoalescer.TryEnter()) return;
                 State = SyncState.Syncing;
             }
             RaiseStateChanged();
 
             var started = Environment.TickCount;
             try
+            {
+                var first = readClipboardFirst;
+                do
+                {
+                    SyncOnce(first);
+                    first = true;   // 补跑时先读一次剪贴板，确保拿到最新内容
+                }
+                while (syncCoalescer.ShouldRepeat() && !Paused && client != null);
+            }
+            finally
+            {
+                syncCoalescer.Exit();
+                Log.Info("sync done elapsedMs=" + (Environment.TickCount - started));
+                RaiseStateChanged();
+            }
+        }
+
+        /// <summary>一次实际的同步：push → 发布增量历史 → pull → 消费增量历史</summary>
+        private void SyncOnce(bool readClipboardFirst)
+        {
             {
                 if (readClipboardFirst)
                 {
@@ -489,6 +536,9 @@ namespace BoardCompanion
                     Log.Info("push skipped no_pending");
                 }
 
+                // ---- 1.5) B1：发布本机增量历史（与 latest-state 完全独立）----
+                PublishHistory();
+
                 // ---- 2) Pull：把云端当前项收敛到本机 ----
                 var get = client.Get(ManifestPath());
                 if (get.IsOk)
@@ -582,12 +632,150 @@ namespace BoardCompanion
                     if (State != SyncState.Error) State = Paused ? SyncState.Paused : SyncState.Idle;
                 }
             }
-            finally
+        }
+
+        /// <summary>
+        /// B1：把一次**真实本机复制**记到内存 pending（不联网、不落盘）。
+        ///
+        /// 只有 Text 且 ≤256 KiB 才记录；Image / File / 超长文本一律不记录
+        /// （File 永不自动上传；超长文本 B1 不生成事件，也不引用 `/file/`）。
+        ///
+        /// **调用点必须在 latest-state 去抖之前** —— 去抖只决定 newest 推哪一条，
+        /// 绝不决定历史事件是否产生。
+        /// </summary>
+        private void AppendHistoryEvent(string text, string hash)
+        {
+            try
             {
-                lock (gate) { busy = false; }
-                Log.Info("sync done elapsedMs=" + (Environment.TickCount - started));
-                RaiseStateChanged();
+                var size = ClipboardHasher.Utf8Length(text);
+                if (!ClipboardLog.ShouldRecord(ClipboardPayload.TYPE_TEXT, size)) return;
+                if (config == null) return;
+
+                lock (historyGate)
+                {
+                    var seq = historySequence.Next();
+                    historyPending.Add(new ClipboardLogEvent
+                    {
+                        seq = seq,
+                        itemId = ClipboardLog.ItemIdFor(config.deviceId, seq),
+                        hash = hash,
+                        type = ClipboardLog.TYPE_TEXT,
+                        createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        size = size,
+                        text = text,
+                    });
+                    Log.Info("history event queued seq=" + seq + " bytes=" + size);
+                }
             }
+            catch (Exception)
+            {
+                // 记历史失败绝不影响剪贴板同步
+            }
+        }
+
+        /// <summary>
+        /// B1：把内存 pending 发布到 `/clipboard-log/&lt;me&gt;.json`（**只在后台 STA 线程调用**）。
+        ///
+        /// 顺序：GET 自己的日志 → 合并（按 itemId 去重）→ 裁剪 → PUT。
+        /// 失败 ⇒ **保留 pending**（仅内存重试）；seq **绝不回收**（否则 itemId 复用会被对端水位跳过）。
+        /// 只写**本设备自己的**文件，绝不触碰别人的 log。
+        /// </summary>
+        private void PublishHistory()
+        {
+            List<ClipboardLogEvent> batch;
+            lock (historyGate)
+            {
+                if (historyPending.Count == 0) return;
+                batch = new List<ClipboardLogEvent>(historyPending);
+            }
+            if (client == null || config == null) return;
+
+            var path = ClipboardLog.PathFor(config.deviceId);
+            var get = client.Get(path);
+            ClipboardLogFile file;
+            if (get.IsOk)
+            {
+                file = ClipboardLog.Parse(get.Body);
+                if (file == null)
+                {
+                    Log.Warn("history log parse failed, keep pending");
+                    return;   // 坏 JSON：不动远端、保留 pending
+                }
+            }
+            else if (get.NotFound)
+            {
+                file = new ClipboardLogFile();   // 首次
+            }
+            else
+            {
+                Log.Warn("history log get failed status=" + get.StatusCode + " kept_pending=true");
+                return;
+            }
+
+            file.schema = 1;
+            file.deviceId = config.deviceId;
+            file.deviceType = "Windows";
+            file.updatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (file.events == null) file.events = new List<ClipboardLogEvent>();
+
+            var existing = new HashSet<string>();
+            long remoteMax = 0;
+            foreach (var item in file.events)
+            {
+                if (item == null) continue;
+                if (!string.IsNullOrEmpty(item.itemId)) existing.Add(item.itemId);
+                if (item.seq > remoteMax) remoteMax = item.seq;
+            }
+
+            // 崩溃窗口防御（seq 复用）：远端水位更高时，先把内存水位抬上去；
+            // 再对「同 itemId 但内容不同」的待发事件换全新 seq。
+            if (remoteMax > historySequence.Current)
+            {
+                historySequence = new ClipboardLogSequence(remoteMax);
+                Log.Warn("history seq bumped to remote max=" + remoteMax);
+            }
+            var reassigned = ClipboardLog.ReassignReusedSequences(batch, file, config.deviceId, historySequence);
+            if (reassigned > 0)
+            {
+                // 只记条数，不记正文
+                Log.Warn("history seq reassigned count=" + reassigned);
+            }
+
+            // **先落盘 seq，再做 PUT**：只要 PUT 成功过，重启后绝不可能再分配同一个 seq。
+            PersistHash();
+
+            var added = 0;
+            foreach (var item in batch)
+            {
+                if (existing.Contains(item.itemId)) continue;   // 同 itemId 同内容 = 已发布过
+                file.events.Add(item);
+                existing.Add(item.itemId);
+                added++;
+            }
+            ClipboardLog.Compact(file, file.updatedAt);
+            if (file.minSeq == 0 && file.events.Count > 0) file.minSeq = file.events[0].seq;
+
+            var put = client.PutText(path, ClipboardLog.Serialize(file), "application/json; charset=utf-8");
+            if (!put.IsOk)
+            {
+                Log.Warn("history publish failed status=" + put.StatusCode + " kept_pending=true");
+                return;   // 保留 pending；seq 不回退
+            }
+
+            lock (historyGate)
+            {
+                historyPending.RemoveAll(x => ContainsItem(batch, x.itemId));
+            }
+            Log.Info("history published count=" + added + " seq=" + historySequence.Current);
+        }
+
+        private static bool ContainsItem(List<ClipboardLogEvent> list, string itemId)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].itemId == itemId) return true;
+            }
+            return false;
         }
 
         /// <summary>

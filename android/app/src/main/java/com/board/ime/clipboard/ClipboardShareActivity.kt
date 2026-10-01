@@ -62,12 +62,9 @@ class ClipboardShareActivity : AppCompatActivity() {
 
     private suspend fun receive(intent: Intent?): ClipboardCaptureResult {
         if (intent == null) return ClipboardCaptureResult.SKIPPED_EMPTY
-        val repository = ClipboardRepository(
-            dao = BoardDatabase.get(this).clipboardDao(),
-            syncOperationDao = BoardDatabase.get(this).syncOperationDao(),
-            contentStore = contentStore,
-            sensitivityDetector = com.board.ime.clipboard.HeuristicClipboardSensitivityDetector { com.board.ime.settings.BoardPreferences(this).skipSensitiveClipboard },
-        )
+        // B1（D1）：与输入法服务 / SyncEngine 共用**同一个** repository 实例，
+        // 这样「分享给 Board」产生的本机历史也会进入增量历史 log。
+        val repository = com.board.ime.sync.SyncEngineHolder.clipboardRepository(this)
 
         // 0) 图片分享（Phase 1-E）：与系统剪贴板图片**完全同一条**链路，不复制上传代码
         val imageUri = sharedImageUri(intent)
