@@ -135,6 +135,36 @@ class BoardPreferences(context: Context) : SyncContentGate {
         prefs.edit().putBoolean(content.storageKey, enabled).apply()
     }
 
+    /**
+     * Cloud Library 的**本机隐藏**集合（只存 hash）。
+     *
+     * 语义：**只影响本机 UI 显示**，绝不动云端 ——
+     * 不 DELETE binary、不改 index、不改 `uploadedAt`、不影响其他设备、不影响 24h TTL。
+     *
+     * 只保存 hash 字符串；**绝不保存**正文 / 图片二进制 / 本地路径 / URL / 任何大对象。
+     */
+    var hiddenLibraryHashes: Set<String>
+        get() = runCatching { prefs.getStringSet(KEY_HIDDEN_LIBRARY, emptySet())?.toSet() ?: emptySet() }
+            .getOrDefault(emptySet())
+        set(value) = prefs.edit().putStringSet(KEY_HIDDEN_LIBRARY, value.toSet()).apply()
+
+    /** 本机隐藏一个 Library hash（幂等） */
+    fun hideLibraryHash(hash: String) {
+        if (hash.isBlank()) return
+        hiddenLibraryHashes = hiddenLibraryHashes + hash
+    }
+
+    /** 解除本机隐藏（例如**本机主动重新上传**同一 hash 时） */
+    fun unhideLibraryHash(hash: String) {
+        if (hash.isBlank()) return
+        val current = hiddenLibraryHashes
+        if (!current.contains(hash)) return
+        hiddenLibraryHashes = current - hash
+    }
+
+    fun isLibraryHashHidden(hash: String): Boolean =
+        hash.isNotBlank() && hiddenLibraryHashes.contains(hash)
+
     fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
         prefs.registerOnSharedPreferenceChangeListener(listener)
     }
@@ -162,5 +192,8 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_DEVELOPER = "developer_mode"
         const val KEY_TOOLBAR_TOOLS = "toolbar_tools"
         const val KEY_MORE_TOOLS = "more_tools"
+
+        /** Cloud Library 本机隐藏（只存 hash；不存正文/路径/URL） */
+        const val KEY_HIDDEN_LIBRARY = "hidden_library_hashes"
     }
 }

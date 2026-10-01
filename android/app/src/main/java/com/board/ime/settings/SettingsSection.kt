@@ -15,6 +15,7 @@ enum class SettingsSection(
     APPEARANCE("外观", "主题、强调色、颜色与圆角"),
     DICTIONARY("词库", "我的词库、学习词、导入导出"),
     CLIPBOARD("剪贴板", "历史、敏感内容、清理"),
+    LIBRARY("云端资料库", "跨设备的图片与文件"),
     SYNC("同步", "WebDAV、同步内容"),
     TRANSLATION("翻译", "翻译服务、隐私说明"),
     VOICE("语音", "百度实时语音识别、隐私说明"),

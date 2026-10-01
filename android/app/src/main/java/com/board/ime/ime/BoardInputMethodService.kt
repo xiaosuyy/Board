@@ -672,6 +672,20 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onTranslationCycleSource = { translationSession().cycleSourceLanguage() }
         panel.onTranslationCycleTarget = { translationSession().cycleTargetLanguage() }
         panel.onTranslationOpenSettings = { openSettings() }
+
+        // 剪贴板面板的云朵图标 -> 直接打开云端资料库（最小导航，不新增导航层）
+        panel.onOpenLibrary = {
+            runCatching {
+                startActivity(
+                    Intent(this, com.board.ime.settings.SettingsSectionActivity::class.java)
+                        .putExtra(
+                            com.board.ime.settings.SettingsSectionActivity.EXTRA_SECTION,
+                            com.board.ime.settings.SettingsSection.LIBRARY.name,
+                        )
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
         panel.onTranslationInfo = { showTranslationInfoCard() }
         panel.onPhrasesClose = { panelController?.closePhrases() }
         panel.onPhrasesAdd = { addPhrase() }

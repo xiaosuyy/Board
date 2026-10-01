@@ -83,16 +83,6 @@ class ClipboardPanel @JvmOverloads constructor(
 
     private enum class Mode { LIST, ACTION, DETAIL, CLEAR, PREVIEW }
 
-    /**
-     * 剪贴板分类页。**只是内部交互状态**，UI 上不显示任何分类名称 / 指示器 / Tab。
-     *
-     * 顺序即滑动手势的方向：`FILE ← TEXT → IMAGE`
-     * - 默认打开 = [TEXT]
-     * - 左滑 → 下一项 = [IMAGE]
-     * - 右滑 → 上一项 = [FILE]
-     */
-    private enum class ClipPage { FILE, TEXT, IMAGE }
-
     private var theme: KeyboardTheme = KeyboardTheme.from(
         context,
         com.board.ime.settings.ThemeMode.SYSTEM,
@@ -102,9 +92,6 @@ class ClipboardPanel @JvmOverloads constructor(
     private var counts: ClipboardCounts = ClipboardCounts(0, 0, 0)
     private var mode = Mode.LIST
     private var editMode = false
-
-    /** 当前分类页（默认文字页；顺序见 [ClipPage]） */
-    private var pageIndex = ClipPage.TEXT.ordinal
 
     /** 图片预览用的 Bitmap（与缩略图分开管理；退出预览立即回收，不留缓存） */
     private var previewBitmap: Bitmap? = null
@@ -319,63 +306,18 @@ class ClipboardPanel @JvmOverloads constructor(
         transientMessage = null
     }
 
-    // ---------------------------------------------------------------- 分类页（纯 UI 状态）
-
-    private val page: ClipPage get() = ClipPage.values()[pageIndex]
+    // ---------------------------------------------------------------- 列表内容（只展示文字）
 
     /**
-     * 当前分类页要展示的条目。
+     * 当前要展示的条目：**只展示文字**（TEXT / LINK / UNKNOWN）。
      *
-     * **只在 UI 层过滤**：数据层（Room / 同步）完全不感知分类。
-     * 文字页 = TEXT / LINK / UNKNOWN（与 [ClipboardContentType.isTextLike] 一致）。
+     * 图片 / 文件**完整保留**在数据层与同步链（`ClipboardRepository` / `SyncEngine` / `/file/`），
+     * 只是不再在剪贴板 UI 中展示 —— 图片/文件改由「云端资料库」承载。
      */
-    private fun visibleItems(): List<ClipboardSummary> = when (page) {
-        ClipPage.TEXT -> items.filter { it.contentType.isTextLike }
-        ClipPage.IMAGE -> items.filter { it.contentType == ClipboardContentType.IMAGE }
-        ClipPage.FILE -> items.filter { it.contentType == ClipboardContentType.FILE }
-    }
+    private fun visibleItems(): List<ClipboardSummary> = items.filter { it.contentType.isTextLike }
 
-    /** 左滑 / 右滑切换分类页；越界不动。**UI 上不显示任何分类提示**。 */
-    private fun switchPage(step: Int) {
-        val next = (pageIndex + step).coerceIn(0, ClipPage.values().size - 1)
-        if (next == pageIndex) return
-        pageIndex = next
-        mode = Mode.LIST
-        selected = null
-        renderedKey = null   // 触发重建（缩略图随重建释放 / 重新按需生成）
-        render()
-    }
-
-    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-        // 只有普通列表页参与水平切换：动作条 / 全文 / 清空确认保持原样
-        if (mode != Mode.LIST) return false
-        when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                gestureDownX = ev.x
-                gestureDownY = ev.y
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                val dx = ev.x - gestureDownX
-                val dy = ev.y - gestureDownY
-                // 只接管“明确的水平拖动”（|dx| 明显大于 |dy|）；
-                // 垂直拖动 / 点击一律放行给 ScrollView 与卡片的原有行为
-                if (abs(dx) > touchSlop && abs(dx) > abs(dy)) return true
-            }
-        }
-        return false
-    }
-
-    override fun onTouchEvent(ev: MotionEvent): Boolean {
-        if (mode != Mode.LIST) return super.onTouchEvent(ev)
-        when (ev.actionMasked) {
-            MotionEvent.ACTION_UP -> {
-                val dx = ev.x - gestureDownX
-                if (abs(dx) >= switchThresholdPx) switchPage(if (dx < 0) 1 else -1)
-            }
-        }
-        return true
-    }
+    // 左右滑切换分类页已移除：剪贴板 UI 只有文字，不存在分类页
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean = false
 
     // ---------------------------------------------------------------- 渲染
 
@@ -415,11 +357,10 @@ class ClipboardPanel @JvmOverloads constructor(
     private fun structurePart(key: String): String = key.substringBefore('#')
 
     private fun buildKey(): String {
-        // 指纹只覆盖**当前分类页**的条目：别的分类新增内容不会白重建当前页
+        // 指纹只覆盖**当前可见**的条目
         val visible = visibleItems()
         val structure = buildString {
             append(mode.name).append('|')
-            append(page.name).append('|')
             append(if (editMode) '1' else '0').append(if (searching) '1' else '0')
             append(if (remoteOnly) '1' else '0').append('|')
             append(selected?.id ?: -1).append('|')

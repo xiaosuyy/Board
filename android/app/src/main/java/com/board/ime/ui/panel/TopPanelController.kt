@@ -299,7 +299,8 @@ class TopPanelController(
         clipboardHeader.onToggleEdit = { toggleClipboardEdit() }
         clipboardHeader.onToggleSearch = { toggleSearch() }
         clipboardHeader.onClearSearch = { stopSearch() }
-        clipboardHeader.onToggleRemoteFilter = { toggleRemoteFilter() }
+        // 云朵图标：直接进入「云端资料库」（不再作为剪贴板 remote-only 过滤开关）
+        clipboardHeader.onToggleRemoteFilter = { onOpenLibrary?.invoke() }
 
         clipboardPanel.onInsert = { item -> onClipboardInsert?.invoke(item) }
         clipboardPanel.onTogglePin = { item -> onClipboardTogglePin?.invoke(item) }
@@ -462,6 +463,9 @@ class TopPanelController(
     }
 
     /** 只看「其他设备同步过来」的剪贴板 */
+    /** 云朵图标 → 打开「云端资料库」（由宿主实现导航；Clipboard 数据层不变） */
+    var onOpenLibrary: (() -> Unit)? = null
+
     private fun toggleRemoteFilter() {
         if (searching) return
         setRemoteOnly(!remoteOnly)

@@ -187,6 +187,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                 SettingsSection.TRANSLATION -> buildTranslation(content)
                 SettingsSection.VOICE -> buildVoice(content)
                 SettingsSection.ADVANCED -> buildAdvanced(content)
+                SettingsSection.LIBRARY -> buildLibrary(content)
             }
         }
         SettingsUi.applySystemBarInset(root)
@@ -776,6 +777,71 @@ class SettingsSectionActivity : AppCompatActivity() {
     }
 
     // ---------------------------------------------------------------- 剪贴板
+
+    // ================================================================
+    // 云端资料库（1B）
+    // ================================================================
+
+    /**
+     * Activity 生命周期内**只创建一次**（by lazy）。
+     * 不建常驻 Service / 常驻线程；不碰 Clipboard / B1；deviceId 沿用项目现有 ANDROID_ID 表达式。
+     */
+    private val libraryRepository: com.board.ime.cloudlibrary.CloudLibraryRepository by lazy {
+        val config = com.board.ime.sync.webdav.WebDavConfigStore(applicationContext).load()
+        val client = com.board.ime.sync.OkHttpWebDavClientFactory.create(config)
+        val deviceId = android.provider.Settings.Secure.getString(
+            contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID,
+        ).orEmpty()
+        com.board.ime.cloudlibrary.CloudLibraryRepository(
+            remote = com.board.ime.cloudlibrary.CloudLibraryRemote(client, deviceId),
+            sink = com.board.ime.cloudlibrary.AndroidLibraryFileSink(applicationContext),
+            uploadSource = com.board.ime.cloudlibrary.AndroidLibraryUploadSource(contentResolver),
+            deviceId = deviceId,
+        )
+    }
+
+    private var libraryPanel: com.board.ime.cloudlibrary.LibraryPanel? = null
+
+    /** SAF 单文件上传（与既有 OpenDocument 用法一致；单文件、不接受文件夹） */
+    private val libraryUploadLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) libraryPanel?.upload(uri)
+    }
+
+    private fun buildLibrary(content: LinearLayout) {
+        val panel = com.board.ime.cloudlibrary.LibraryPanel(
+            this,
+            libraryRepository,
+            com.board.ime.cloudlibrary.LibraryCacheStore(this),
+        )
+        libraryPanel = panel
+        content.addView(
+            panel,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        panel.onPickUpload = {
+            libraryUploadLauncher.launch(arrayOf("image/*", "application/*", "*/*"))
+        }
+        // 本机隐藏（只存 hash；只影响本机 UI，不动云端）
+        panel.hiddenHashesProvider = { preferences.hiddenLibraryHashes }
+        panel.onHide = { hash -> preferences.hideLibraryHash(hash) }
+        panel.onUnhide = { hash -> preferences.unhideLibraryHash(hash) }
+        // 打开即显示 UI；refresh/prune 在后台；页面 RESUMED 时每 60s 自动刷新
+        panel.bindLifecycle(this)
+        panel.start()
+    }
+
+    override fun onDestroy() {
+        libraryPanel?.release()
+        libraryPanel = null
+        super.onDestroy()
+    }
+
 
     private fun buildClipboard(content: LinearLayout) {
         val card = SettingsUi.card(this)
