@@ -23,6 +23,7 @@ import android.widget.TextView
 import com.board.ime.clipboard.ClipboardContentType
 import com.board.ime.clipboard.ClipboardCounts
 import com.board.ime.clipboard.ClipboardOrigin
+import com.board.ime.clipboard.ClipboardOriginLabel
 import com.board.ime.clipboard.ClipboardSummary
 import com.board.ime.ui.KeyboardTheme
 
@@ -74,7 +75,13 @@ class ClipboardPanel @JvmOverloads constructor(
      */
     var onLoadThumbnail: ((ClipboardSummary, Int, (Bitmap?) -> Unit) -> Unit)? = null
 
-    private enum class Mode { LIST, ACTION, DETAIL, CLEAR }
+    /** 用户**查看**了某条内容（点按 / 长按）→ 取消「未读」保护（Phase 1-F） */
+    var onItemSeen: ((Long) -> Unit)? = null
+
+    /** 用户在图片预览里点「下载」→ **只有此时**才写入系统相册（Phase 1-F） */
+    var onSaveImage: ((ClipboardSummary) -> Unit)? = null
+
+    private enum class Mode { LIST, ACTION, DETAIL, CLEAR, PREVIEW }
 
     /**
      * 剪贴板分类页。**只是内部交互状态**，UI 上不显示任何分类名称 / 指示器 / Tab。
@@ -99,6 +106,16 @@ class ClipboardPanel @JvmOverloads constructor(
     /** 当前分类页（默认文字页；顺序见 [ClipPage]） */
     private var pageIndex = ClipPage.TEXT.ordinal
 
+    /** 图片预览用的 Bitmap（与缩略图分开管理；退出预览立即回收，不留缓存） */
+    private var previewBitmap: Bitmap? = null
+    private var previewToken: String? = null
+
+    /** 底部瞬时提示（浮层，不参与布局高度） */
+    private var transientMessage: TextView? = null
+
+    /** 预览解码目标像素：以屏宽为上限，**不加载原图全尺寸** */
+    private val previewMaxPx: Int get() = resources.displayMetrics.widthPixels
+
     /** 水平切换手势：起点 + 判定阈值（只在明确水平拖动时才接管，垂直留给原有滚动） */
     private var gestureDownX = 0f
     private var gestureDownY = 0f
@@ -118,6 +135,16 @@ class ClipboardPanel @JvmOverloads constructor(
     private val sectionLabel = TextView(context)
     private val grid = LinearLayout(context)
     private val scroll = ScrollView(context)
+
+    /**
+     * PREVIEW 专用的**不滚动**容器。
+     *
+     * 关键：`ScrollView` 测量子视图用的是 `UNSPECIFIED` 高度，所以 `MATCH_PARENT` 的 ImageView
+     * 会按**图片原始高度**测量（长图就会被拉到几千 px 高 → 可以上下滚、一眼看不全）。
+     * 因此预览必须挂在 ScrollView 之外，与 [scroll] 同权重互斥显示，
+     * 这样 ImageView 才有**真正受限**的宽高，FIT_CENTER 才能把整张图一次缩进区域内。
+     */
+    private val previewHost = FrameLayout(context)
     private val emptyView = TextView(context)
     private val footer = LinearLayout(context)
 
@@ -125,6 +152,9 @@ class ClipboardPanel @JvmOverloads constructor(
         orientation = VERTICAL
         addView(sectionLabel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(buildScroll(), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        // 与 scroll 同权重；同一时刻只有一个可见（GONE 的不参与权重分配）
+        previewHost.visibility = GONE
+        addView(previewHost, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         addView(emptyView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(footer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         applyTheme(theme)
@@ -208,6 +238,16 @@ class ClipboardPanel @JvmOverloads constructor(
      * @return true 表示已经消费掉这次返回
      */
     fun handleBack(): Boolean = when {
+        // 预览：用工具栏**现有的**返回键退回图片缩略图列表（不新增返回按钮）
+        mode == Mode.PREVIEW -> {
+            releasePreview()
+            mode = Mode.LIST
+            selected = null
+            renderedKey = null
+            render()
+            true
+        }
+
         mode != Mode.LIST -> {
             mode = Mode.LIST
             selected = null
@@ -218,6 +258,65 @@ class ClipboardPanel @JvmOverloads constructor(
 
         editMode -> true
         else -> false
+    }
+
+    /** 进入图片放大预览（图片成为主要内容；左右分类切换在预览下暂停） */
+    private fun openPreview(item: ClipboardSummary) {
+        onItemSeen?.invoke(item.id)
+        selected = item
+        mode = Mode.PREVIEW
+        renderedKey = null
+        render()
+    }
+
+    /** 释放预览（清空不滚动容器 + 回收 Bitmap，**不保留任何图片缓存**） */
+    private fun releasePreview() {
+        previewHost.removeAllViews()
+        transientMessage = null
+        previewBitmap?.recycle()
+        previewBitmap = null
+        previewToken = null
+    }
+
+    /**
+     * **面板底部**的瞬时提示（下载成功 / 失败）。
+     *
+     * 以**浮层**方式叠在预览容器上 → **不增加 Panel 高度、不改变图片布局、不影响工具栏与手势**；
+     * 约 1.7 秒后自动移除，无需用户关闭。
+     * 没有可用浮层容器时（例如未来的列表页下载）退回系统 Toast —— 同样是底部短暂提示，无新依赖。
+     */
+    fun showTransientMessage(text: String) {
+        if (previewHost.visibility != VISIBLE) {
+            android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        transientMessage?.let { previewHost.removeView(it) }
+        val message = TextView(context).apply {
+            this.text = text
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, theme.clipboardActionTextSize)
+            setTextColor(theme.candidateText)
+            background = GradientDrawable().apply {
+                setColor((theme.panelSurface and 0x00FFFFFF) or (0xD8 shl 24))
+                cornerRadius = theme.radiusMedium
+            }
+            setPadding(theme.spaceL, theme.spaceS, theme.spaceL, theme.spaceS)
+        }
+        previewHost.addView(
+            message,
+            FrameLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT,
+                LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+            ).apply { bottomMargin = theme.spaceL },
+        )
+        transientMessage = message
+        previewHost.postDelayed({ removeTransientMessage(message) }, TRANSIENT_MESSAGE_MS)
+    }
+
+    private fun removeTransientMessage(message: TextView) {
+        if (transientMessage !== message) return
+        previewHost.removeView(message)
+        transientMessage = null
     }
 
     // ---------------------------------------------------------------- 分类页（纯 UI 状态）
@@ -295,15 +394,20 @@ class ClipboardPanel @JvmOverloads constructor(
 
         footer.removeAllViews()
         footer.visibility = GONE
-        // 重建前先释放上一批缩略图（含清空 binders），避免 Bitmap 泄漏
+        // 重建前先释放上一批缩略图 / 预览图（含清空 binders），避免 Bitmap 泄漏
         releaseAllThumbnails()
+        releasePreview()
         grid.removeAllViews()
+
+        // 只有 PREVIEW 用不滚动容器；其余模式一律收起它
+        if (mode != Mode.PREVIEW) previewHost.visibility = GONE
 
         when (mode) {
             Mode.LIST -> renderList()
             Mode.ACTION -> renderList().also { renderActionFooter() }
             Mode.DETAIL -> renderDetail()
             Mode.CLEAR -> renderClearConfirm()
+            Mode.PREVIEW -> renderPreview()
         }
     }
 
@@ -414,6 +518,7 @@ class ClipboardPanel @JvmOverloads constructor(
         val preview: TextView,
         val pinSlot: View,
         val starSlot: View,
+        /** 来源小字（本地 / 云端 · Windows）：**次要文字**，不是分类标题、不带图标 */
         val originLabel: TextView,
         /** 图片条目右侧的小缩略图（非图片条目 GONE，不占空间、不改变文字排版） */
         val thumb: ImageView,
@@ -458,6 +563,7 @@ class ClipboardPanel @JvmOverloads constructor(
         // 面板离开窗口：**立即释放**缩略图，不保留任何图片缓存；
         // 下次显示时按需重新生成（renderedKey 置空以触发重建）。
         releaseAllThumbnails()
+        releasePreview()
         renderedKey = null
     }
 
@@ -470,6 +576,8 @@ class ClipboardPanel @JvmOverloads constructor(
             isClickable = true
             setOnClickListener { insert(item) }
             setOnLongClickListener {
+                // 用户主动打开了这条（动作条）→ 视为「已查看」，取消未读保护
+                onItemSeen?.invoke(item.id)
                 selected = item
                 mode = Mode.ACTION
                 renderedKey = null
@@ -513,6 +621,9 @@ class ClipboardPanel @JvmOverloads constructor(
                 marginStart = theme.spaceXs
             },
         )
+        // 来源小字：**每个条目**的小型元信息（本地 / 云端 · Windows）。
+        // 字号比正文小、用现有次要文字颜色，没有图标 / badge / 云朵。
+        // 它和固定 / 收藏共用一个徽标行，卡片高度由「正文 + 这行」自然决定。
         val originLabel = TextView(context).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_PX, theme.clipboardSectionSize * 0.92f)
             setTextColor(theme.candidateMutedText)
@@ -527,6 +638,9 @@ class ClipboardPanel @JvmOverloads constructor(
         val thumb = ImageView(context).apply {
             visibility = GONE
             scaleType = ImageView.ScaleType.FIT_CENTER
+            // 点缩略图 = 放大预览；卡片本身的点击行为（插入）保持不变
+            isClickable = true
+            setOnClickListener { openPreview(item) }
         }
         val thumbSize = thumbnailSizePx()
         card.addView(
@@ -559,7 +673,9 @@ class ClipboardPanel @JvmOverloads constructor(
         binder.card.contentDescription = item.preview.orEmpty()
         binder.pinSlot.visibility = if (item.isPinned) VISIBLE else GONE
         binder.starSlot.visibility = if (item.isFavorite) VISIBLE else GONE
-        binder.originLabel.text = originText(item)
+        // 来源小字：只读 origin（数据层逻辑不变），LOCAL→本地 / CLOUD→云端[ · 设备名]
+        // 颜色：本机 = 现有次要灰；云端 = 现有蓝色强调色（不新增颜色、不加图标/背景/字号/间距）
+        binder.originLabel.text = ClipboardOriginLabel.of(item.origin, item.originType)
         binder.originLabel.setTextColor(
             if (item.origin == ClipboardOrigin.REMOTE) theme.accent else theme.candidateMutedText,
         )
@@ -594,21 +710,6 @@ class ClipboardPanel @JvmOverloads constructor(
 
         val highlight = mode == Mode.ACTION && selected?.id == item.id
         binder.card.background = cardBackground(highlight)
-    }
-
-    /**
-     * 来源小标记：**很轻**，只有一行小字。
-     * - 云端：`云端 · Windows`（设备名读得到就带上，读不到只写「云端」）
-     * - 本机：`本机`
-     */
-    private fun originText(item: ClipboardSummary): String {
-        if (item.origin == ClipboardOrigin.REMOTE) {
-            val device = item.originType?.takeIf { it.isNotBlank() }
-            return if (device != null) "云端 · $device" else "云端"
-        }
-        // 本机内容同时是「服务器当前内容」时也标出来（语义：remoteCurrent，不是历史同步）
-        val local = if (item.contentType == ClipboardContentType.LINK) "本机 · 链接" else "本机"
-        return if (item.remoteCurrent) "$local · 云端" else local
     }
 
     // ---------------------------------------------------------------- 动作条
@@ -704,6 +805,78 @@ class ClipboardPanel @JvmOverloads constructor(
         row.addView(actionButton("插到输入框") { insert(item) })
         footer.addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         footer.visibility = VISIBLE
+    }
+
+    // ---------------------------------------------------------------- 图片预览（Phase 1-F）
+
+    /**
+     * 图片放大预览。
+     *
+     * - **保留工具栏**：本面板本来就在工具栏**下方**，高度不变，不新增全屏 Activity；
+     * - 预览区域 = 工具栏以下的剩余区域（`MATCH_PARENT`，被 ScrollView 视口约束，不会撑出去）；
+     * - `FIT_CENTER` = contain：保持原比例、不裁切、不超出区域；
+     * - 右下角一个**很小的**下载按钮 —— 只有用户主动点击才会写系统相册；
+     * - **不新增标题 / 文字 / 面包屑 / 指示器**。
+     */
+    private fun renderPreview() {
+        val item = selected ?: return
+        // **预览脱离 ScrollView**：隐藏列表滚动容器，改用不滚动的 previewHost，
+        // 这样 ImageView 拿到的是“工具栏以下”的**确定宽高**，长图也会被整体缩进区域内。
+        scroll.visibility = GONE
+        previewHost.visibility = VISIBLE
+        previewHost.removeAllViews()
+        emptyView.visibility = GONE
+        sectionLabel.visibility = GONE
+
+        val image = ImageView(context).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        val container = FrameLayout(context).apply {
+            addView(
+                image,
+                FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+            )
+        }
+        // 预览只留很小的安全边距：让图片尽可能占满可用区域，又不贴边
+        val margin = (PREVIEW_MARGIN_DP * resources.displayMetrics.density).toInt()
+        container.setPadding(margin, margin, margin, margin)
+
+        // 下载：图标很小（17dp），点击区域稍大（32dp）；
+        // 背景只做 70% 半透明 —— 不遮挡主体，也不会在浅色照片上“消失”，更不像一个大按钮。
+        val hit = (DOWNLOAD_HIT_DP * resources.displayMetrics.density).toInt()
+        val download = PanelIconSlot(context, PanelIcon.DOWNLOAD).apply {
+            applyTheme(theme, theme.candidateText)
+            setIconSize(DOWNLOAD_ICON_DP * resources.displayMetrics.density)
+            background = GradientDrawable().apply {
+                setColor((theme.panelSurface and 0x00FFFFFF) or (0xB0 shl 24))
+                cornerRadius = theme.radiusMedium
+            }
+            contentDescription = "保存到相册"
+            onSlotClick = { onSaveImage?.invoke(item) }
+        }
+        container.addView(
+            download,
+            FrameLayout.LayoutParams(hit, hit, Gravity.END or Gravity.BOTTOM),
+        )
+        previewHost.addView(
+            container,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+
+        // 按目标像素降采样解码（不加载原图全尺寸）；回调回来时若已退出预览则丢弃并回收
+        val token = item.contentHash
+        previewToken = token
+        val callback: (Bitmap?) -> Unit = callback@{ bitmap ->
+            if (previewToken != token) {
+                bitmap?.recycle()
+                return@callback
+            }
+            val previous = previewBitmap
+            previewBitmap = bitmap
+            image.setImageBitmap(bitmap)
+            if (previous != null && previous !== bitmap) previous.recycle()
+        }
+        onLoadThumbnail?.invoke(item, previewMaxPx, callback)
     }
 
     // ---------------------------------------------------------------- 清空确认
@@ -831,5 +1004,17 @@ class ClipboardPanel @JvmOverloads constructor(
 
         /** 水平切换分类的位移阈值（dp）；达到才切页，避免误触 */
         const val SWITCH_THRESHOLD_DP = 56f
+
+        /** 预览图片四周的安全边距（dp）：很小，既不贴边也不浪费空间 */
+        const val PREVIEW_MARGIN_DP = 10f
+
+        /** 预览右下角下载图标的**视觉**尺寸（dp）——很小，只提示“可保存” */
+        const val DOWNLOAD_ICON_DP = 17f
+
+        /** 下载图标的**点击**区域（dp）：略大于图标，但不是一个明显的大按钮 */
+        const val DOWNLOAD_HIT_DP = 32f
+
+        /** 底部瞬时提示的显示时长（毫秒）：约 1.7s，自动消失 */
+        const val TRANSIENT_MESSAGE_MS = 1700L
     }
 }

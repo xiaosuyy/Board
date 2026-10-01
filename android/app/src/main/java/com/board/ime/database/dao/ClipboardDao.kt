@@ -228,6 +228,39 @@ interface ClipboardDao {
     @Query("DELETE FROM clipboard_item WHERE isDeleted = 1")
     suspend fun purgeDeleted(): Int
 
+    // ---------------------------------------------------------------- 历史生命周期（Phase 1-F）
+
+    /** 用户查看了这条（远端）内容 → 取消未读保护，恢复正常 1 小时生命周期 */
+    @Query("UPDATE clipboard_item SET isUnread = 0 WHERE id = :id")
+    suspend fun markRead(id: Long)
+
+    /**
+     * 删除过期条目（硬删）。
+     *
+     * 条件 = 「普通条目」：`isDeleted = 0 AND isPinned = 0 AND isUnread = 0`
+     * 且 距今 ≥ [cutoff]（基准时间 `COALESCE(receivedAt, createdAt)`）。
+     *
+     * - [protectedHash]：**当前系统剪贴板正在引用**的内容 hash —— 永不删除；
+     * - [protectFiles] = 1：调用方拿不到当前剪贴板（例如后台 Worker），此时只让**非文件型**
+     *   条目过期，避免误删仍被系统剪贴板引用的 PNG。
+     */
+    @Query(
+        "DELETE FROM clipboard_item WHERE isDeleted = 0 AND isPinned = 0 AND isUnread = 0 " +
+            "AND contentHash != :protectedHash " +
+            "AND (:protectFiles = 1 OR contentStorage != 'FILE') " +
+            "AND COALESCE(receivedAt, createdAt) <= :cutoff",
+    )
+    suspend fun deleteExpired(cutoff: Long, protectedHash: String, protectFiles: Int): Int
+
+    /** 即将过期且内容在文件里的条目的路径（**先删引用，再删文件**） */
+    @Query(
+        "SELECT contentFilePath FROM clipboard_item WHERE isDeleted = 0 AND isPinned = 0 " +
+            "AND isUnread = 0 AND contentHash != :protectedHash " +
+            "AND contentStorage = 'FILE' " +
+            "AND COALESCE(receivedAt, createdAt) <= :cutoff",
+    )
+    suspend fun expirableFilePaths(cutoff: Long, protectedHash: String): List<String>
+
     /** 内容按需搬到文件后，库里只剩路径：拿到「已永久删除」的行的文件路径，用于清文件 */
     @Query("SELECT contentFilePath FROM clipboard_item WHERE contentStorage = 'FILE' AND isDeleted = 1")
     suspend fun deletedFilePaths(): List<String>

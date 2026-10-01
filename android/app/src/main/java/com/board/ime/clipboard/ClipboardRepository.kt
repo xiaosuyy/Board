@@ -355,6 +355,8 @@ class ClipboardRepository(
                     origin = ClipboardOrigin.REMOTE,
                     originDeviceId = originDeviceId,
                     originType = originType,
+                    // Phase 1-F：远端刚同步过来、用户还没看过 → 未读（暂不受 1 小时过期影响）
+                    isUnread = true,
                     receivedAt = now,
                     createdAt = now,
                     updatedAt = now,
@@ -379,6 +381,22 @@ class ClipboardRepository(
         uri: android.net.Uri,
         enqueuePush: Boolean = true,
     ): ClipboardCaptureResult? {
+        // 0) **Board 自己写回的图片**（CLOUD 落库 → 系统剪贴板 → 系统回调）：
+        //    直接按 URI 里的 hash 定位到**原来那条历史**，只刷新时间。
+        //    → 来源身份稳定（仍是 CLOUD），**绝不新建 LOCAL 重复条目**。
+        //    （图片的远端 hash 与本端重编码 hash 不同，仅靠 hash 短路在这一步会漏。）
+        ClipboardOwnership.ownImageHash(uri.scheme, uri.pathSegments)?.let { hash ->
+            val existing = dao.findSummaryByHash(hash)
+            if (existing != null) {
+                dao.touchAndRestore(id = existing.id, updatedAt = System.currentTimeMillis())
+                SyncLog.event(
+                    SyncEvent.SUPPRESS_LOOP,
+                    "图片来自 Board 自己的写回，保持原条目（不新建 LOCAL）",
+                )
+                return ClipboardCaptureResult.UPDATED
+            }
+        }
+
         val processed = ClipboardImageCodec.processUri(resolver, uri) ?: return null
         return captureImage(processed, enqueuePush = enqueuePush)
     }
@@ -481,6 +499,8 @@ class ClipboardRepository(
                     origin = ClipboardOrigin.REMOTE,
                     originDeviceId = originDeviceId,
                     originType = originType,
+                    // Phase 1-F：远端图片同样先标记未读
+                    isUnread = true,
                     receivedAt = now,
                     createdAt = now,
                     updatedAt = now,
@@ -517,6 +537,51 @@ class ClipboardRepository(
             .toSet()
         return store.prune(referenced, currentClipboardHash, System.currentTimeMillis(), ttlMs)
     }
+
+    // ---------------------------------------------------------------- 历史生命周期（Phase 1-F）
+
+    /** 用户查看了这条内容（点按 / 长按 / 全文）→ 取消未读保护，恢复正常生命周期 */
+    suspend fun markRead(id: Long) {
+        runCatching { dao.markRead(id) }
+    }
+
+    /**
+     * 历史生命周期维护：删除超过 1 小时、**非固定**、**非未读**的普通条目。
+     *
+     * 顺序严格是「**先删历史引用，再删文件**」：
+     * 1. 先取出即将过期且内容在文件里的路径；
+     * 2. 删除这些条目（SQL 已排除 pinned / unread / **当前剪贴板引用**）；
+     * 3. 再删文件；
+     * 4. 最后按 **Phase 1-E** 规则回收无引用的图片文件（TTL + 当前引用保护）。
+     *
+     * @param currentClipboardHash 当前系统剪贴板正在引用的图片 hash；拿不到时传 null
+     * @return 删除的条目数
+     */
+    suspend fun expireHistory(
+        currentClipboardHash: String?,
+        now: Long = System.currentTimeMillis(),
+    ): Int = runCatching {
+        val protectedHash = currentClipboardHash ?: ""
+        // 拿不到当前剪贴板 → 只让“非文件型”条目过期，绝不冒删错 PNG 的风险
+        val protectFiles = if (protectedHash.isEmpty()) 1 else 0
+        val cutoff = now - ClipboardLifecycle.TTL_MS
+
+        val paths = dao.expirableFilePaths(cutoff, protectedHash)
+        val removed = dao.deleteExpired(cutoff, protectedHash, protectFiles)
+        if (removed <= 0) return@runCatching 0
+
+        paths.forEach { path -> if (path.isNotEmpty()) runCatching { File(path).delete() } }
+
+        val store = imageStore
+        if (store != null) {
+            val referenced = runCatching { dao.allFilePaths() }
+                .getOrDefault(emptyList())
+                .map { File(it).name.removeSuffix(ClipboardImageStore.PNG_SUFFIX) }
+                .toSet()
+            store.prune(referenced, protectedHash.ifEmpty { null }, now, IMAGE_TTL_MS)
+        }
+        removed
+    }.getOrDefault(0)
 
     /**
      * 确认「服务器当前内容」就是 [hash] 这条记录。

@@ -1,6 +1,8 @@
 package com.board.ime.sync
 
 import android.content.Context
+import com.board.ime.clipboard.ClipboardRepository
+import com.board.ime.database.BoardDatabase
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -29,6 +31,15 @@ class SyncWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // Phase 1-F：后台周期维护剪贴板历史（与网络 / 同步状态无关，始终执行）。
+        // Worker 拿不到当前系统剪贴板，因此传 null → 只让**非文件型**条目过期，
+        // 绝不误删仍可能被系统剪贴板引用的 PNG（保护策略见 ClipboardRepository.expireHistory）。
+        runCatching {
+            ClipboardRepository(
+                dao = BoardDatabase.get(applicationContext).clipboardDao(),
+                contentStore = ClipboardRepository.contentStoreFor(applicationContext),
+            ).expireHistory(currentClipboardHash = null)
+        }
         val engine = SyncEngineHolder.get(applicationContext)
         val config = engine.loadConfig()
         if (!config.isConfigured || !config.autoSync) {

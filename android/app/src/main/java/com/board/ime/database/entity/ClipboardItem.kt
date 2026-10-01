@@ -98,6 +98,17 @@ data class ClipboardItem(
      */
     @ColumnInfo(defaultValue = "0")
     val remoteCurrent: Boolean = false,
+    /**
+     * **未读**（Phase 1-F）。
+     *
+     * 语义严格限定：**远端同步到本机、且用户尚未查看过**的内容。
+     * - `true`：不参与 1 小时历史过期（保护刚同步过来、用户还没看的东西）；
+     * - 用户查看（点按 / 长按 / 全文）后置为 `false` → 立即恢复正常生命周期。
+     *
+     * 与 [remoteCurrent]（服务器此刻是不是这条）正交，**不要混用**。
+     */
+    @ColumnInfo(defaultValue = "0")
+    val isUnread: Boolean = false,
 ) {
     /** 固定和收藏都不该被普通清理带走 */
     val isProtected: Boolean get() = isPinned || isFavorite

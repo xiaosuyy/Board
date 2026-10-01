@@ -41,7 +41,7 @@ import com.board.ime.dictionary.DictionarySource
         SyncOperation::class,
         PhraseEntry::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -367,6 +367,20 @@ abstract class BoardDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v12：剪贴板增加**未读**标记（Phase 1-F 历史生命周期）。
+         *
+         * 普通 ADD COLUMN，默认 0（老数据全部视为“已读”，因此会进入 1 小时过期规则），
+         * **不做 destructive migration**，已有内容 / 时间戳 / 固定收藏一条不丢。
+         */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE clipboard_item ADD COLUMN isUnread INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         @Volatile
         private var instance: BoardDatabase? = null
 
@@ -424,6 +438,7 @@ abstract class BoardDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
+                    MIGRATION_11_12,
                 )
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

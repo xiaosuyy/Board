@@ -479,17 +479,42 @@ namespace BoardCompanionTests
             var dir = System.IO.Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BoardCompanion");
             long biggest = 0;
+            string logPath = Path.Combine(dir, "companion.log");
             if (Directory.Exists(dir))
             {
                 foreach (var file in Directory.GetFiles(dir))
                 {
+                    // companion.log 是**只含元数据**的运行日志，会随运行时长增长，
+                    // 不能用“体积”判断它是否含正文 —— 单独按**内容**校验（见下一条断言）。
+                    if (string.Equals(
+                            Path.GetFileName(file), "companion.log", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
                     var length = new FileInfo(file).Length;
                     if (length > biggest) biggest = length;
                 }
             }
             Check("no-content-on-disk(largest=" + biggest + "B)",
                 biggest < 64 * 1024,
-                "配置目录里不应出现正文副本或临时文件");
+                "配置目录里不应出现正文副本或临时文件（运行日志单独校验）");
+
+            // 运行日志**同样**不得出现剪贴板正文：只允许 hash / 大小 / 状态 / 耗时等元数据。
+            // 比“体积阈值”更准确 —— 日志再长也不该包含任何正文片段。
+            long logBytes = 0;
+            var logHasBody = false;
+            if (File.Exists(logPath))
+            {
+                logBytes = new FileInfo(logPath).Length;
+                var logText = File.ReadAllText(logPath, Encoding.UTF8);
+                foreach (var marker in new[] { "BOARDNEW7F3A9K", "你好", "👋", "Hello 世界", "第一行", "😀" })
+                {
+                    if (logText.Contains(marker)) { logHasBody = true; break; }
+                }
+            }
+            Check("log-has-no-body(bytes=" + logBytes + ")",
+                !logHasBody,
+                "运行日志只能记 hash / 大小 / 状态，绝不能出现剪贴板正文");
 
             // ---- 路径规则（与 Android 完全一致）----
             Check("path-root-plus-dir",

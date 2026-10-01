@@ -59,6 +59,10 @@ class TopPanelController(
     var onClipboardLoadContent: ((Long, (String?) -> Unit) -> Unit)? = null
     /** 图片条目的**低分辨率缩略图**（按目标像素降采样解码；不落盘、不缓存） */
     var onClipboardLoadThumbnail: ((ClipboardSummary, Int, (android.graphics.Bitmap?) -> Unit) -> Unit)? = null
+    /** 用户查看了某条（点按 / 长按 / 预览）→ 取消未读保护（Phase 1-F） */
+    var onClipboardItemSeen: ((Long) -> Unit)? = null
+    /** 预览里点「下载」→ 保存到系统相册（Phase 1-F，**仅用户主动点击时**） */
+    var onClipboardSaveImage: ((ClipboardSummary) -> Unit)? = null
     var onClipboardTogglePin: ((ClipboardSummary) -> Unit)? = null
     var onClipboardToggleFavorite: ((ClipboardSummary) -> Unit)? = null
     var onClipboardDelete: ((ClipboardSummary) -> Unit)? = null
@@ -305,6 +309,8 @@ class TopPanelController(
         clipboardPanel.onLoadThumbnail = { item, maxPx, onLoaded ->
             onClipboardLoadThumbnail?.invoke(item, maxPx, onLoaded)
         }
+        clipboardPanel.onItemSeen = { id -> onClipboardItemSeen?.invoke(id) }
+        clipboardPanel.onSaveImage = { item -> onClipboardSaveImage?.invoke(item) }
         clipboardPanel.onClearHistory = { includeProtected ->
             onClipboardClearHistory?.invoke(includeProtected)
         }
@@ -355,6 +361,14 @@ class TopPanelController(
         applyState()
         onClipboardOpened?.invoke()
         onClipboardFilterChanged?.invoke(false)
+    }
+
+    /**
+     * 剪贴板面板**底部**的瞬时提示（下载成功 / 失败）。
+     * 浮层实现：不改变面板高度、不影响工具栏与左右分类手势。
+     */
+    fun showClipboardMessage(text: String) {
+        clipboardPanel.showTransientMessage(text)
     }
 
     fun closeClipboard() {

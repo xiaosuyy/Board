@@ -109,40 +109,6 @@ object ClipboardImageCodec {
     fun processUri(resolver: ContentResolver, uri: Uri): ProcessedImage? =
         processRaw(readRaw(resolver, uri))
 
-    /**
-     * 从**受控图片文件**解码一张低分辨率缩略图（**UI 用，绝不加载原图全尺寸**）。
-     *
-     * 先用 `inJustDecodeBounds` 只量尺寸，再按 [maxPx] 选 2 的幂 `inSampleSize` 解码，
-     * 因此 4000×3000 的原图也只会解出一张 ~百像素的小图。
-     *
-     * **不落盘、不建缓存**：返回的 Bitmap 由调用方负责回收。
-     * 文件不存在 / 解码失败返回 null（调用方不显示任何占位）。
-     */
-    fun decodeThumbnail(path: String?, maxPx: Int): Bitmap? {
-        if (path.isNullOrBlank() || maxPx <= 0) return null
-        if (!java.io.File(path).isFile) return null
-        return try {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(path, bounds)
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-            var sample = 1
-            // 取“两个方向都仍 >= maxPx”的最小 2 的幂 → 不会解出比目标更小的图
-            while (bounds.outWidth / (sample * 2) >= maxPx && bounds.outHeight / (sample * 2) >= maxPx) {
-                sample *= 2
-            }
-            val options = BitmapFactory.Options().apply {
-                inSampleSize = sample
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            BitmapFactory.decodeFile(path, options)
-        } catch (throwable: Throwable) {
-            // 只记类别，不记路径内容
-            Log.w(TAG, "生成缩略图失败：${throwable.javaClass.simpleName}")
-            null
-        }
-    }
-
     /** 已经是本端规范 PNG 字节时直接确认（远端下载回写用） */
     fun confirmPng(bytes: ByteArray?): ProcessedImage? {
         if (bytes == null || bytes.isEmpty()) return null

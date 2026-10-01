@@ -609,6 +609,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         startPhraseObservation()
         registerClipboardListener()
         startSync()
+        // Phase 1-F：启动时做一次历史维护（过期清理）
+        maintainClipboardHistory()
         // 常用语同步：把仓库接给 SyncEngine（独立通道，不经过剪贴板）
         phraseRepository?.let { repository ->
             syncEngine?.attachPhraseRepository(repository)
@@ -652,6 +654,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onClipboardLoadThumbnail = { item, maxPx, onLoaded ->
             loadClipboardThumbnail(item, maxPx, onLoaded)
         }
+        panel.onClipboardItemSeen = { id -> markClipboardSeen(id) }
+        panel.onClipboardSaveImage = { item -> saveClipboardImageToGallery(item) }
         panel.onPanelLayoutChanged = { mode -> applyPanelLayout(mode) }
         panel.onClipboardOpened = { onClipboardOpened() }
         panel.onSearchQueryChanged = { query -> observeClipboard(query, panel.isRemoteOnly) }
@@ -831,6 +835,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     /** 打开剪贴板：同步一次系统剪贴板并开始观察 Room 数据 */
     private fun onClipboardOpened() {
+        // 0) 打开面板时做一次轻量历史维护（过期清理），不阻塞列表显示
+        maintainClipboardHistory()
         // 1) 立即抓一次系统剪贴板（listener 之前不在时也能补抓）
         //    pushToCloud=false：补抓只入库，**不能**因此上传，否则会把云端覆盖成自己的内容
         captureClipboard(pushToCloud = false)
@@ -871,6 +877,45 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 }
             }
             clipboardRepository?.markUsed(item.id)
+            // 用户点开/使用了这条 → 取消「未读」保护（Phase 1-F）
+            clipboardRepository?.markRead(item.id)
+        }
+    }
+
+    /** 用户查看了某条内容（点按 / 长按 / 预览）→ 取消未读保护，恢复正常 1 小时生命周期 */
+    private fun markClipboardSeen(id: Long) {
+        serviceScope.launch { clipboardRepository?.markRead(id) }
+    }
+
+    /**
+     * 剪贴板历史维护（Phase 1-F）：删除超过 1 小时、非固定、非未读的普通条目。
+     *
+     * 触发时机：输入法启动 / 打开剪贴板面板 / 新条目插入后 / 后台周期任务。
+     * 轻量：一条 SQL 判定，不做逐条扫描。
+     */
+    private fun maintainClipboardHistory() {
+        serviceScope.launch {
+            runCatching { clipboardRepository?.expireHistory(currentClipboardImageHash()) }
+        }
+    }
+
+    /**
+     * 用户**主动点击**预览里的下载图标 → 把当前 PNG 写入系统相册（`Pictures/Board`）。
+     *
+     * 这是用户明确发起的持久化行为；不点击时绝不写公共存储。
+     */
+    private fun saveClipboardImageToGallery(item: ClipboardSummary) {
+        serviceScope.launch {
+            val store = ClipboardRepository.imageStoreFor(this@BoardInputMethodService)
+            val file = store.fileFor(item.contentHash)
+            val saved = com.board.ime.clipboard.ClipboardImageExporter
+                .saveToGallery(this@BoardInputMethodService, file, item.contentHash)
+            mainHandler.post {
+                // 面板**底部**瞬时提示（浮层，不改面板高度）；**只有真正写入成功才提示成功**
+                panelController?.showClipboardMessage(
+                    if (saved) "✓ 已下载到相册" else "× 下载失败",
+                )
+            }
         }
     }
 
@@ -896,7 +941,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     ) {
         serviceScope.launch {
             val bitmap = runCatching {
-                com.board.ime.clipboard.ClipboardImageCodec.decodeThumbnail(item.contentFilePath, maxPx)
+                // 按 contain 采样：超长图不会被整份解码（避免 OOM），尺寸与显示量级一致
+                com.board.ime.clipboard.ClipboardImagePreviewDecoder
+                    .decodeWithin(item.contentFilePath, maxPx, maxPx)
             }.getOrNull()
             mainHandler.post { onLoaded(bitmap) }
         }
@@ -980,6 +1027,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 }
             } else if (result == ClipboardCaptureResult.INSERTED) {
                 requestAutoSync()
+                // 新条目插入后顺手做一次轻量过期维护
+                maintainClipboardHistory()
             }
         }
     }

@@ -42,6 +42,16 @@ internal class PanelIconSlot @JvmOverloads constructor(
         invalidate()
     }
 
+    /**
+     * 只改**图标的视觉尺寸**（点击区域仍由 layout 决定）。
+     * 预览里的下载图标用它保持“很小”（约 17dp），不出现明显的大按钮。
+     */
+    fun setIconSize(px: Float) {
+        if (iconSizePx == px) return
+        iconSizePx = px
+        invalidate()
+    }
+
     /** 拖动经过时的高亮（与按下态同一套视觉，不引入新样式） */
     fun setHighlighted(value: Boolean) {
         if (highlighted == value) return
