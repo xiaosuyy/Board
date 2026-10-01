@@ -17,6 +17,19 @@ namespace BoardCompanion
         public string deviceId { get; set; }
 
         /// <summary>
+        /// **本地上传范围**（Phase 1-H）：只控制 Windows 本地剪贴板的**发送/上传方向**。
+        /// - [SCOPE_TEXT]（默认）：只自动上传文本；图片不上传（接收照旧）
+        /// - [SCOPE_TEXT_IMAGE]：文本 + 图片都自动上传（恢复 Phase 1-E 行为）
+        ///
+        /// 文件**永远不自动上传**（走 Cloud Library 的显式动作）。
+        /// **接收方向（Text/Image/File 的 Pull）不受本设置影响。**
+        /// </summary>
+        public string clipboardSyncScope { get; set; }
+
+        public const string SCOPE_TEXT = "text";
+        public const string SCOPE_TEXT_IMAGE = "text-image";
+
+        /// <summary>
         /// 上一次同步过的内容 hash（**只存 hash，绝不存正文**）。
         ///
         /// 有了它，重启/手动同步时才能区分「剪贴板没变过（不要覆盖云端）」
@@ -34,6 +47,16 @@ namespace BoardCompanion
             allowCleartextHttp = false;
             deviceId = null;
             lastHash = null;
+            clipboardSyncScope = SCOPE_TEXT;
+        }
+
+        /// <summary>上传范围是否包含图片（默认仅文字；**只影响上传**）</summary>
+        public bool uploadsImages
+        {
+            get
+            {
+                return string.Equals(clipboardSyncScope, SCOPE_TEXT_IMAGE, StringComparison.OrdinalIgnoreCase);
+            }
         }
     }
 

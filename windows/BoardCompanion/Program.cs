@@ -94,7 +94,65 @@ namespace BoardCompanion
                     statusForm.Refresh2();
                 };
 
-                tray = new TrayController(engine, openPanel, openSettings, ExitApplication);
+                // Phase 1-H：Cloud Library（独立于剪贴板）。窗口只创建一次，再点只激活。
+                CloudLibraryService libraryService = null;
+                CloudLibraryForm libraryForm = null;
+                Action openLibrary = () =>
+                {
+                    try
+                    {
+                        if (libraryService == null)
+                        {
+                            libraryService = new CloudLibraryService(
+                                new CloudLibraryRemote(
+                                    new WebDavClient(config.baseUrl, config.username, store.LoadPassword()),
+                                    engine.DeviceId),
+                                engine.DeviceId,
+                                "Windows");
+                        }
+                        if (libraryForm == null || libraryForm.IsDisposed)
+                        {
+                            libraryForm = new CloudLibraryForm(libraryService, engine.DeviceId, "Windows");
+                        }
+                        if (!libraryForm.Visible) libraryForm.Show();
+                        libraryForm.Activate();
+                    }
+                    catch (Exception)
+                    {
+                        // 打开失败不影响托盘与同步
+                    }
+                };
+
+                // 轻量 prune：启动后 + 复用现有 60s tick，但**间隔 ≥1h 才真正执行**（不新增线程）
+                long lastLibraryPrune = 0L;
+                Action maintainLibrary = () =>
+                {
+                    try
+                    {
+                        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        if (now - lastLibraryPrune < 3600000L) return;
+                        lastLibraryPrune = now;
+                        if (libraryService == null)
+                        {
+                            libraryService = new CloudLibraryService(
+                                new CloudLibraryRemote(
+                                    new WebDavClient(config.baseUrl, config.username, store.LoadPassword()),
+                                    engine.DeviceId),
+                                engine.DeviceId,
+                                "Windows");
+                        }
+                        libraryService.Prune(now);
+                    }
+                    catch (Exception ex)
+                    {
+                        // 失败必须可见（只记异常类型 + 截断消息，不含正文 / token）
+                        var text = ex.Message ?? string.Empty;
+                        if (text.Length > 80) text = text.Substring(0, 80);
+                        Log.Warn("library maintain failed " + ex.GetType().Name + ": " + text);
+                    }
+                };
+
+                tray = new TrayController(engine, openPanel, openSettings, openLibrary, ExitApplication);
 
                 // 全局快捷键 **Ctrl + Alt + S** = 与托盘菜单 / 状态面板**同一个**「立即同步」入口。
                 // 注册失败（被别的程序占用等）**不影响启动**，只记一行日志、不弹窗。
@@ -108,6 +166,8 @@ namespace BoardCompanion
                 backgroundPull.Tick += (s, e) =>
                 {
                     if (config.autoSync && !engine.Paused) engine.SyncNow();
+                    // 云端资料维护：复用同一个 tick，但内部 ≥1h 才真正执行（不新增常驻线程）
+                    System.Threading.Tasks.Task.Factory.StartNew(() => maintainLibrary());
                 };
                 if (config.autoSync) backgroundPull.Start();
 
@@ -116,6 +176,8 @@ namespace BoardCompanion
                          " backgroundPull=" + config.autoSync);
 
                 if (config.autoSync) engine.SyncNow();
+                // 启动后做一次轻量 Cloud Library 维护（线程池工作项，不新增常驻线程）
+                System.Threading.Tasks.Task.Factory.StartNew(() => maintainLibrary());
 
                 // 无主窗体：消息循环照常运行（托盘 + 剪贴板通知都要它）
                 Application.Run();

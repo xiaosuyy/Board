@@ -10,6 +10,7 @@ namespace BoardCompanion
         Get = 0,
         Put = 1,
         MkCol = 2,
+        Delete = 3,
     }
 
     public sealed class WebDavResult
@@ -108,6 +109,17 @@ namespace BoardCompanion
             return Execute(WebDavMethod.MkCol, path, null, null);
         }
 
+        /// <summary>
+        /// DELETE（Phase 1-H：Cloud Library 真正释放云盘空间时使用）。
+        /// **语义**：200/204 = 成功；**404 视为成功**（已经被别人删掉，幂等）；
+        /// 401/403/405/5xx/网络错误 = 失败（调用方必须保留索引条目，绝不假装清理成功）。
+        /// 只新增方法，**不影响**任何现有调用与协议。
+        /// </summary>
+        public WebDavResult Delete(string path)
+        {
+            return Execute(WebDavMethod.Delete, path, null, null);
+        }
+
         private WebDavResult Execute(
             WebDavMethod method,
             string path,
@@ -127,7 +139,10 @@ namespace BoardCompanion
                 return WebDavResult.Fail(0, "地址不合法", false);
             }
 
-            request.Method = method == WebDavMethod.Get ? "GET" : (method == WebDavMethod.Put ? "PUT" : "MKCOL");
+            request.Method =
+                method == WebDavMethod.Get ? "GET" :
+                method == WebDavMethod.Put ? "PUT" :
+                method == WebDavMethod.Delete ? "DELETE" : "MKCOL";
             request.Timeout = 20000;
             request.ReadWriteTimeout = 20000;
             request.AllowAutoRedirect = true;

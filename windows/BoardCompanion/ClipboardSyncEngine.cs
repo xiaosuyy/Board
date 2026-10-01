@@ -92,6 +92,39 @@ namespace BoardCompanion
         private string pendingImageHash;
 
         /// <summary>
+        /// 本地上传范围是否包含图片（默认「仅文字」）。
+        /// **只影响上传方向**：Pull 到的图片照旧写回 Windows 剪贴板，不受本设置限制。
+        /// </summary>
+        private bool UploadsImages
+        {
+            get { return ShouldUploadImage(config); }
+        }
+
+        /// <summary>
+        /// **上传闸门**（Phase 1-H）：默认「仅文字」→ 图片不自动上传；设为 `text-image` 才恢复 Phase 1-E 行为。
+        /// **只作用于上传方向。**
+        /// </summary>
+        public static bool ShouldUploadImage(BoardWindowsConfig config)
+        {
+            return config != null && config.uploadsImages;
+        }
+
+        /// <summary>
+        /// **接收闸门**：永远为 true —— scope 设置**不得阻断** Pull 到的图片写回 Windows 剪贴板。
+        /// （既有 P1-E 图片接收能力必须保留。）
+        /// </summary>
+        public static bool ShouldApplyRemoteImage(BoardWindowsConfig config)
+        {
+            return true;
+        }
+
+        /// <summary>剪贴板文件**永不自动上传**（Phase 1-H 的产品规则，用常量固化以免以后被误改）</summary>
+        public static bool ShouldAutoUploadClipboardFile()
+        {
+            return false;
+        }
+
+        /// <summary>
         /// 最近一次已应用的**远端图片 manifest hash**（只在内存）。
         ///
         /// 跨平台 PNG 编码不同，远端 hash ≠ 本机回读 hash，所以不能用 localHash 判重；
@@ -133,6 +166,8 @@ namespace BoardCompanion
                 localHash = (config == null || config.lastHash == null) ? string.Empty : config.lastHash;
                 State = client == null ? SyncState.NotConfigured : SyncState.Idle;
             }
+            // 启动 / 配置变更时做一次缓存维护（只清无引用且过期的）
+            CleanupFileCacheSafely();
             RaiseStateChanged();
         }
 
@@ -177,7 +212,7 @@ namespace BoardCompanion
         public void OnClipboardChanged()
         {
             if (Paused) return;
-            if (ClipboardMonitor.ContainsImage())
+            if (UploadsImages && ClipboardMonitor.ContainsImage())
             {
                 var image = ClipboardMonitor.ReadImagePng();
                 if (image == null)
@@ -201,6 +236,14 @@ namespace BoardCompanion
                 debounce.Start();
                 return;
             }
+            // 剪贴板文件**永不自动上传**（Phase 1-H：它不属于剪贴板同步范畴）。
+            // 这里只在“剪贴板里是文件”时打一条日志并忽略，其余交给 Text 分支。
+            if (ClipboardMonitor.ReadSingleFile() != null)
+            {
+                Log.Info("clipboard changed file ignored (files never auto-upload)");
+                return;
+            }
+
             var text = ClipboardMonitor.ReadText();
             if (text == null)
             {
@@ -226,7 +269,7 @@ namespace BoardCompanion
 
         private void OnDebounceElapsed()
         {
-            if (ClipboardMonitor.ContainsImage())
+            if (UploadsImages && ClipboardMonitor.ContainsImage())
             {
                 var image = ClipboardMonitor.ReadImagePng();
                 if (image == null) return;
@@ -243,6 +286,13 @@ namespace BoardCompanion
                 RunSta(() => SyncInternal(false));
                 return;
             }
+            // 剪贴板文件永不自动上传（同 OnClipboardChanged）
+            if (ClipboardMonitor.ReadSingleFile() != null)
+            {
+                Log.Info("debounce settle file ignored (files never auto-upload)");
+                return;
+            }
+
             var text = ClipboardMonitor.ReadText();
             if (text == null) return;
             var hash = ClipboardHasher.Hash(text);
@@ -316,7 +366,7 @@ namespace BoardCompanion
             {
                 if (readClipboardFirst)
                 {
-                    if (ClipboardMonitor.ContainsImage())
+                    if (UploadsImages && ClipboardMonitor.ContainsImage())
                     {
                         var currentImage = ClipboardMonitor.ReadImagePng();
                         Log.Info("read clipboard image bytes=" +
@@ -333,7 +383,10 @@ namespace BoardCompanion
                     }
                     else
                     {
-                        var current = ClipboardMonitor.ReadText();
+                        // 剪贴板文件永不自动上传
+                        var current = ClipboardMonitor.ReadSingleFile() != null
+                            ? null
+                            : ClipboardMonitor.ReadText();
                         Log.Info("read clipboard chars=" + (current == null ? "none" : current.Length.ToString()));
                         if (current != null)
                         {
@@ -448,6 +501,10 @@ namespace BoardCompanion
                         {
                             PullImage(remote, get.StatusCode);
                         }
+                        else if (string.Equals(remote.type, ClipboardPayload.TYPE_FILE, StringComparison.Ordinal))
+                        {
+                            PullFile(remote, get.StatusCode);
+                        }
                         else
                         {
                             var text = remote.text ?? string.Empty;
@@ -530,6 +587,113 @@ namespace BoardCompanion
                 lock (gate) { busy = false; }
                 Log.Info("sync done elapsedMs=" + (Environment.TickCount - started));
                 RaiseStateChanged();
+            }
+        }
+
+        /// <summary>
+        /// 拉取远端单文件（Phase 1-H）：二进制下载 → 校验 → 写**受控临时文件** → 放进系统剪贴板。
+        ///
+        /// 注意：**剪贴板文件永不自动上传**；这里只处理“接收方向”（Android 侧发送仍暂停，故实际暂不触发）。
+        ///
+        /// 文件写回的是**与远端完全相同的字节**，所以本端 hash == 远端 hash，
+        /// 直接沿用现有 `expectedHash` / `localHash` 短路即可（不需要图片那样的回读再编码）。
+        ///
+        /// 清理：换掉旧文件后，旧缓存文件只会在「**无引用 + 过期**」时被删，当前引用的永不删。
+        /// </summary>
+        private void PullFile(ClipboardPayload remote, int status)
+        {
+            if (string.IsNullOrEmpty(remote.dataName))
+            {
+                Log.Warn("pull file skipped no dataName");
+                return;
+            }
+            if (remote.hash == lastImageRemoteHash)
+            {
+                Log.Info("pull status=" + status + " file hashChanged=false skip");
+                return;
+            }
+            var fileGet = client.GetBytes(FilePath(remote.dataName));
+            if (!fileGet.IsOk)
+            {
+                Log.Warn("pull file failed status=" + fileGet.StatusCode);
+                return;
+            }
+            var bytes = fileGet.BodyBytes ?? new byte[0];
+            if (bytes.Length == 0 || bytes.Length > ClipboardPayload.MAX_FILE_BYTES)
+            {
+                Log.Warn("pull file rejected bytes=" + bytes.Length +
+                         " limit=" + ClipboardPayload.MAX_FILE_BYTES);
+                return;
+            }
+            if (!string.IsNullOrEmpty(remote.hash) && remote.hash != ClipboardHasher.HashBytes(bytes))
+            {
+                Log.Warn("pull file hash mismatch, ignored");
+                return;
+            }
+            var path = ClipboardFileCache.Write(
+                remote.hash, System.IO.Path.GetExtension(remote.dataName), bytes);
+            if (path == null)
+            {
+                Log.Warn("pull file write-cache failed");
+                return;
+            }
+            if (!ClipboardMonitor.WriteSingleFile(path))
+            {
+                Log.Warn("pull file write-clipboard failed");
+                return;
+            }
+            expectedHash = remote.hash;
+            localHash = remote.hash;
+            lastImageRemoteHash = remote.hash;
+            PersistHash();
+            // 刚才写进去的那个受保护；其余无引用且过期的才清
+            var removed = ClipboardFileCache.Cleanup(path, DateTime.UtcNow.Ticks, ClipboardFileCache.TtlMs);
+            if (removed > 0) Log.Info("file cache cleaned=" + removed);
+            Log.Info("pull status=" + status + " file bytes=" + bytes.Length + " applied=true");
+        }
+
+        /// <summary>
+        /// 有界读取：超过上限 / 读不到（网络盘、可移动盘、路径不存在）→ null，绝不读进内存。
+        /// **public**：Cloud Library 上传复用同一个底层实现。
+        /// </summary>
+        public static byte[] ReadFileBounded(string path)
+        {
+            try
+            {
+                var info = new System.IO.FileInfo(path);
+                if (!info.Exists) return null;
+                if (info.Length <= 0 || info.Length > ClipboardPayload.MAX_FILE_BYTES) return null;
+                return System.IO.File.ReadAllBytes(path);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>文件在 `/file/` 下的名字：`&lt;hash&gt;&lt;.ext&gt;`（与 Android 的 `dataNameForFile` 一致）</summary>
+        public static string FileDataNameFor(string hash, string extension)
+        {
+            return (string.IsNullOrEmpty(hash) ? "board" : hash) + ClipboardFileCache.NormalizeExtension(extension);
+        }
+
+        /// <summary>MIME：按扩展名派生；取不到用 `application/octet-stream`（协议里不存 MIME）</summary>
+        public static string MimeFor(string dataName)
+        {
+            var name = dataName ?? string.Empty;
+            var dot = name.LastIndexOf('.');
+            var ext = dot >= 0 ? name.Substring(dot + 1).ToLowerInvariant() : string.Empty;
+            switch (ext)
+            {
+                case "txt": return "text/plain";
+                case "pdf": return "application/pdf";
+                case "json": return "application/json";
+                case "zip": return "application/zip";
+                case "png": return "image/png";
+                case "jpg":
+                case "jpeg": return "image/jpeg";
+                case "gif": return "image/gif";
+                default: return "application/octet-stream";
             }
         }
 
@@ -724,6 +888,31 @@ namespace BoardCompanion
         public void Dispose()
         {
             debounce.Dispose();
+            // 退出时只清理「**无引用 + 过期**」的临时文件；
+            // 当前剪贴板正在引用的那个**绝不删**（读不到剪贴板就整体跳过）。
+            CleanupFileCacheSafely();
+        }
+
+        /// <summary>
+        /// 安全清理文件缓存：
+        /// - 剪贴板里**有**文件但读不到路径（被占用等）→ **整体跳过**，宁可不删也不误删；
+        /// - 否则传入当前引用路径作为保护，只删无引用且过期的。
+        /// </summary>
+        private static void CleanupFileCacheSafely()
+        {
+            try
+            {
+                var hasFile = ClipboardMonitor.ClipboardHasFile();
+                var current = ClipboardMonitor.CurrentFilePath();
+                if (hasFile && string.IsNullOrEmpty(current)) return;
+                var removed = ClipboardFileCache.Cleanup(
+                    current, DateTime.UtcNow.Ticks, ClipboardFileCache.TtlMs);
+                if (removed > 0) Log.Info("file cache cleaned=" + removed);
+            }
+            catch (Exception)
+            {
+                // 退出路径不抛
+            }
         }
     }
 }

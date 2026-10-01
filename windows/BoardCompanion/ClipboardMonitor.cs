@@ -93,6 +93,83 @@ namespace BoardCompanion
             }
         }
 
+        /// <summary>
+        /// 剪贴板里若是**单个文件**（CF_HDROP），返回它的完整路径；否则 null。
+        ///
+        /// 本阶段只做单文件：**多文件 / 文件夹 / 不存在**一律返回 null（安全忽略，不崩溃）。
+        /// </summary>
+        public static string ReadSingleFile()
+        {
+            try
+            {
+                Application.OleRequired();
+                var data = Clipboard.GetDataObject();
+                if (data == null || !data.GetDataPresent(DataFormats.FileDrop)) return null;
+                var paths = data.GetData(DataFormats.FileDrop) as string[];
+                if (paths == null || paths.Length != 1) return null;
+                var path = paths[0];
+                if (string.IsNullOrEmpty(path)) return null;
+                if (System.IO.Directory.Exists(path)) return null;
+                if (!System.IO.File.Exists(path)) return null;
+                return path;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>剪贴板里是否**有**文件（用于区分“没有文件”和“读不到路径”）</summary>
+        public static bool ClipboardHasFile()
+        {
+            try
+            {
+                Application.OleRequired();
+                var data = Clipboard.GetDataObject();
+                return data != null && data.GetDataPresent(DataFormats.FileDrop);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>当前剪贴板引用的文件路径（生命周期保护用）；无 / 多文件 → null</summary>
+        public static string CurrentFilePath()
+        {
+            try
+            {
+                Application.OleRequired();
+                var data = Clipboard.GetDataObject();
+                if (data == null || !data.GetDataPresent(DataFormats.FileDrop)) return null;
+                var paths = data.GetData(DataFormats.FileDrop) as string[];
+                if (paths == null || paths.Length != 1) return null;
+                return paths[0];
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>把单个文件放进剪贴板（CF_HDROP）；失败返回 false（不抛）</summary>
+        public static bool WriteSingleFile(string path)
+        {
+            try
+            {
+                Application.OleRequired();
+                if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return false;
+                var list = new System.Collections.Specialized.StringCollection();
+                list.Add(path);
+                Clipboard.SetFileDropList(list);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         /// <summary>剪贴板里是否有图片（CF_BITMAP / CF_DIB 等，WinForms 会一并识别）</summary>
         public static bool ContainsImage()
         {

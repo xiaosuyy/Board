@@ -15,7 +15,7 @@ namespace BoardCompanion
         private readonly ToolStripMenuItem statusItem;
         private readonly ToolStripMenuItem pauseItem;
 
-        public TrayController(ClipboardSyncEngine engine, Action openPanel, Action openSettings, Action exit)
+        public TrayController(ClipboardSyncEngine engine, Action openPanel, Action openSettings, Action openLibrary, Action exit)
         {
             this.engine = engine;
 
@@ -33,6 +33,7 @@ namespace BoardCompanion
             menu.Items.Add(new ToolStripMenuItem("打开 Board Companion", null, (s, e) => openPanel()));
             menu.Items.Add(pauseItem);
             menu.Items.Add(new ToolStripMenuItem("立即同步", null, (s, e) => engine.SyncNow()));
+            menu.Items.Add(new ToolStripMenuItem("云端资料", null, (s, e) => openLibrary()));
             menu.Items.Add(new ToolStripMenuItem("设置", null, (s, e) => openSettings()));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("退出", null, (s, e) => exit()));

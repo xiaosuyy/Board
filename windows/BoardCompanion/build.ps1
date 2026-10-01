@@ -48,6 +48,10 @@ $mainOut = Join-Path $build 'BoardCompanion.exe'
     "$root\AutoStart.cs" `
     "$root\ClipboardMonitor.cs" `
     "$root\HotKey.cs" `
+    "$root\ClipboardFileCache.cs" `
+    "$root\CloudLibrary.cs" `
+    "$root\CloudLibraryRemote.cs" `
+    "$root\CloudLibraryForm.cs" `
     "$root\ClipboardSyncEngine.cs" `
     "$root\TrayController.cs" `
     "$root\SettingsForm.cs" `

@@ -25,6 +25,9 @@ namespace BoardCompanion
         private readonly CheckBox autoBox = new CheckBox();
         private readonly CheckBox clearBox = new CheckBox();
         private readonly CheckBox autoStartBox = new CheckBox();
+        private readonly RadioButton scopeTextOnly;
+        private readonly RadioButton scopeWithImage;
+        private readonly Label scopeHint;
         private readonly Label statusLabel = new Label();
         private bool passwordVisible;
 
@@ -76,6 +79,22 @@ namespace BoardCompanion
             panel.RowCount++;
             urlBox.TextChanged += (s, e) => UpdatePathPreview();
             dirBox.TextChanged += (s, e) => UpdatePathPreview();
+
+            // Phase 1-H：剪贴板**上传**范围（默认仅文字；接收方向不受影响）
+            scopeTextOnly = new RadioButton { Text = "仅文字", AutoSize = true };
+            scopeWithImage = new RadioButton { Text = "文字 + 图片", AutoSize = true };
+            scopeHint = new Label
+            {
+                Text = "文件始终不会因普通复制自动上传。",
+                AutoSize = true,
+                ForeColor = Color.DimGray,
+            };
+            var scopeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+            scopeRow.Controls.Add(scopeTextOnly);
+            scopeRow.Controls.Add(scopeWithImage);
+            AddRow(panel, "上传范围", scopeRow);
+            panel.Controls.Add(scopeHint, 1, panel.RowCount);
+            panel.RowCount++;
 
             AddRow(panel, "设备名称", nameBox);
 
@@ -137,6 +156,8 @@ namespace BoardCompanion
             autoBox.Checked = config.autoSync;
             clearBox.Checked = config.allowCleartextHttp;
             passBox.Text = store.LoadPassword();
+            scopeTextOnly.Checked = !config.uploadsImages;
+            scopeWithImage.Checked = config.uploadsImages;
             UpdatePathPreview();
         }
 
@@ -177,6 +198,10 @@ namespace BoardCompanion
             config.deviceName = nameBox.Text.Trim();
             config.autoSync = autoBox.Checked;
             config.allowCleartextHttp = clearBox.Checked;
+            // Phase 1-H：只影响**上传**范围；接收方向不受影响
+            config.clipboardSyncScope = scopeWithImage.Checked
+                ? BoardWindowsConfig.SCOPE_TEXT_IMAGE
+                : BoardWindowsConfig.SCOPE_TEXT;
 
             var problem = WebDavUrlPolicy.Evaluate(config.baseUrl, config.allowCleartextHttp);
             if (!string.IsNullOrEmpty(config.baseUrl) && problem != null)

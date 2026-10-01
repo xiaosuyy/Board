@@ -27,6 +27,14 @@ namespace BoardCompanion
         /// </summary>
         public const int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
+        /// <summary>
+        /// 单文件上限（两端统一 10 MiB，Phase 1-H）。
+        /// 两端现有二进制 API（`PutBytes` / `putBytes`）都是**整块内存**语义，
+        /// 因此上限内整块处理、超过则**读取时即拒绝**（不会把超大文件读进内存）。
+        /// 与 Android `SyncClipboardMapper.MAX_FILE_BYTES` 必须一致。
+        /// </summary>
+        public const int MAX_FILE_BYTES = 10 * 1024 * 1024;
+
         public string type { get; set; }
         public string hash { get; set; }
         public string text { get; set; }
@@ -63,6 +71,11 @@ namespace BoardCompanion
             {
                 if (string.Equals(type, TYPE_TEXT, StringComparison.Ordinal)) return true;
                 if (string.Equals(type, TYPE_IMAGE, StringComparison.Ordinal))
+                {
+                    return hasData && !string.IsNullOrEmpty(dataName);
+                }
+                // Phase 1-H：单文件（二进制走 /file/，JSON 里不含正文）
+                if (string.Equals(type, TYPE_FILE, StringComparison.Ordinal))
                 {
                     return hasData && !string.IsNullOrEmpty(dataName);
                 }
