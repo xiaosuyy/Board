@@ -30,6 +30,24 @@ namespace BoardCompanion
         private const int WM_CLIPBOARDUPDATE = 0x031D;
         private const int WM_APP_QUIT = 0x8000 + 1;
 
+        /// <summary>
+        /// 写剪贴板的重试次数与退避基数（应对 CLIPBRD_E_CANT_OPEN）。
+        ///
+        /// 实测：短文本 1 次即可；偶发更长时间的占用（长文本 / 系统剪贴板服务）需要更宽裕的预算。
+        /// 10 次 × 线性退避 ≈ 最坏 2.75s，仅发生在**真有争用**时，且跑在后台同步线程上，不阻塞 UI。
+        /// </summary>
+        private const int WRITE_ATTEMPTS = 10;
+        private const int WRITE_RETRY_MS = 50;
+
+        /// <summary>
+        /// **进程内剪贴板访问互斥**。
+        ///
+        /// 监听线程（专用 STA）会在每个 `WM_CLIPBOARDUPDATE` 上读剪贴板，同步线程会写剪贴板；
+        /// 两者并发时 `OpenClipboard` 会失败（实测 `0x800401D0` = CLIPBRD_E_CANT_OPEN）。
+        /// 这把锁保证**本进程**的读与写不会互相打断（外部进程占用仍由重试兜底）。
+        /// </summary>
+        private static readonly object ClipboardGate = new object();
+
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool AddClipboardFormatListener(IntPtr hwnd);
 
@@ -174,55 +192,60 @@ namespace BoardCompanion
         private static ClipboardSnapshot CaptureSnapshot(uint sequence)
         {
             var snapshot = new ClipboardSnapshot { Sequence = sequence };
-            Application.OleRequired();
 
-            System.Windows.Forms.IDataObject data;
-            try
+            // 与 WriteText 共用一把锁：本进程的读 / 写绝不并发（避免自造 CLIPBRD_E_CANT_OPEN）
+            lock (ClipboardGate)
             {
-                data = Clipboard.GetDataObject();   // 唯一一次剪贴板访问
-            }
-            catch (Exception)
-            {
-                return snapshot;
-            }
-            if (data == null) return snapshot;
+                Application.OleRequired();
 
-            try
-            {
-                if (data.GetDataPresent(DataFormats.Bitmap))
+                System.Windows.Forms.IDataObject data;
+                try
                 {
-                    snapshot.HasImage = true;
+                    data = Clipboard.GetDataObject();   // 唯一一次剪贴板访问
+                }
+                catch (Exception)
+                {
                     return snapshot;
                 }
+                if (data == null) return snapshot;
 
-                if (data.GetDataPresent(DataFormats.FileDrop))
+                try
                 {
-                    var paths = data.GetData(DataFormats.FileDrop) as string[];
-                    if (paths != null && paths.Length == 1 && !string.IsNullOrEmpty(paths[0]))
+                    if (data.GetDataPresent(DataFormats.Bitmap))
                     {
-                        var path = paths[0];
-                        if (!System.IO.Directory.Exists(path) && System.IO.File.Exists(path))
+                        snapshot.HasImage = true;
+                        return snapshot;
+                    }
+
+                    if (data.GetDataPresent(DataFormats.FileDrop))
+                    {
+                        var paths = data.GetData(DataFormats.FileDrop) as string[];
+                        if (paths != null && paths.Length == 1 && !string.IsNullOrEmpty(paths[0]))
                         {
-                            snapshot.HasFile = true;
-                            return snapshot;
+                            var path = paths[0];
+                            if (!System.IO.Directory.Exists(path) && System.IO.File.Exists(path))
+                            {
+                                snapshot.HasFile = true;
+                                return snapshot;
+                            }
                         }
                     }
-                }
 
-                if (data.GetDataPresent(DataFormats.UnicodeText))
-                {
-                    snapshot.Text = data.GetData(DataFormats.UnicodeText) as string;
+                    if (data.GetDataPresent(DataFormats.UnicodeText))
+                    {
+                        snapshot.Text = data.GetData(DataFormats.UnicodeText) as string;
+                    }
+                    if (snapshot.Text == null && data.GetDataPresent(DataFormats.Text))
+                    {
+                        snapshot.Text = data.GetData(DataFormats.Text) as string;
+                    }
                 }
-                if (snapshot.Text == null && data.GetDataPresent(DataFormats.Text))
+                catch (Exception)
                 {
-                    snapshot.Text = data.GetData(DataFormats.Text) as string;
+                    // 读取失败按“没有可用内容”处理（与优化前返回 null 的语义一致）
                 }
+                return snapshot;
             }
-            catch (Exception)
-            {
-                // 读取失败按“没有可用内容”处理（与优化前返回 null 的语义一致）
-            }
-            return snapshot;
         }
 
         private sealed class ListenerWindow : NativeWindow
@@ -272,19 +295,40 @@ namespace BoardCompanion
             }
         }
 
-        /// <summary>写纯文本；失败返回 false（不抛）</summary>
+        /// <summary>
+        /// 写纯文本；失败返回 false（不抛）。
+        ///
+        /// `SetText` 可能因**剪贴板被其它进程瞬时占用**抛 `ExternalException`
+        /// （`CLIPBRD_E_CANT_OPEN` / 0x800401D0）——真机实测 Android→Windows 常因此失败。
+        /// 这里做**有界重试 + 短退避**（业界通行做法），不改任何协议。
+        /// </summary>
         public static bool WriteText(string text)
         {
-            try
+            var value = text ?? string.Empty;
+            Exception last = null;
+            for (var attempt = 0; attempt < WRITE_ATTEMPTS; attempt++)
             {
-                Application.OleRequired();
-                Clipboard.SetText(text ?? string.Empty);
-                return true;
+                try
+                {
+                    lock (ClipboardGate)
+                    {
+                        Application.OleRequired();
+                        Clipboard.SetText(value);
+                    }
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                    Thread.Sleep(WRITE_RETRY_MS * (attempt + 1));
+                }
             }
-            catch (Exception)
-            {
-                return false;
-            }
+            // 只记元数据，绝不记剪贴板正文
+            Log.Warn("write text failed ex=" + last.GetType().Name +
+                     " hresult=0x" + (last.HResult & 0xFFFFFFFF).ToString("X8") +
+                     " lastError=" + Marshal.GetLastWin32Error() +
+                     " chars=" + value.Length);
+            return false;
         }
 
         /// <summary>
@@ -351,11 +395,14 @@ namespace BoardCompanion
         {
             try
             {
-                Application.OleRequired();
-                if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return false;
-                var list = new System.Collections.Specialized.StringCollection();
-                list.Add(path);
-                Clipboard.SetFileDropList(list);
+                lock (ClipboardGate)
+                {
+                    Application.OleRequired();
+                    if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return false;
+                    var list = new System.Collections.Specialized.StringCollection();
+                    list.Add(path);
+                    Clipboard.SetFileDropList(list);
+                }
                 return true;
             }
             catch (Exception)
@@ -405,10 +452,13 @@ namespace BoardCompanion
         {
             try
             {
-                Application.OleRequired();
-                var bitmap = ClipboardImage.DecodePng(png);
-                if (bitmap == null) return false;
-                Clipboard.SetImage(bitmap);
+                lock (ClipboardGate)
+                {
+                    Application.OleRequired();
+                    var bitmap = ClipboardImage.DecodePng(png);
+                    if (bitmap == null) return false;
+                    Clipboard.SetImage(bitmap);
+                }
                 return true;
             }
             catch (Exception)
