@@ -300,6 +300,20 @@ object RimeDictionaryBridge {
             // UI 只展示约 12 项（CandidateBar.MAX_CANDIDATES，可横向滑动），
             // 但底层一次给 30 个，滑一滑就能看到更多常用字/扩展词。
             append("  menu/page_size: 30\n")
+            // ------------------------------------------------------------------
+            // 特殊自定义编码（`@` 等 custom_phrase 的 code）需要**能进入 composing**，
+            // 否则 custom_phrase 的 translator 永远收不到查询串。
+            //
+            // 只补两处最小配置，不动原始 luna_pinyin.schema.yaml：
+            // 1) 把 `@` 与 `0-9`（以及 `.` `_` `-`，示例 `@qq.com` 需要 `.`）并入 speller 字母表；
+            // 2) 一条**窄** recognizer pattern：只把「以数字或 @ 开头」的串标为 custom_code，
+            //    不放进空格/回车/标点/Shift 等，避免扩大 composing 范围。
+            //
+            // 注意：数字层 / 符号层的按键能否进入 Rime 由 Board 侧 RimeEngine 的模式路由决定
+            //（NUMBER / SYMBOL 下的 `@` 会走 Rime）；这里只负责让 librime 能接受 `@`。
+            // ------------------------------------------------------------------
+            append("  \"speller/alphabet\": \"zyxwvutsrqponmlkjihgfedcba@0123456789._-\"\n")
+            append("  \"recognizer/patterns/custom_code\": \"^[0-9@][0-9A-Za-z@._-]*$\"\n")
             if (sources.isEmpty()) {
                 append("  # 没有需要挂接的大型词库\n")
             } else {

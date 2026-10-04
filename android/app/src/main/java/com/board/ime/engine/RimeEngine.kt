@@ -49,14 +49,23 @@ class RimeEngine(
         }
 
     override val composing: CharSequence
-        get() = if (currentMode == InputMode.CHINESE) composingCache else latin.composing
+        get() = if (currentMode == InputMode.CHINESE || composingCache.isNotEmpty()) {
+            composingCache
+        } else {
+            latin.composing
+        }
 
     override fun candidates(): List<Candidate> =
-        if (currentMode == InputMode.CHINESE) candidatesCache else latin.candidates()
+        if (currentMode == InputMode.CHINESE || composingCache.isNotEmpty()) {
+            candidatesCache
+        } else {
+            latin.candidates()
+        }
 
     override fun reset() {
         latin.reset()
-        if (currentMode != InputMode.CHINESE) return
+        // NUMBER/SYMBOL 下 `@` 也可能在 Rime 里留下 composing，这时也要一并清掉。
+        if (currentMode != InputMode.CHINESE && composingCache.isEmpty()) return
 
         // 与「同步线程关/开会话」互斥，避免用到已销毁的 session
         RimeRuntime.withSession(Unit) { session ->
@@ -71,15 +80,51 @@ class RimeEngine(
     }
 
     override fun handleKey(key: EngineKey): EngineResult {
-        if (currentMode != InputMode.CHINESE) return latin.handleKey(key)
+        // `@` 既会出现在字母层（此时 currentMode=CHINESE），也会出现在数字层 / 中文符号层
+        // （Board 会把这两层切成 InputMode.NUMBER / SYMBOL）。
+        //
+        // 真机实测：数字层点 `@` 时 `handleKey` 收到的 mode=NUMBER，于是被提前委托给
+        // BasicEngine，`@` 永远到不了 librime（独立 session 实测 process_key('@') 返回 true
+        // 且有 6 个候选，含 custom_phrase 的 @qq.com / @gmail.com）。
+        //
+        // 因此这里**只**把 NUMBER / SYMBOL 模式下的 `Punctuation("@")` 放行到 Rime 中文路径，
+        // 复用既有的 handleChineseKey / nativeProcessKey（不新增第二套 @ 处理）；
+        // 其余 NUMBER / SYMBOL 输入（数字、普通标点等）与 ENGLISH 模式仍走原来的 BasicEngine。
+        val specialAt = (currentMode == InputMode.NUMBER || currentMode == InputMode.SYMBOL) &&
+            key is EngineKey.Punctuation && key.text == "@"
+        if (currentMode != InputMode.CHINESE && !specialAt) {
+            // 之前 `@` 可能在 Rime 里留下 composing；回到 BasicEngine 前先清掉，
+            // 避免候选条/输入框显示与当前 composing 不一致。
+            clearRimeComposingIfAny()
+            return latin.handleKey(key)
+        }
 
         return RimeRuntime.withSession(EngineResult.Ignored) { session ->
             lock.withLock { handleChineseKey(session, key) }
         }
     }
 
+    /**
+     * 清掉 Rime 会话里可能残留的 composing。
+     *
+     * 只会来自 NUMBER / SYMBOL 模式下被放行的 `@`；中文模式下由 [reset] 负责。
+     */
+    private fun clearRimeComposingIfAny() {
+        if (composingCache.isEmpty() && candidatesCache.isEmpty()) return
+        RimeRuntime.withSession(Unit) { session ->
+            lock.withLock {
+                RimeNative.nativeClearComposition(session)
+                RimeNative.nativeGetCommit(session)
+                refresh(session)
+            }
+        }
+    }
+
     override fun pickCandidate(index: Int): EngineResult {
-        if (currentMode != InputMode.CHINESE) return latin.pickCandidate(index)
+        // NUMBER/SYMBOL 下若 `@` 正在 Rime 里 composing，点候选仍要走 Rime。
+        if (currentMode != InputMode.CHINESE && composingCache.isEmpty()) {
+            return latin.pickCandidate(index)
+        }
 
         return RimeRuntime.withSession(EngineResult.Ignored) { session ->
             lock.withLock {
@@ -115,8 +160,19 @@ class RimeEngine(
         // 回车确认：按原样上屏，不补空格
         EngineKey.Enter -> commitWithSuffix(session, suffix = "", preferCandidate = false)
 
-        // 中文标点：先结束组词，再输出标点
-        is EngineKey.Punctuation -> commitWithSuffix(session, suffix = key.text, preferCandidate = true)
+        // 中文标点：先结束组词，再输出标点。
+        //
+        // 唯一例外是 `@`：它可能是「特殊自定义编码」的首字符（custom_phrase 的 code，
+        // 例如 `@` -> `@qq.com`），必须像普通按键一样送进 librime 形成 composing，
+        // 才能被 custom_phrase 命中。若 librime 不接受（未部署相应 speller/recognizer），
+        // 则回落到原来的「结束组词 + 输出标点」行为。
+        // 其余标点（, . ? ! : ; ' " 等）仍走原路径，行为不变。
+        is EngineKey.Punctuation ->
+            if (key.text == "@" && RimeNative.nativeProcessKey(session, RimeKey.of('@'), 0)) {
+                afterInput(session)
+            } else {
+                commitWithSuffix(session, suffix = key.text, preferCandidate = true)
+            }
     }
 
     private fun afterInput(session: Long): EngineResult {
