@@ -31,6 +31,18 @@ class RimeEngine(
      */
     var blockedWords: Set<String> = emptySet()
 
+    /**
+     * 纯数字自定义编码（`code -> 词条列表`）。
+     *
+     * 由外部在**数据刷新时**（进入输入框）注入一次，按键路径只做内存查表，不访问数据库。
+     * 只在 NUMBER 模式、且当前数字串与某个 code **完全相等**时追加候选（前缀不匹配）。
+     */
+    private var numericCustomPhrases: Map<String, List<String>> = emptyMap()
+
+    fun setNumericCustomPhrases(phrases: Map<String, List<String>>) {
+        numericCustomPhrases = phrases
+    }
+
     private val lock = ReentrantLock()
 
     private var currentMode: InputMode = InputMode.CHINESE
@@ -59,7 +71,11 @@ class RimeEngine(
         if (currentMode == InputMode.CHINESE || composingCache.isNotEmpty()) {
             candidatesCache
         } else {
-            latin.candidates()
+            // 数字自定义码：只有「当前数字串 == 某个纯数字 code」时才追加候选；
+            // 原有（BasicEngine 的）候选保持不动、仍排在最前，前缀不追加。
+            val base = latin.candidates()
+            val numeric = numericCustomCandidates(latin.composing.toString())
+            if (numeric.isEmpty()) base else base + numeric
         }
 
     override fun reset() {
@@ -123,6 +139,15 @@ class RimeEngine(
     override fun pickCandidate(index: Int): EngineResult {
         // NUMBER/SYMBOL 下若 `@` 正在 Rime 里 composing，点候选仍要走 Rime。
         if (currentMode != InputMode.CHINESE && composingCache.isEmpty()) {
+            // 候选映射必须与 [candidates] 完全一致：先 BasicEngine 候选，其后是数字自定义候选。
+            val base = latin.candidates()
+            val numeric = numericCustomCandidates(latin.composing.toString())
+            val customIndex = index - base.size
+            if (customIndex in numeric.indices) {
+                // 数字自定义码：提交词条本身、清空当前数字 composing、不补空格。
+                latin.reset()
+                return EngineResult.Commit(numeric[customIndex].text)
+            }
             return latin.pickCandidate(index)
         }
 
@@ -132,6 +157,16 @@ class RimeEngine(
                 if (committed.isEmpty()) EngineResult.Ignored else EngineResult.Commit(committed)
             }
         }
+    }
+
+    /**
+     * NUMBER 模式下，当前数字串**完全等于**某个纯数字 code 时的自定义候选（前缀不匹配）。
+     * 其它模式（CHINESE / ENGLISH / SYMBOL）一律返回空，避免影响既有行为。
+     */
+    private fun numericCustomCandidates(composing: String): List<Candidate> {
+        if (currentMode != InputMode.NUMBER || composing.isEmpty()) return emptyList()
+        val words = numericCustomPhrases[composing] ?: return emptyList()
+        return words.map { Candidate(text = it) }
     }
 
     // ------------------------------------------------------------ 内部实现

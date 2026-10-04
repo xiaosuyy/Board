@@ -726,6 +726,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panelController?.resetToIdle()
         stopClipboardObservation()
         refreshBlockedWords()
+        refreshNumericCustomPhrases()
         applyTheme()
     }
 
@@ -1576,6 +1577,19 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         serviceScope.launch {
             val blocked = runCatching { dictionaryRepository.blockedWords() }.getOrDefault(emptySet())
             mainHandler.post { rimeEngine?.blockedWords = blocked }
+        }
+    }
+
+    /**
+     * 纯数字自定义编码：与 [refreshBlockedWords] 同一时机刷新一次，注入内存映射。
+     *
+     * 按键路径只查这份内存映射，不访问数据库；前缀 / 部分匹配不会命中。
+     */
+    private fun refreshNumericCustomPhrases() {
+        serviceScope.launch {
+            val phrases = runCatching { dictionaryRepository.numericCustomPhrases() }
+                .getOrDefault(emptyMap())
+            mainHandler.post { rimeEngine?.setNumericCustomPhrases(phrases) }
         }
     }
 

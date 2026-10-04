@@ -99,6 +99,17 @@ class DictionaryRepository(
 
     suspend fun blockedWords(): Set<String> = dao.wordsByType(WordType.BLOCKED).toSet()
 
+    /**
+     * 纯数字自定义编码：`code -> 词条列表`（同 code 多词全部保留）。
+     *
+     * 只读取当前有效（enabled、非墓碑）、code 去掉空格后为纯数字的自定义 / 固定 / 常用语词条，
+     * 与 [syncCustomPhrasesToRime] 同源。调用方应在**非按键路径**（进入输入框时）刷新并缓存。
+     */
+    suspend fun numericCustomPhrases(): Map<String, List<String>> {
+        val types = WordType.entries.filter { it.syncedToRime }
+        return buildNumericCodeMap(types.flatMap { dao.byType(it) })
+    }
+
     // ---------------------------------------------------------------- 增删改
 
     /** @return true 表示新增成功（已存在同名词条时返回 false，不覆盖） */
@@ -974,6 +985,29 @@ class DictionaryRepository(
 
         /** 单次合并允许的最大记录数：超出基本可以断定同步文件异常 */
         const val MAX_MERGE_RECORDS = 5_000
+
+        /** 纯数字 code 的严格匹配（去掉空格后） */
+        private val NUMERIC_CODE = Regex("^[0-9]+$")
+
+        /**
+         * 纯函数：把词条集合筛选/归并为「纯数字 code → 词条列表」。
+         *
+         * - 只保留 enabled、非墓碑、word 非空、code（去掉空格后）严格为纯数字的条目；
+         * - code 归一化与 [syncCustomPhrasesToRime] 一致（去掉空格），保证与 Rime 看到的一致；
+         * - 同 code 多词全部保留，顺序沿用传入顺序（稳定）。
+         */
+        fun buildNumericCodeMap(entries: List<DictionaryEntry>): Map<String, List<String>> {
+            val result = LinkedHashMap<String, MutableList<String>>()
+            entries.forEach { entry ->
+                if (!entry.enabled || entry.isDeleted) return@forEach
+                val word = entry.word
+                if (word.isBlank()) return@forEach
+                val code = entry.code.orEmpty().replace(" ", "")
+                if (!NUMERIC_CODE.matches(code)) return@forEach
+                result.getOrPut(code) { ArrayList() }.add(word)
+            }
+            return result
+        }
 
         /** 部署后等产物的总时长 / 轮询间隔（librime 维护是异步的，必须等产物出现） */
         private const val DEPLOY_WAIT_MS = 120_000L
