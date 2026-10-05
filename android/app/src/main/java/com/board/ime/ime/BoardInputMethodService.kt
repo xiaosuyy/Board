@@ -34,6 +34,7 @@ import com.board.ime.clipboard.ClipboardRepository
 import com.board.ime.clipboard.ClipboardSummary
 import com.board.ime.database.BoardDatabase
 import com.board.ime.databinding.BoardKeyboardBinding
+import com.board.ime.dictionary.DictionaryChangeNotifier
 import com.board.ime.dictionary.DictionaryRepository
 import com.board.ime.engine.BasicEngine
 import com.board.ime.engine.InputEngine
@@ -529,6 +530,14 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     private lateinit var dictionaryRepository: DictionaryRepository
 
+    /**
+     * 自定义词数据变化（`custom_phrase` 已同步）时的刷新回调。
+     *
+     * 固定成字段是为了 [DictionaryChangeNotifier.unregister] 能拿到同一实例；
+     * 服务在 `onCreate` 注册、`onDestroy` 注销，随服务生命周期存在，不持有 Activity，不泄漏。
+     */
+    private val dictionaryChangeListener: () -> Unit = { refreshNumericCustomPhrases() }
+
     private var binding: BoardKeyboardBinding? = null
     private var panelController: TopPanelController? = null
 
@@ -620,6 +629,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         settingsRepository.registerListener(uiSettingsListener)
         bootstrapDatabase()
         prepareRimeIfNeeded()
+        // 设置页 / 同步改完自定义词后，立即刷新当前会话的 Board 侧映射（不必重进输入框）
+        DictionaryChangeNotifier.register(dictionaryChangeListener)
     }
 
     override fun onCreateInputView(): View {
@@ -764,6 +775,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     override fun onDestroy() {
         if (active === this) active = null
+        DictionaryChangeNotifier.unregister(dictionaryChangeListener)
         networkCallback?.let { cb ->
             runCatching {
                 getSystemService(android.net.ConnectivityManager::class.java)

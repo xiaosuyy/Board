@@ -878,6 +878,10 @@ class DictionaryRepository(
             file.writeText(lines)
             // 让新的自定义短语在当前会话生效
             RimeRuntime.restartSession()
+            // 同时通知当前活跃的输入法刷新 Board 侧的内存映射（数字自定义编码等）：
+            // 「设置页改完 → 回到原输入框」即可生效，不必重新进入输入法会话。
+            // 没有活跃输入法时为空操作，不会抛异常。
+            DictionaryChangeNotifier.notifyChanged()
             entries.size
         } catch (throwable: Throwable) {
             Log.e(TAG, "同步自定义短语失败", throwable)
