@@ -1,8 +1,11 @@
 package com.board.ime.ui.panel
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.text.TextUtils
 import android.util.AttributeSet
 import android.util.TypedValue
@@ -12,6 +15,7 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.board.ime.R
 import com.board.ime.engine.Candidate
 import com.board.ime.engine.InputMode
 import com.board.ime.ui.KeyboardTheme
@@ -68,10 +72,38 @@ class CandidateBar @JvmOverloads constructor(
     /** 选中背景：一个实例复用给所有候选（切换选中态时只是换引用，不新建 drawable） */
     private var selectedBackground: GradientDrawable? = null
 
+    /**
+     * 选中背景的「内缩版」：chip 视觉高度保持 32dp，但候选 View 撑满 56dp 面板，
+     * 这样**点击区域 = 面板高度（56dp）**，而视觉仍是原来的小圆角块。
+     */
+    private var selectedBackgroundInset: InsetDrawable? = null
+
+    /**
+     * 右侧「还有内容」提示：不新增 View、不使用渐变。
+     *
+     * 在行尾预留 [hintWidthPx] 宽的空带，仅当还能向右滚动时画一个极简的 `›`，
+     * 提示落在空带里（不遮挡候选文字、不占用候选点击区域）。
+     */
+    private val hintWidthPx = resources.getDimensionPixelSize(R.dimen.kb_candidate_hint_width)
+    private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeWidth = resources.displayMetrics.density * 1.6f
+        alpha = 150
+    }
+
+    /** 提示底色：与面板同色的极窄平铺遮罩（无渐变），保证提示干净、不压字 */
+    private val hintMaskPaint = Paint().apply { style = Paint.Style.FILL }
+
     init {
         isHorizontalScrollBarEnabled = false
         overScrollMode = OVER_SCROLL_NEVER
-        row.setPadding(theme.panelHorizontalPadding, 0, theme.panelHorizontalPadding, 0)
+        row.setPadding(
+            theme.panelHorizontalPadding,
+            0,
+            theme.panelHorizontalPadding + hintWidthPx,
+            0,
+        )
         addView(
             row,
             FrameLayout.LayoutParams(
@@ -106,12 +138,20 @@ class CandidateBar @JvmOverloads constructor(
     fun applyTheme(theme: KeyboardTheme) {
         this.theme = theme
         setBackgroundColor(theme.panelBackground)
-        row.setPadding(theme.panelHorizontalPadding, 0, theme.panelHorizontalPadding, 0)
+        row.setPadding(
+            theme.panelHorizontalPadding,
+            0,
+            theme.panelHorizontalPadding + hintWidthPx,
+            0,
+        )
 
         selectedBackground = GradientDrawable().apply {
             setColor(theme.candidateSelectedBackground)
             cornerRadius = theme.radiusSmall
         }
+        selectedBackgroundInset = insetChip(selectedBackground!!)
+        hintPaint.color = theme.candidateMutedText
+        hintMaskPaint.color = theme.panelBackground
 
         pillView.apply {
             setTextSize(TypedValue.COMPLEX_UNIT_PX, theme.pinyinTextSize)
@@ -122,14 +162,17 @@ class CandidateBar @JvmOverloads constructor(
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
             setPadding(theme.candidatePaddingHorizontal, 0, theme.candidatePaddingHorizontal, 0)
-            background = GradientDrawable().apply {
-                setColor(theme.pinyinBackground)
-                cornerRadius = theme.radiusSmall
-            }
+            background = insetChip(
+                GradientDrawable().apply {
+                    setColor(theme.pinyinBackground)
+                    cornerRadius = theme.radiusSmall
+                },
+            )
             isClickable = true
             setOnClickListener { onComposingClicked?.invoke() }
             layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
-                height = theme.candidateChipHeight
+                // 视觉仍是 32dp pill（背景内缩），点击区域撑满 56dp 面板
+                height = LinearLayout.LayoutParams.MATCH_PARENT
             }
         }
 
@@ -142,7 +185,8 @@ class CandidateBar @JvmOverloads constructor(
                 maxLines = 1
                 setPadding(theme.candidatePaddingHorizontal, 0, theme.candidatePaddingHorizontal, 0)
                 layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
-                    height = theme.candidateChipHeight
+                    // 点击区域撑满面板；视觉高度由选中背景的内缩控制（仍为 32dp chip）
+                    height = LinearLayout.LayoutParams.MATCH_PARENT
                 }
                 setOnClickListener { onCandidateSelected?.invoke(tag as? Int ?: -1) }
             }
@@ -250,7 +294,7 @@ class CandidateBar @JvmOverloads constructor(
                     else -> theme.candidateText
                 },
             )
-            view.background = if (selected) selectedBackground else null
+            view.background = if (selected) selectedBackgroundInset else null
             view.isClickable = candidate.enabled
         }
 
@@ -268,9 +312,39 @@ class CandidateBar @JvmOverloads constructor(
     private fun dividerParams(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(dividerWidth(), dividerHeight()).apply {
             gravity = Gravity.CENTER_VERTICAL
+            // 候选间距沿用设计值（不再收紧）：单屏可见数交给字号与滑动，
+            // 总量提升靠“一页更多候选 + 横向滑动”，而不是把间距压小
             val gap = theme.spaceS
             setMargins(gap, 0, gap, 0)
         }
+
+    /** 把 chip 背景上下内缩：视觉高度仍是 chip 高度，但 View 本身撑满面板（点击区域更大） */
+    private fun insetChip(shape: GradientDrawable): InsetDrawable {
+        val inset = ((theme.topPanelHeight - theme.candidateChipHeight) / 2).coerceAtLeast(0)
+        return InsetDrawable(shape, 0, inset, 0, inset)
+    }
+
+    /**
+     * 右侧滚动提示：只有「还能向右滚」时才画一个极简 `›`。
+     *
+     * 状态每次绘制时从 [canScrollHorizontally] 现算，因此：滑到最右自动消失、
+     * 回到最左自动重现、候选内容变化后也自动正确，无需额外状态同步。
+     * 提示画在行尾预留的空带里，不覆盖候选文字、不占用候选点击区域。
+     */
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        if (!canScrollHorizontally(1)) return
+        // 极窄同色遮罩 + 一个极简 `›`：状态每次绘制现算（滑到最右即自动消失）
+        val stripRight = (scrollX + width).toFloat()
+        val stripLeft = stripRight - theme.panelHorizontalPadding - hintWidthPx
+        canvas.drawRect(stripLeft, 0f, stripRight, height.toFloat(), hintMaskPaint)
+        val cx = stripLeft + hintWidthPx / 2f
+        val cy = height / 2f
+        val dx = hintWidthPx * 0.16f
+        val dy = height * 0.13f
+        canvas.drawLine(cx - dx, cy - dy, cx + dx, cy, hintPaint)
+        canvas.drawLine(cx - dx, cy + dy, cx + dx, cy, hintPaint)
+    }
 
     private fun dividerWidth(): Int =
         resources.displayMetrics.density.roundToInt().coerceAtLeast(1)
@@ -283,10 +357,9 @@ class CandidateBar @JvmOverloads constructor(
          * 候选栏**最多渲染多少个候选**（可横向滑动的总数，不是屏幕上同时可见的数量）。
          *
          * 可见数量由屏幕宽度决定（约 6～8 个），这里决定的是"滑一滑还能看到多少"。
-         * 底层由 Rime 的 `menu/page_size` 提供候选（App 生成的 patch 里设为 30），
-         * 所以这里保持一致：把整页候选都渲染出来，用户横向滑动即可看全，
-         * 不再出现"底层有 30 个、UI 只放出 12 个"的截断。
+         * 底层由 Rime 的 `menu/page_size` 提供候选（App 生成的 patch 里设为 50），
+         * 这里保持一致：把整页候选都渲染出来，用户横向滑动即可看全。
          */
-        const val MAX_CANDIDATES = 30
+        const val MAX_CANDIDATES = 50
     }
 }

@@ -297,9 +297,8 @@ object RimeDictionaryBridge {
             // ⚠️ 用户目录里的同名文件会**顶掉**资产目录里的那一份（Rime 不会把两份 patch 合并），
             // 资产版 luna_pinyin_simp.custom.yaml 里写的是 menu/page_size: 9；
             // 这里必须显式重复这个设置，否则会掉回 default.yaml 的默认值 5。
-            // UI 只展示约 12 项（CandidateBar.MAX_CANDIDATES，可横向滑动），
-            // 但底层一次给 30 个，滑一滑就能看到更多常用字/扩展词。
-            append("  menu/page_size: 30\n")
+            // UI 可横向滑动查看整页候选；这里与 CandidateBar.MAX_CANDIDATES 保持一致。
+            append("  menu/page_size: 50\n")
             // ------------------------------------------------------------------
             // 特殊自定义编码（`@` 等 custom_phrase 的 code）需要**能进入 composing**，
             // 否则 custom_phrase 的 translator 永远收不到查询串。

@@ -15,10 +15,10 @@ enum class CandidateTextSize(
     /** 候选词左右内边距（dp） */
     val horizontalPaddingDp: Float,
 ) {
-    SMALL("小", 16f, 11f, 12f),
-    STANDARD("标准", 19f, 13f, 14f),
-    LARGE("大", 22f, 14f, 16f),
-    XLARGE("特大", 25f, 15f, 18f),
+    SMALL("小", 16f, 14f, 12f),
+    STANDARD("标准", 19f, 16f, 14f),
+    LARGE("大", 22f, 17f, 16f),
+    XLARGE("特大", 25f, 18f, 18f),
     ;
 
     companion object {
