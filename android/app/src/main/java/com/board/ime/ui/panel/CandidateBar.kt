@@ -19,12 +19,13 @@ import com.board.ime.R
 import com.board.ime.engine.Candidate
 import com.board.ime.engine.InputMode
 import com.board.ime.ui.KeyboardTheme
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /**
  * 候选栏（CANDIDATES 状态）。
  *
- * **只有一行**，中英文完全同构：
+ * **默认只有一行**，中英文完全同构：
  * ```
  * 中文：  [nihao] │ 你好 │ 你还 │ 你 │ 尼 │ 泥 │ 逆 …
  * 英文：  [hel]   │ help │ hello …
@@ -32,9 +33,21 @@ import kotlin.math.roundToInt
  * - 正在输入的拼音 / 单词就是这一行的**第一项**（小 pill，内容自适应宽度）
  * - 整行横向可滑动；滑动不改变键盘与 TopPanel 高度
  *
+ * **P3：候选可带英文释义**（设置 → 外观 → 候选英文释义）。开启后每个候选
+ * 在自己的格子里显示两行：中文（主）+ 英文（辅）：
+ * ```
+ * [ 苹果 ]  [ 工作 ]  [ 银行 ]
+ * [ apple]  [ work ]  [ bank ]
+ * ```
+ * - 中文与英文属于**同一个候选 View**，一起滚动、一起点击、共享同一个 index；
+ * - 没有释义的候选保持单行（不显示空白第二行）；
+ * - 候选格宽 = max(中文宽, 英文宽) + 左右内边距；英文不换行 / 不省略，靠横向滚动看全；
+ * - 面板总高度不变：两行仍在固定的 56dp 面板内完成。
+ *
  * 性能：整行子 View 只在 `init` 里创建一次，之后每次候选更新只改
  * 文本 / 颜色 / 可见性（**不再 removeAllViews + 重新创建**），
  * 因此连续快速输入时不会产生大量 View 分配与 GC。
+ * 候选格宽度只在 `onMeasure`（内容 / 字号 / 开关变化）时计算，滚动与每帧绘制都不重算。
  */
 class CandidateBar @JvmOverloads constructor(
     context: Context,
@@ -65,9 +78,124 @@ class CandidateBar @JvmOverloads constructor(
     /** 预创建并复用的子 View（顺序固定：pill │ 候选0 │ 候选1 …） */
     private val pillView = TextView(context)
     private val firstDivider = View(context)
-    private val candidateViews = ArrayList<TextView>(MAX_CANDIDATES)
+    private val candidateViews = ArrayList<CandidateItemView>(MAX_CANDIDATES)
     private val candidateDividers = ArrayList<View>(MAX_CANDIDATES)
     private val hintView = TextView(context)
+
+    /** 中文候选 View：一个候选 = 一个整体 View（可含英文第二行），点击 / 滚动都不可拆分 */
+    private class CandidateItemView(context: Context) : View(context) {
+
+        private val chinesePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT
+        }
+        private val englishPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT
+        }
+
+        private var chineseText: String = ""
+        private var englishText: String? = null
+        private var horizontalPadding: Int = 0
+        private var minWidthPx: Int = 0
+        private var panelHeightPx: Int = 0
+
+        fun applyStyle(
+            textSizePx: Float,
+            englishTextSizePx: Float,
+            minWidth: Int,
+            padding: Int,
+            panelHeight: Int,
+        ) {
+            var changed = false
+            if (chinesePaint.textSize != textSizePx) {
+                chinesePaint.textSize = textSizePx
+                changed = true
+            }
+            if (englishPaint.textSize != englishTextSizePx) {
+                englishPaint.textSize = englishTextSizePx
+                changed = true
+            }
+            if (minWidthPx != minWidth) {
+                minWidthPx = minWidth
+                changed = true
+            }
+            if (horizontalPadding != padding) {
+                horizontalPadding = padding
+                changed = true
+            }
+            if (panelHeightPx != panelHeight) {
+                panelHeightPx = panelHeight
+                changed = true
+            }
+            if (changed) requestLayout()
+        }
+
+        /** 更新两行文本与颜色；文本变化才 requestLayout（颜色变化只 invalidate） */
+        fun setContent(
+            chinese: String,
+            english: String?,
+            chineseColor: Int,
+            englishColor: Int,
+        ) {
+            val normalizedEnglish = english?.takeIf { CandidateItemMetrics.showsEnglishLine(it) }
+            if (chineseText != chinese || englishText != normalizedEnglish) {
+                chineseText = chinese
+                englishText = normalizedEnglish
+                requestLayout()
+            }
+            chinesePaint.color = chineseColor
+            englishPaint.color = englishColor
+            invalidate()
+        }
+
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val chineseWidth = ceil(chinesePaint.measureText(chineseText).toDouble()).toInt()
+            val englishWidth = if (CandidateItemMetrics.showsEnglishLine(englishText)) {
+                ceil(englishPaint.measureText(englishText!!).toDouble()).toInt()
+            } else {
+                0
+            }
+            val desiredWidth = CandidateItemMetrics.requiredWidth(
+                chineseWidth = chineseWidth,
+                englishWidth = englishWidth,
+                horizontalPadding = horizontalPadding,
+                minWidth = minWidthPx,
+            )
+            setMeasuredDimension(
+                desiredWidth,
+                resolveSize(panelHeightPx, heightMeasureSpec),
+            )
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            if (chineseText.isEmpty()) return
+
+            val chineseMetrics = chinesePaint.fontMetrics
+            val chineseHeight = chineseMetrics.descent - chineseMetrics.ascent
+            val showEnglish = CandidateItemMetrics.showsEnglishLine(englishText)
+            val englishMetrics = englishPaint.fontMetrics
+            val englishHeight = if (showEnglish) {
+                englishMetrics.descent - englishMetrics.ascent
+            } else {
+                0f
+            }
+            val totalHeight = chineseHeight + englishHeight
+            val top = (height - totalHeight) / 2f
+            val centerX = width / 2f
+
+            canvas.drawText(chineseText, centerX, top - chineseMetrics.ascent, chinesePaint)
+            if (showEnglish) {
+                canvas.drawText(
+                    englishText!!,
+                    centerX,
+                    top + chineseHeight - englishMetrics.ascent,
+                    englishPaint,
+                )
+            }
+        }
+    }
 
     /** 选中背景：一个实例复用给所有候选（切换选中态时只是换引用，不新建 drawable） */
     private var selectedBackground: GradientDrawable? = null
@@ -77,6 +205,11 @@ class CandidateBar @JvmOverloads constructor(
      * 这样**点击区域 = 面板高度（56dp）**，而视觉仍是原来的小圆角块。
      */
     private var selectedBackgroundInset: InsetDrawable? = null
+
+    /**
+     * 两行候选的选中背景：内缩更小，圆角块包住「中文 + 英文」两行（仍不超出固定面板高度）。
+     */
+    private var selectedBackgroundTwoLine: InsetDrawable? = null
 
     /**
      * 右侧「还有内容」提示：不新增 View、不使用渐变。
@@ -120,11 +253,11 @@ class CandidateBar @JvmOverloads constructor(
                 candidateDividers += divider
                 row.addView(divider, dividerParams())
             }
-            val view = TextView(context)
+            val view = CandidateItemView(context)
             candidateViews += view
             row.addView(
                 view,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, theme.candidateChipHeight),
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT),
             )
         }
         row.addView(
@@ -149,7 +282,11 @@ class CandidateBar @JvmOverloads constructor(
             setColor(theme.candidateSelectedBackground)
             cornerRadius = theme.radiusSmall
         }
-        selectedBackgroundInset = insetChip(selectedBackground!!)
+        selectedBackgroundInset = insetChip(selectedBackground!!, theme.candidateChipHeight)
+        // 两行模式：内缩更小，圆角块包住两行；仍受固定面板高度约束（不会撑高）
+        val twoLineHeight = (theme.topPanelHeight - theme.spaceXs * 2)
+            .coerceAtLeast(theme.candidateChipHeight)
+        selectedBackgroundTwoLine = insetChip(selectedBackground!!, twoLineHeight)
         hintPaint.color = theme.candidateMutedText
         hintMaskPaint.color = theme.panelBackground
 
@@ -167,6 +304,7 @@ class CandidateBar @JvmOverloads constructor(
                     setColor(theme.pinyinBackground)
                     cornerRadius = theme.radiusSmall
                 },
+                theme.candidateChipHeight,
             )
             isClickable = true
             setOnClickListener { onComposingClicked?.invoke() }
@@ -177,19 +315,19 @@ class CandidateBar @JvmOverloads constructor(
         }
 
         candidateViews.forEach { view ->
-            view.apply {
-                setTextSize(TypedValue.COMPLEX_UNIT_PX, theme.candidateTextSize)
-                includeFontPadding = false
-                gravity = Gravity.CENTER
-                minWidth = theme.candidateMinWidth
-                maxLines = 1
-                setPadding(theme.candidatePaddingHorizontal, 0, theme.candidatePaddingHorizontal, 0)
-                layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
-                    // 点击区域撑满面板；视觉高度由选中背景的内缩控制（仍为 32dp chip）
-                    height = LinearLayout.LayoutParams.MATCH_PARENT
-                }
-                setOnClickListener { onCandidateSelected?.invoke(tag as? Int ?: -1) }
+            view.applyStyle(
+                textSizePx = theme.candidateTextSize,
+                englishTextSizePx = theme.candidateEnglishTextSize,
+                minWidth = theme.candidateMinWidth,
+                padding = theme.candidatePaddingHorizontal,
+                panelHeight = theme.topPanelHeight,
+            )
+            view.layoutParams = (view.layoutParams as LinearLayout.LayoutParams).apply {
+                // 点击区域撑满面板；视觉高度由选中背景的内缩控制
+                height = LinearLayout.LayoutParams.MATCH_PARENT
             }
+            view.isClickable = true
+            view.setOnClickListener { onCandidateSelected?.invoke(view.tag as? Int ?: -1) }
         }
         hintView.apply {
             setTextSize(TypedValue.COMPLEX_UNIT_PX, theme.functionKeyTextSize)
@@ -260,7 +398,10 @@ class CandidateBar @JvmOverloads constructor(
             it.isNotEmpty() && list.firstOrNull()?.text != it
         }
 
-        val key = (pill ?: "") + "|" + list.joinToString("|") { it.label } + "#" + hint.orEmpty()
+        // 释义也进入 key：开关 / 释义变化时才会重绘，普通刷新（相同内容）仍然早退
+        val key = (pill ?: "") + "|" +
+            list.joinToString("|") { it.label + "\u0001" + it.englishGloss.orEmpty() } +
+            "#" + hint.orEmpty()
         if (key == lastRenderedKey) return
         lastRenderedKey = key
 
@@ -284,17 +425,27 @@ class CandidateBar @JvmOverloads constructor(
             }
             if (divider != null) divider.visibility = VISIBLE
             view.visibility = VISIBLE
+            // 候选 index：与引擎给出的候选列表下标完全一致（英文释义不参与）
             view.tag = index
-            view.text = candidate.label
             val selected = index == 0 && !candidate.isHint
-            view.setTextColor(
-                when {
-                    candidate.isHint -> theme.candidateMutedText
-                    selected -> theme.candidateSelectedText
-                    else -> theme.candidateText
-                },
+            val chineseColor = when {
+                candidate.isHint -> theme.candidateMutedText
+                selected -> theme.candidateSelectedText
+                else -> theme.candidateText
+            }
+            // 中文（label）与英文（englishGloss）属于同一个 View：一起绘制 / 一起点击
+            view.setContent(
+                chinese = candidate.label,
+                english = candidate.englishGloss,
+                chineseColor = chineseColor,
+                englishColor = theme.candidateMutedText,
             )
-            view.background = if (selected) selectedBackgroundInset else null
+            val twoLine = CandidateItemMetrics.showsEnglishLine(candidate.englishGloss)
+            view.background = when {
+                selected && twoLine -> selectedBackgroundTwoLine
+                selected -> selectedBackgroundInset
+                else -> null
+            }
             view.isClickable = candidate.enabled
         }
 
@@ -318,9 +469,9 @@ class CandidateBar @JvmOverloads constructor(
             setMargins(gap, 0, gap, 0)
         }
 
-    /** 把 chip 背景上下内缩：视觉高度仍是 chip 高度，但 View 本身撑满面板（点击区域更大） */
-    private fun insetChip(shape: GradientDrawable): InsetDrawable {
-        val inset = ((theme.topPanelHeight - theme.candidateChipHeight) / 2).coerceAtLeast(0)
+    /** 把 chip 背景上下内缩到 [visualHeight]：视觉高度受控，但 View 本身撑满面板（点击区域更大） */
+    private fun insetChip(shape: GradientDrawable, visualHeight: Int): InsetDrawable {
+        val inset = ((theme.topPanelHeight - visualHeight) / 2).coerceAtLeast(0)
         return InsetDrawable(shape, 0, inset, 0, inset)
     }
 
@@ -352,7 +503,6 @@ class CandidateBar @JvmOverloads constructor(
     private fun dividerHeight(): Int = (theme.candidateChipHeight * 0.55f).roundToInt()
 
     private companion object {
-        /** librime 一页最多 9 个，这里留足余量；多出来的隐藏复用 */
         /**
          * 候选栏**最多渲染多少个候选**（可横向滑动的总数，不是屏幕上同时可见的数量）。
          *

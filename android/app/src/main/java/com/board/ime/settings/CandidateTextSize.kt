@@ -14,11 +14,13 @@ enum class CandidateTextSize(
     val pinyinSp: Float,
     /** 候选词左右内边距（dp） */
     val horizontalPaddingDp: Float,
+    /** 候选英文释义字号（sp）：辅助信息，明显小于中文 */
+    val englishGlossSp: Float,
 ) {
-    SMALL("小", 16f, 14f, 12f),
-    STANDARD("标准", 19f, 16f, 14f),
-    LARGE("大", 22f, 17f, 16f),
-    XLARGE("特大", 25f, 18f, 18f),
+    SMALL("小", 16f, 14f, 12f, 10f),
+    STANDARD("标准", 19f, 16f, 14f, 11f),
+    LARGE("大", 22f, 17f, 16f, 12f),
+    XLARGE("特大", 25f, 18f, 18f, 13f),
     ;
 
     companion object {

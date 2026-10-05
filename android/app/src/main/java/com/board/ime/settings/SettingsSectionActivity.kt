@@ -260,6 +260,23 @@ class SettingsSectionActivity : AppCompatActivity() {
         )
         content.addView(SettingsUi.cardView(this, size))
 
+        val gloss = SettingsUi.card(this)
+        gloss.addView(SettingsUi.heading(this, "候选英文释义"))
+        gloss.addView(
+            SettingsUi.switchRow(
+                this,
+                "在候选下方显示英文释义",
+                preferences.candidateEnglishGlossEnabled,
+            ) { enabled -> preferences.candidateEnglishGlossEnabled = enabled },
+        )
+        gloss.addView(
+            SettingsUi.hint(
+                this,
+                "默认关闭。只使用 Board 内置的本地词表，不联网、不读取或保存你输入的内容。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, gloss))
+
         val colors = SettingsUi.card(this)
         colors.addView(SettingsUi.heading(this, "颜色"))
         colors.addView(SettingsUi.hint(this, "点一行改一项；不设置就沿用默认（白 / 黑 / 灰 + 少量蓝）。"))

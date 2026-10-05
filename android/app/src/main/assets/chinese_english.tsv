@@ -1,0 +1,5152 @@
+# Board 本地中英释义表（人工确认，面向真实高频使用场景）
+#
+# 格式：中文<TAB>英文
+# 规则：含义明确、稳定、常用的词/固定表达才收录；歧义大/多义/上下文依赖的词一律不收录
+#       （宁可 lookup 返回 null、不显示英文，也不显示误导性英文）。
+#       单字默认不收录，仅保留极少数含义极稳定的（我/你/他/她/谁）。
+# 来源：Board 项目人工整理的基础常用词对照，非第三方词典/在线翻译数据，随项目源码分发。
+# 解析：ChineseEnglishTsv.parse（跳过注释/空行/坏行）；ChineseEnglishLexicon 常驻内存 O(1) 查询。
+
+# ==================== 人称 / 称谓 ====================
+我	I
+你	you
+他	he
+她	she
+谁	who
+我们	we
+你们	you
+他们	they
+她们	they
+咱们	we
+大家	everyone
+自己	oneself
+别人	others
+大人	adult
+小孩	child
+男孩	boy
+女孩	girl
+男人	man
+女人	woman
+老人	old man
+婴儿	baby
+宝宝	baby
+宝贝	baby
+人物	figure
+角色	role
+主角	main character
+
+# ==================== 家庭 / 关系 ====================
+家人	family
+亲人	relative
+亲戚	relative
+父母	parents
+父亲	father
+母亲	mother
+爸爸	dad
+妈妈	mom
+哥哥	older brother
+弟弟	younger brother
+姐姐	older sister
+妹妹	younger sister
+兄弟	brother
+姐妹	sister
+爷爷	grandfather
+奶奶	grandmother
+外公	grandfather
+外婆	grandmother
+叔叔	uncle
+阿姨	aunt
+舅舅	uncle
+姑姑	aunt
+儿子	son
+女儿	daughter
+孙子	grandson
+孙女	granddaughter
+丈夫	husband
+妻子	wife
+老公	husband
+老婆	wife
+男朋友	boyfriend
+女朋友	girlfriend
+爱人	spouse
+孩子	child
+儿童	child
+青少年	teenager
+年轻人	young people
+成年人	adult
+陌生人	stranger
+客人	guest
+主人	host
+邻居	neighbor
+朋友	friend
+
+# ==================== 职业 ====================
+老师	teacher
+教师	teacher
+学生	student
+同学	classmate
+校长	principal
+教授	professor
+医生	doctor
+大夫	doctor
+护士	nurse
+牙医	dentist
+兽医	veterinarian
+警察	police
+消防员	firefighter
+士兵	soldier
+军人	soldier
+司机	driver
+飞行员	pilot
+船长	captain
+工人	worker
+农民	farmer
+渔民	fisherman
+工程师	engineer
+程序员	programmer
+设计师	designer
+建筑师	architect
+科学家	scientist
+研究员	researcher
+数学家	mathematician
+物理学家	physicist
+化学家	chemist
+生物学家	biologist
+艺术家	artist
+画家	painter
+歌手	singer
+音乐家	musician
+演员	actor
+导演	director
+作家	writer
+记者	reporter
+编辑	editor
+摄影师	photographer
+主持人	host
+模特	model
+运动员	athlete
+教练	coach
+裁判	referee
+厨师	chef
+服务员	waiter
+售货员	salesperson
+收银员	cashier
+理发师	barber
+裁缝	tailor
+木匠	carpenter
+修理工	repairman
+电工	electrician
+清洁工	cleaner
+保安	guard
+邮递员	mailman
+快递员	courier
+外卖员	delivery rider
+翻译	translator
+导游	tour guide
+律师	lawyer
+法官	judge
+会计	accountant
+银行家	banker
+经理	manager
+老板	boss
+总裁	president
+董事长	chairman
+秘书	secretary
+职员	clerk
+公务员	civil servant
+商人	businessman
+企业家	entrepreneur
+顾客	customer
+客户	client
+用户	user
+会员	member
+同事	colleague
+搭档	partner
+下属	subordinate
+助手	assistant
+领导	leader
+
+# ==================== 日常生活 ====================
+吃饭	eat
+喝水	drink water
+喝茶	drink tea
+喝咖啡	drink coffee
+睡觉	sleep
+起床	get up
+醒来	wake up
+洗澡	take a bath
+洗脸	wash face
+洗手	wash hands
+刷牙	brush teeth
+梳头	comb hair
+穿衣	get dressed
+脱衣	undress
+上班	go to work
+下班	get off work
+加班	work overtime
+请假	ask for leave
+出差	business trip
+回家	go home
+出门	go out
+进去	go in
+出去	go out
+回来	come back
+回去	go back
+到达	arrive
+出发	depart
+休息	rest
+放松	relax
+午睡	nap
+聊天	chat
+说话	talk
+讲话	speak
+打电话	make a call
+接电话	answer the phone
+挂电话	hang up
+发消息	send a message
+收消息	receive a message
+看书	read a book
+读书	read
+看报	read a newspaper
+听歌	listen to music
+唱歌	sing
+跳舞	dance
+看电影	watch a movie
+看电视	watch TV
+玩游戏	play games
+散步	take a walk
+跑步	run
+锻炼	exercise
+游泳	swim
+爬山	climb a mountain
+钓鱼	go fishing
+旅行	travel
+旅游	travel
+购物	shop
+买菜	buy groceries
+做饭	cook
+洗碗	wash dishes
+打扫卫生	clean up
+洗衣服	do laundry
+晾衣服	hang clothes
+叠衣服	fold clothes
+打扫	clean
+整理	tidy up
+收拾	tidy up
+修理	repair
+搬家	move house
+拜访	visit
+约会	date
+结婚	get married
+离婚	divorce
+长大	grow up
+上学	go to school
+放学	finish school
+上课	attend class
+下课	finish class
+考试	take an exam
+毕业	graduate
+庆祝	celebrate
+生日	birthday
+礼物	gift
+红包	red envelope
+过节	celebrate a festival
+过年	celebrate New Year
+
+# ==================== 电脑 / 手机 / 网络操作 ====================
+打开	open
+关闭	close
+开启	turn on
+关掉	turn off
+点击	click
+双击	double click
+长按	long press
+滑动	slide
+拖动	drag
+输入	input
+输出	output
+保存	save
+复制	copy
+粘贴	paste
+剪切	cut
+删除	delete
+撤销	undo
+搜索	search
+查找	find
+替换	replace
+选择	select
+取消	cancel
+确认	confirm
+提交	submit
+发送	send
+接收	receive
+下载	download
+上传	upload
+安装	install
+卸载	uninstall
+更新	update
+升级	upgrade
+登录	log in
+注册	register
+退出登录	log out
+注销	log out
+退出	exit
+进入	enter
+返回	back
+刷新	refresh
+重启	restart
+启动	start
+停止	stop
+暂停	pause
+继续	continue
+恢复	restore
+连接	connect
+断开	disconnect
+分享	share
+收藏	favorite
+点赞	like
+评论	comment
+关注	follow
+订阅	subscribe
+屏蔽	block
+举报	report
+转发	forward
+回复	reply
+浏览	browse
+访问	visit
+新建	create
+创建	create
+修改	modify
+查看	view
+预览	preview
+打印	print
+扫描	scan
+导入	import
+导出	export
+备份	backup
+同步	sync
+设置	settings
+配置	configure
+允许	allow
+拒绝	deny
+授权	authorize
+验证	verify
+绑定	bind
+
+# ==================== 高频抽象词 ====================
+问题	question
+答案	answer
+方法	method
+办法	way
+原因	reason
+结果	result
+事情	thing
+时间	time
+地方	place
+方式	way
+情况	situation
+机会	chance
+可能	possible
+需要	need
+希望	hope
+感觉	feeling
+想法	idea
+意见	opinion
+决定	decision
+计划	plan
+目标	goal
+任务	task
+经验	experience
+教训	lesson
+知识	knowledge
+信息	information
+消息	message
+新闻	news
+内容	content
+意思	meaning
+目的	purpose
+价值	value
+利益	interest
+权利	right
+义务	duty
+责任	responsibility
+规则	rule
+规定	regulation
+法律	law
+政策	policy
+制度	system
+标准	standard
+水平	level
+质量	quality
+数量	quantity
+速度	speed
+效率	efficiency
+能力	ability
+努力	effort
+成功	success
+失败	failure
+进步	progress
+发展	development
+变化	change
+影响	influence
+作用	effect
+效果	effect
+优点	advantage
+缺点	disadvantage
+特点	feature
+区别	difference
+联系	contact
+沟通	communication
+合作	cooperation
+竞争	competition
+支持	support
+帮助	help
+建议	suggestion
+要求	requirement
+条件	condition
+基础	foundation
+关键	key
+重点	focus
+难点	difficulty
+过程	process
+阶段	stage
+未来	future
+过去	past
+现在	present
+历史	history
+文化	culture
+艺术	art
+科学	science
+技术	technology
+教育	education
+经济	economy
+政治	politics
+军事	military
+环境	environment
+自然	nature
+地球	earth
+宇宙	universe
+社会	society
+家庭	family
+关系	relationship
+生活	life
+工作	work
+学习	study
+世界	world
+
+# ==================== 科技 / 互联网 ====================
+手机	mobile phone
+电话	phone
+电脑	computer
+网络	internet
+互联网	internet
+网站	website
+网页	web page
+浏览器	browser
+软件	software
+硬件	hardware
+应用	application
+程序	program
+代码	code
+账号	account
+账户	account
+密码	password
+用户名	username
+文件	file
+文件夹	folder
+图片	image
+照片	photo
+视频	video
+音频	audio
+录音	recording
+播放	play
+键盘	keyboard
+鼠标	mouse
+屏幕	screen
+显示器	monitor
+摄像头	camera
+耳机	earphone
+充电器	charger
+电池	battery
+信号	signal
+无线	wireless
+蓝牙	bluetooth
+数据	data
+数据库	database
+服务器	server
+系统	system
+平台	platform
+链接	link
+网址	web address
+邮箱	email
+邮件	email
+短信	text message
+微信	WeChat
+机器人	robot
+人工智能	artificial intelligence
+智能	smart
+数码	digital
+芯片	chip
+内存	memory
+硬盘	hard disk
+设备	device
+终端	terminal
+功能	function
+界面	interface
+版本	version
+补丁	patch
+漏洞	bug
+病毒	virus
+黑客	hacker
+防护	protection
+隐私	privacy
+权限	permission
+
+# ==================== 食物 / 饮品 ====================
+米饭	rice
+面条	noodles
+面包	bread
+馒头	steamed bun
+饺子	dumplings
+包子	steamed bun
+鸡蛋	egg
+牛奶	milk
+豆浆	soy milk
+奶酪	cheese
+黄油	butter
+鸡肉	chicken
+牛肉	beef
+猪肉	pork
+羊肉	lamb
+鱼肉	fish
+螃蟹	crab
+蔬菜	vegetable
+水果	fruit
+土豆	potato
+西红柿	tomato
+黄瓜	cucumber
+白菜	Chinese cabbage
+萝卜	radish
+胡萝卜	carrot
+洋葱	onion
+大蒜	garlic
+辣椒	chili
+茄子	eggplant
+菠菜	spinach
+蘑菇	mushroom
+玉米	corn
+花生	peanut
+坚果	nut
+咖啡	coffee
+奶茶	milk tea
+果汁	juice
+啤酒	beer
+红酒	red wine
+白酒	liquor
+饮料	drink
+酱油	soy sauce
+蛋糕	cake
+饼干	biscuit
+巧克力	chocolate
+糖果	candy
+冰淇淋	ice cream
+汉堡	hamburger
+披萨	pizza
+三明治	sandwich
+薯条	fries
+早餐	breakfast
+午餐	lunch
+晚餐	dinner
+菜单	menu
+餐厅	restaurant
+味道	taste
+好吃	delicious
+
+# ==================== 水果 ====================
+苹果	apple
+香蕉	banana
+橙子	orange
+西瓜	watermelon
+葡萄	grape
+草莓	strawberry
+桃子	peach
+柠檬	lemon
+樱桃	cherry
+芒果	mango
+菠萝	pineapple
+椰子	coconut
+石榴	pomegranate
+猕猴桃	kiwi
+柚子	pomelo
+柿子	persimmon
+
+# ==================== 地点 / 场所 ====================
+银行	bank
+医院	hospital
+学校	school
+公司	company
+商店	store
+超市	supermarket
+商场	shopping mall
+市场	market
+饭店	restaurant
+酒店	hotel
+宾馆	hotel
+机场	airport
+车站	station
+火车站	train station
+地铁站	subway station
+公交站	bus stop
+办公室	office
+公园	park
+图书馆	library
+博物馆	museum
+电影院	cinema
+剧院	theater
+体育馆	gym
+操场	playground
+教室	classroom
+宿舍	dormitory
+实验室	laboratory
+工厂	factory
+农场	farm
+村庄	village
+城市	city
+首都	capital
+国家	country
+家乡	hometown
+街道	street
+马路	road
+路口	intersection
+广场	square
+森林	forest
+花园	garden
+房子	house
+电梯	elevator
+楼梯	stairs
+门口	doorway
+洗手间	restroom
+厕所	toilet
+厨房	kitchen
+卧室	bedroom
+客厅	living room
+阳台	balcony
+车库	garage
+加油站	gas station
+邮局	post office
+药店	pharmacy
+书店	bookstore
+面包店	bakery
+咖啡馆	cafe
+酒吧	bar
+理发店	barbershop
+警察局	police station
+消防站	fire station
+
+# ==================== 交通 ====================
+汽车	car
+火车	train
+飞机	airplane
+公交车	bus
+地铁	subway
+出租车	taxi
+自行车	bicycle
+摩托车	motorcycle
+卡车	truck
+轮船	ship
+高铁	high-speed rail
+航班	flight
+车票	ticket
+机票	plane ticket
+行李	luggage
+箱子	suitcase
+背包	backpack
+乘客	passenger
+交通	traffic
+红绿灯	traffic light
+
+# ==================== 时间 ====================
+今天	today
+明天	tomorrow
+昨天	yesterday
+前天	the day before yesterday
+后天	the day after tomorrow
+目前	currently
+刚才	just now
+以后	later
+以前	before
+早上	morning
+上午	morning
+中午	noon
+下午	afternoon
+晚上	evening
+夜里	night
+半夜	midnight
+星期一	Monday
+星期二	Tuesday
+星期三	Wednesday
+星期四	Thursday
+星期五	Friday
+星期六	Saturday
+星期日	Sunday
+周末	weekend
+每天	every day
+马上	right away
+最近	recently
+小时	hour
+分钟	minute
+秒钟	second
+今年	this year
+去年	last year
+明年	next year
+月份	month
+年份	year
+季节	season
+春天	spring
+夏天	summer
+秋天	autumn
+冬天	winter
+早晨	morning
+傍晚	evening
+白天	daytime
+夜晚	night
+日期	date
+时刻	moment
+期间	period
+
+# ==================== 疑问 / 交流 ====================
+什么	what
+为什么	why
+怎么	how
+怎么样	how
+哪里	where
+哪个	which
+多少	how many
+什么时候	when
+可以	can
+不可以	cannot
+有没有	is there
+是不是	is it
+怎么办	what to do
+什么意思	what does it mean
+多少钱	How much is it?
+请问	may I ask
+谢谢	thank you
+对不起	sorry
+没关系	no problem
+不客气	you're welcome
+再见	goodbye
+你好	hello
+早上好	good morning
+晚上好	good evening
+晚安	good night
+回头见	see you later
+加油	come on
+辛苦	hard work
+拜托	please
+好的	okay
+当然	of course
+应该	should
+必须	must
+想要	want
+喜欢	like
+不喜欢	dislike
+
+# ==================== 情绪 / 状态 / 形容词 ====================
+开心	happy
+高兴	happy
+快乐	happy
+幸福	happy
+难过	sad
+伤心	sad
+生气	angry
+愤怒	angry
+害怕	afraid
+紧张	nervous
+疲惫	tired
+健康	healthy
+安全	safe
+危险	dangerous
+重要	important
+简单	simple
+困难	difficult
+容易	easy
+复杂	complex
+正确	correct
+错误	wrong
+安静	quiet
+吵闹	noisy
+干净	clean
+肮脏	dirty
+新鲜	fresh
+漂亮	beautiful
+美丽	beautiful
+可爱	cute
+帅气	handsome
+丑陋	ugly
+聪明	smart
+愚蠢	stupid
+善良	kind
+友好	friendly
+热情	warm
+冷漠	cold
+认真	serious
+马虎	careless
+诚实	honest
+勇敢	brave
+胆小	timid
+温柔	gentle
+严厉	strict
+耐心	patient
+粗心	careless
+仔细	careful
+急躁	impatient
+冷静	calm
+激动	excited
+惊讶	surprised
+困惑	confused
+满意	satisfied
+失望	disappointed
+骄傲	proud
+谦虚	humble
+孤独	lonely
+无聊	bored
+有趣	interesting
+好玩	fun
+难看	ugly
+必要	necessary
+有用	useful
+无用	useless
+方便	convenient
+麻烦	troublesome
+舒服	comfortable
+难受	uncomfortable
+暖和	warm
+寒冷	cold
+炎热	hot
+凉爽	cool
+潮湿	humid
+干燥	dry
+明亮	bright
+黑暗	dark
+宽敞	spacious
+狭窄	narrow
+拥挤	crowded
+昂贵	expensive
+便宜	cheap
+免费	free
+富有	rich
+贫穷	poor
+强壮	strong
+虚弱	weak
+年轻	young
+年老	old
+高大	tall
+矮小	short
+肥胖	fat
+
+# ==================== 身体 / 健康 / 医疗 ====================
+身体	body
+头发	hair
+眼睛	eye
+耳朵	ear
+鼻子	nose
+嘴巴	mouth
+牙齿	tooth
+舌头	tongue
+脖子	neck
+肩膀	shoulder
+手臂	arm
+手指	finger
+手掌	palm
+肚子	belly
+膝盖	knee
+脚趾	toe
+皮肤	skin
+骨头	bone
+血液	blood
+心脏	heart
+大脑	brain
+生病	sick
+感冒	have a cold
+发烧	fever
+咳嗽	cough
+头疼	headache
+牙疼	toothache
+胃疼	stomachache
+疼痛	pain
+受伤	injured
+伤口	wound
+吃药	take medicine
+打针	get an injection
+手术	surgery
+住院	hospitalized
+出院	leave hospital
+体检	physical examination
+治疗	treatment
+康复	recovery
+减肥	lose weight
+营养	nutrition
+维生素	vitamin
+睡眠	sleep
+压力	pressure
+心情	mood
+精神	spirit
+
+# ==================== 自然 / 天气 ====================
+天气	weather
+晴天	sunny day
+阴天	cloudy day
+雨天	rainy day
+雪天	snowy day
+下雨	rain
+下雪	snow
+刮风	windy
+打雷	thunder
+闪电	lightning
+彩虹	rainbow
+温度	temperature
+气候	climate
+太阳	sun
+月亮	moon
+星星	star
+天空	sky
+露水	dew
+大自然	nature
+沙漠	desert
+草原	grassland
+海洋	ocean
+岛屿	island
+山峰	peak
+山谷	valley
+瀑布	waterfall
+河流	river
+湖泊	lake
+土地	land
+泥土	soil
+石头	stone
+沙子	sand
+木头	wood
+空气	air
+阳光	sunlight
+影子	shadow
+环保	environmental protection
+污染	pollution
+垃圾	garbage
+回收	recycle
+
+# ==================== 动物 ====================
+动物	animal
+兔子	rabbit
+老鼠	mouse
+老虎	tiger
+狮子	lion
+大象	elephant
+猴子	monkey
+熊猫	panda
+狐狸	fox
+青蛙	frog
+乌龟	turtle
+鳄鱼	crocodile
+鲸鱼	whale
+鲨鱼	shark
+海豚	dolphin
+蜜蜂	bee
+蝴蝶	butterfly
+蚂蚁	ant
+蜘蛛	spider
+蚊子	mosquito
+苍蝇	fly
+虫子	insect
+恐龙	dinosaur
+宠物	pet
+尾巴	tail
+翅膀	wing
+羽毛	feather
+爪子	claw
+
+# ==================== 植物 ====================
+植物	plant
+叶子	leaf
+种子	seed
+竹子	bamboo
+松树	pine
+柳树	willow
+玫瑰	rose
+兰花	orchid
+菊花	chrysanthemum
+荷花	lotus
+树苗	sapling
+果实	fruit
+
+# ==================== 颜色 / 形状 / 数量 ====================
+颜色	color
+红色	red
+蓝色	blue
+绿色	green
+黄色	yellow
+黑色	black
+白色	white
+灰色	gray
+紫色	purple
+粉色	pink
+橙色	orange
+棕色	brown
+金色	golden
+银色	silver
+圆形	circle
+方形	square
+三角形	triangle
+长方形	rectangle
+直线	straight line
+曲线	curve
+一个	one
+两个	two
+一半	half
+一双	a pair
+几个	several
+很多	many
+一点	a little
+第一	first
+第二	second
+第三	third
+最后	last
+全部	all
+部分	part
+一些	some
+每个	every
+其他	other
+相同	same
+不同	different
+
+# ==================== 学校 / 教育 ====================
+教学	teaching
+课程	course
+科目	subject
+数学	math
+语文	Chinese
+英语	English
+物理	physics
+化学	chemistry
+生物	biology
+地理	geography
+体育	physical education
+美术	art
+音乐	music
+作业	homework
+练习	practice
+复习	review
+预习	preview
+笔记	notes
+课本	textbook
+成绩	grade
+分数	score
+答题	answer questions
+题目	title
+阅读	reading
+写作	writing
+口语	spoken language
+听力	listening
+学位	degree
+大学	university
+中学	middle school
+小学	primary school
+幼儿园	kindergarten
+班级	class
+年级	grade
+校服	school uniform
+书包	schoolbag
+铅笔	pencil
+钢笔	pen
+橡皮	eraser
+尺子	ruler
+本子	notebook
+字典	dictionary
+词典	dictionary
+
+# ==================== 工作 / 办公 ====================
+职业	occupation
+岗位	position
+职位	position
+工资	salary
+奖金	bonus
+面试	interview
+简历	resume
+招聘	recruitment
+录用	hire
+试用期	probation
+合同	contract
+会议	meeting
+开会	have a meeting
+报告	report
+汇报	report
+项目	project
+方案	plan
+进度	progress
+安排	arrangement
+日程	schedule
+日程表	schedule
+打卡	clock in
+打印机	printer
+资料	material
+档案	archive
+表格	form
+名片	business card
+工牌	work badge
+部门	department
+团队	team
+小组	group
+业绩	performance
+企业	enterprise
+
+# ==================== 购物 / 金钱 ====================
+买东西	buy things
+价格	price
+价钱	price
+打折	discount
+优惠	discount
+付款	pay
+支付	payment
+现金	cash
+银行卡	bank card
+信用卡	credit card
+钱包	wallet
+零钱	change
+发票	receipt
+收据	receipt
+退货	return goods
+换货	exchange goods
+保修	warranty
+服务	service
+客服	customer service
+订单	order
+快递	express delivery
+包裹	package
+运费	shipping fee
+优惠券	coupon
+积分	points
+会员卡	membership card
+购物车	shopping cart
+结账	checkout
+
+# ==================== 运动 / 娱乐 ====================
+运动	sports
+足球	football
+篮球	basketball
+排球	volleyball
+乒乓球	table tennis
+羽毛球	badminton
+网球	tennis
+棒球	baseball
+高尔夫	golf
+骑车	ride a bike
+健身	fitness
+瑜伽	yoga
+滑雪	skiing
+滑冰	skating
+登山	mountaineering
+比赛	competition
+冠军	champion
+亚军	runner-up
+奖牌	medal
+胜利	victory
+球队	team
+球迷	fan
+歌曲	song
+乐器	instrument
+钢琴	piano
+吉他	guitar
+小提琴	violin
+电影	movie
+电视	television
+节目	program
+综艺	variety show
+动画	animation
+漫画	comic
+小说	novel
+故事	story
+游戏	game
+玩具	toy
+棋盘	chessboard
+象棋	Chinese chess
+围棋	Go
+扑克	poker
+演唱会	concert
+展览	exhibition
+摄影	photography
+绘画	painting
+
+# ==================== 家居 / 用品 ====================
+家具	furniture
+桌子	table
+椅子	chair
+沙发	sofa
+枕头	pillow
+被子	quilt
+毯子	blanket
+床单	bed sheet
+柜子	cabinet
+书架	bookshelf
+衣柜	wardrobe
+抽屉	drawer
+镜子	mirror
+台灯	desk lamp
+灯泡	light bulb
+蜡烛	candle
+钟表	clock
+手表	watch
+闹钟	alarm clock
+钥匙	key
+窗户	window
+地板	floor
+墙壁	wall
+天花板	ceiling
+水龙头	faucet
+马桶	toilet
+浴缸	bathtub
+淋浴	shower
+毛巾	towel
+牙刷	toothbrush
+牙膏	toothpaste
+肥皂	soap
+洗发水	shampoo
+纸巾	tissue
+剪刀	scissors
+叉子	fork
+勺子	spoon
+筷子	chopsticks
+盘子	plate
+杯子	cup
+瓶子	bottle
+水壶	kettle
+冰箱	refrigerator
+洗衣机	washing machine
+空调	air conditioner
+遥控器	remote control
+插座	socket
+插头	plug
+充电宝	power bank
+雨伞	umbrella
+眼镜	glasses
+太阳镜	sunglasses
+口罩	mask
+手套	gloves
+帽子	hat
+围巾	scarf
+
+# ==================== 衣物 ====================
+衣服	clothes
+上衣	jacket
+外套	coat
+衬衫	shirt
+T恤	T-shirt
+毛衣	sweater
+裤子	pants
+短裤	shorts
+裙子	skirt
+连衣裙	dress
+内衣	underwear
+袜子	socks
+鞋子	shoes
+靴子	boots
+拖鞋	slippers
+运动鞋	sneakers
+皮带	belt
+领带	tie
+西装	suit
+制服	uniform
+睡衣	pajamas
+泳衣	swimsuit
+口袋	pocket
+纽扣	button
+拉链	zipper
+布料	cloth
+丝绸	silk
+
+# ==================== 社会 / 政府 / 法律 ====================
+政府	government
+公民	citizen
+人民	people
+民族	ethnic group
+农村	countryside
+社区	community
+人口	population
+选举	election
+投票	vote
+议会	parliament
+法规	regulation
+宪法	constitution
+法院	court
+监狱	prison
+犯罪	crime
+罪犯	criminal
+罚款	fine
+诉讼	lawsuit
+协议	agreement
+条约	treaty
+战争	war
+和平	peace
+军队	army
+武器	weapon
+金融	finance
+贸易	trade
+投资	investment
+税收	tax
+预算	budget
+福利	welfare
+保险	insurance
+养老金	pension
+慈善	charity
+
+# ==================== 常用动词补充 ====================
+
+# ==================== 常用名词 / 形容词补充 ====================
+东西	thing
+时候	time
+名字	name
+称呼	address
+声音	sound
+样子	appearance
+大小	size
+年龄	age
+性别	gender
+身份	identity
+地址	address
+号码	number
+数字	number
+手机号	phone number
+身份证	ID card
+护照	passport
+签证	visa
+地图	map
+方向	direction
+位置	location
+高度	height
+长度	length
+宽度	width
+深度	depth
+重量	weight
+体积	volume
+面积	area
+形状	shape
+材料	material
+工具	tool
+机器	machine
+零件	part
+产品	product
+品牌	brand
+广告	advertisement
+成本	cost
+利润	profit
+收入	income
+支出	expense
+费用	fee
+账单	bill
+债务	debt
+财富	wealth
+货币	currency
+美元	dollar
+人民币	RMB
+欧元	euro
+日元	yen
+
+# ==================== 固定表达 / 常用短语 ====================
+我爱你	I love you
+好久不见	long time no see
+辛苦了	thanks for your hard work
+没问题	no problem
+等一下	wait a moment
+不知道	I do not know
+我知道	I know
+我同意	I agree
+我不同意	I disagree
+我明白了	I understand
+真的吗	really
+太棒了	great
+恭喜	congratulations
+生日快乐	happy birthday
+新年快乐	happy new year
+身体健康	wish you good health
+一路平安	have a safe trip
+干杯	cheers
+欢迎	welcome
+慢走	take care
+保重	take care
+注意安全	stay safe
+小心	be careful
+别担心	do not worry
+别客气	you're welcome
+
+# ==================== 常见二字名词 ====================
+记录	record
+日记	diary
+报纸	newspaper
+杂志	magazine
+书籍	book
+文章	article
+博客	blog
+留言	message
+帖子	post
+标题	title
+作者	author
+读者	reader
+粉丝	fan
+观众	audience
+听众	audience
+桌面	desktop
+回收站	recycle bin
+搜索引擎	search engine
+输入法	input method
+
+# ==================== 常见二字动词 ====================
+开始	start
+结束	end
+完成	finish
+准备	prepare
+参加	participate
+组织	organize
+判断	judge
+分析	analyze
+研究	research
+发现	discover
+发明	invent
+创造	create
+改进	improve
+提高	improve
+降低	lower
+增加	increase
+减少	decrease
+改变	change
+保持	keep
+坚持	persist
+放弃	give up
+接受	accept
+同意	agree
+反对	oppose
+讨论	discuss
+商量	discuss
+解释	explain
+说明	explain
+表达	express
+描述	describe
+观察	observe
+注意	notice
+忘记	forget
+记住	remember
+回忆	recall
+想象	imagine
+考虑	consider
+认为	think
+相信	believe
+怀疑	doubt
+担心	worry
+期待	look forward to
+等待	wait
+寻找	look for
+找到	find
+丢失	lose
+获得	obtain
+拥有	own
+使用	use
+利用	utilize
+提供	provide
+给予	give
+收到	receive
+归还	return
+借出	lend
+借入	borrow
+消费	consume
+节省	save
+浪费	waste
+维护	maintain
+保护	protect
+破坏	destroy
+建立	establish
+重复	repeat
+训练	train
+培养	cultivate
+成长	grow
+尝试	try
+冒险	adventure
+照顾	take care of
+关心	care
+陪伴	accompany
+交流	communicate
+邀请	invite
+招待	treat
+感谢	thank
+道歉	apologize
+原谅	forgive
+抱怨	complain
+表扬	praise
+批评	criticize
+鼓励	encourage
+安慰	comfort
+祝贺	congratulate
+
+# ==================== 常见三字 / 四字词 ====================
+计算机	computer
+矿泉水	mineral water
+方便面	instant noodles
+驾驶证	driver license
+二维码	QR code
+大学生	college student
+中学生	middle school student
+小学生	primary school student
+研究生	graduate student
+留学生	international student
+中国人	Chinese people
+外国人	foreigner
+老年人	elderly people
+小朋友	child
+好朋友	good friend
+老朋友	old friend
+
+# ==================== 常见形容词补充 ====================
+美好	beautiful
+精彩	wonderful
+完美	perfect
+优秀	excellent
+出色	outstanding
+普通	ordinary
+特别	special
+独特	unique
+奇怪	strange
+正常	normal
+真实	real
+虚假	false
+明显	obvious
+清楚	clear
+模糊	blurry
+详细	detailed
+具体	specific
+准确	accurate
+精确	precise
+完整	complete
+全面	comprehensive
+丰富	rich
+充足	sufficient
+缺少	insufficient
+必然	inevitable
+主要	main
+次要	secondary
+基本	basic
+高级	advanced
+低级	low-level
+快速	fast
+缓慢	slow
+及时	timely
+准时	on time
+推迟	postpone
+提前	ahead of time
+古老	ancient
+现代	modern
+传统	traditional
+流行	popular
+时尚	fashionable
+经典	classic
+浪漫	romantic
+甜蜜	sweet
+温暖	warm
+热闹	lively
+平静	calm
+严重	serious
+轻微	slight
+
+# ==================== 其他高频词 ====================
+疾病	disease
+症状	symptom
+药品	medicine
+体温	body temperature
+血压	blood pressure
+体重	weight
+身高	height
+视力	eyesight
+习惯	habit
+爱好	hobby
+兴趣	interest
+梦想	dream
+理想	ideal
+信仰	belief
+宗教	religion
+道德	morality
+良心	conscience
+性格	personality
+脾气	temper
+态度	attitude
+行为	behavior
+表现	performance
+行动	action
+命运	fate
+运气	luck
+巧合	coincidence
+奇迹	miracle
+秘密	secret
+真相	truth
+谎言	lie
+谣言	rumor
+事实	fact
+观点	viewpoint
+立场	standpoint
+逻辑	logic
+规律	law
+天文学	astronomy
+心理学	psychology
+哲学	philosophy
+文学	literature
+语言	language
+汉字	Chinese character
+拼音	pinyin
+发音	pronunciation
+语法	grammar
+单词	word
+句子	sentence
+段落	paragraph
+含义	meaning
+例子	example
+比如	for example
+其实	actually
+也许	maybe
+大概	probably
+一定	certainly
+能够	be able to
+愿意	be willing to
+打算	plan to
+想念	miss
+讨厌	hate
+微笑	smile
+拥抱	hug
+亲吻	kiss
+握手	shake hands
+点头	nod
+摇头	shake head
+# ==================== 扩充批次 2 ====================
+之前	before
+之后	after
+古代	ancient times
+近代	modern times
+当代	contemporary
+世纪	century
+年代	era
+岁月	years
+时光	time
+期限	deadline
+星期	week
+礼拜	week
+钟头	hour
+片刻	moment
+瞬间	instant
+长期	long term
+短期	short term
+平时	usually
+偶尔	occasionally
+经常	often
+总是	always
+从不	never
+常常	often
+有时	sometimes
+梳子	comb
+篮子	basket
+袋子	bag
+打火机	lighter
+火柴	match
+绳子	rope
+胶带	tape
+胶水	glue
+订书机	stapler
+笔记本	notebook
+日历	calendar
+指南针	compass
+手电筒	flashlight
+计算器	calculator
+收音机	radio
+音响	speaker
+麦克风	microphone
+投影仪	projector
+扫描仪	scanner
+路由器	router
+网线	network cable
+充电线	charging cable
+数据线	data cable
+开关	switch
+旋钮	knob
+把手	handle
+盖子	lid
+包装	packaging
+盒子	box
+纸箱	cardboard box
+塑料袋	plastic bag
+垃圾桶	trash can
+扫把	broom
+拖把	mop
+抹布	rag
+海绵	sponge
+刷子	brush
+沐浴露	shower gel
+护肤品	skincare
+化妆品	cosmetics
+口红	lipstick
+香水	perfume
+梳妆台	dressing table
+床垫	mattress
+茶几	coffee table
+餐桌	dining table
+书桌	desk
+凳子	stool
+地毯	carpet
+窗帘	curtain
+壁画	mural
+相框	picture frame
+花瓶	vase
+盆栽	potted plant
+鱼缸	fish tank
+钥匙扣	keychain
+门铃	doorbell
+保温杯	thermos
+饭盒	lunch box
+电动车	electric bike
+三轮车	tricycle
+救护车	ambulance
+消防车	fire truck
+警车	police car
+货车	truck
+面包车	van
+跑车	sports car
+越野车	SUV
+火箭	rocket
+宇宙飞船	spaceship
+直升机	helicopter
+热气球	hot air balloon
+帆船	sailboat
+渡轮	ferry
+阵雨	shower
+暴雨	rainstorm
+台风	typhoon
+飓风	hurricane
+地震	earthquake
+洪水	flood
+干旱	drought
+火灾	fire
+事故	accident
+灾害	disaster
+日出	sunrise
+日落	sunset
+海浪	wave
+沙滩	beach
+海岸	coast
+山洞	cave
+悬崖	cliff
+岩石	rock
+火山	volcano
+冰川	glacier
+平原	plain
+高原	plateau
+盆地	basin
+山脉	mountain range
+溪流	stream
+池塘	pond
+泉水	spring water
+星空	starry sky
+银河	galaxy
+行星	planet
+卫星	satellite
+流星	meteor
+松鼠	squirrel
+长颈鹿	giraffe
+斑马	zebra
+河马	hippo
+犀牛	rhino
+袋鼠	kangaroo
+考拉	koala
+骆驼	camel
+山羊	goat
+水牛	buffalo
+母鸡	hen
+公鸡	rooster
+小鸡	chick
+鸽子	pigeon
+麻雀	sparrow
+老鹰	eagle
+猫头鹰	owl
+孔雀	peacock
+天鹅	swan
+企鹅	penguin
+海鸥	seagull
+鹦鹉	parrot
+乌鸦	crow
+燕子	swallow
+蜥蜴	lizard
+章鱼	octopus
+水母	jellyfish
+海星	starfish
+珊瑚	coral
+贝壳	shell
+猎豹	cheetah
+猩猩	gorilla
+蝙蝠	bat
+刺猬	hedgehog
+向日葵	sunflower
+郁金香	tulip
+百合	lily
+牡丹	peony
+樱花	cherry blossom
+树叶	leaf
+树枝	branch
+树干	trunk
+草坪	lawn
+麦子	wheat
+谷物	grain
+庄稼	crops
+果园	orchard
+菜园	vegetable garden
+温室	greenhouse
+房东	landlord
+房客	tenant
+雇员	employee
+雇主	employer
+导师	mentor
+校友	alumnus
+队友	teammate
+对手	opponent
+网民	netizen
+志愿者	volunteer
+明星	star
+偶像	idol
+网红	internet celebrity
+博主	blogger
+主播	streamer
+柜员	teller
+门卫	gatekeeper
+保姆	nanny
+护工	caregiver
+兴奋	excited
+郁闷	depressed
+沮丧	frustrated
+焦虑	anxious
+尴尬	embarrassed
+惭愧	ashamed
+内疚	guilty
+羡慕	envy
+嫉妒	jealous
+佩服	admire
+感激	grateful
+感动	moved
+满足	content
+绝望	desperate
+孤单	lonely
+自由	free
+轻松	relaxed
+沉重	heavy
+严肃	serious
+幽默	humorous
+开朗	cheerful
+内向	introverted
+外向	outgoing
+乐观	optimistic
+悲观	pessimistic
+自信	confident
+自卑	inferior
+固执	stubborn
+灵活	flexible
+勤奋	diligent
+懒惰	lazy
+虚伪	hypocritical
+慷慨	generous
+小气	stingy
+礼貌	polite
+粗鲁	rude
+文明	civilized
+成熟	mature
+幼稚	childish
+稳重	steady
+冲动	impulsive
+理性	rational
+感性	emotional
+病人	patient
+伤者	injured person
+药片	pill
+药水	liquid medicine
+疫苗	vaccine
+脉搏	pulse
+呼吸	breathing
+心跳	heartbeat
+免疫	immunity
+过敏	allergy
+炎症	inflammation
+细菌	bacteria
+感染	infection
+消毒	disinfect
+绷带	bandage
+拐杖	crutch
+轮椅	wheelchair
+担架	stretcher
+急救	first aid
+诊所	clinic
+病房	ward
+药房	pharmacy
+保健品	health product
+养生	health preservation
+学期	semester
+学年	school year
+课表	timetable
+学费	tuition
+奖学金	scholarship
+助学金	grant
+论文	thesis
+实验	experiment
+讲座	lecture
+课堂	classroom
+黑板	blackboard
+粉笔	chalk
+讲台	podium
+阅览室	reading room
+食堂	cafeteria
+校园	campus
+社团	club
+运动会	sports meet
+竞赛	competition
+成绩单	transcript
+毕业证	diploma
+学生证	student ID
+班主任	head teacher
+辅导员	counselor
+家教	tutor
+车间	workshop
+仓库	warehouse
+生产线	production line
+营销	marketing
+销售	sales
+采购	purchasing
+库存	inventory
+物流	logistics
+供应链	supply chain
+报销	reimbursement
+薪水	salary
+加班费	overtime pay
+年终奖	year-end bonus
+社保	social security
+公积金	housing fund
+退休	retire
+辞职	resign
+解雇	fire
+应聘	apply for a job
+履历	resume
+主管	supervisor
+总监	director
+创始人	founder
+股东	shareholder
+供应商	supplier
+摊位	stall
+商品	goods
+货架	shelf
+标签	label
+折扣	discount
+促销	promotion
+秒杀	flash sale
+抢购	rush to buy
+排队	queue
+找零	change
+小费	tip
+返现	cashback
+分期	installment
+贷款	loan
+存款	deposit
+取款	withdraw
+转账	transfer
+汇率	exchange rate
+硬币	coin
+纸币	banknote
+余额	balance
+理财	financial management
+股票	stock
+基金	fund
+理赔	claim settlement
+拳击	boxing
+摔跤	wrestling
+武术	martial arts
+太极	tai chi
+体操	gymnastics
+马拉松	marathon
+田径	athletics
+跳高	high jump
+跳远	long jump
+投篮	shoot
+射门	shoot
+进球	score a goal
+犯规	foul
+加时	overtime
+决赛	final
+半决赛	semifinal
+季军	third place
+奖杯	trophy
+奖品	prize
+颁奖	award ceremony
+音乐会	concert
+话剧	drama
+魔术	magic
+马戏	circus
+游乐园	amusement park
+动物园	zoo
+水族馆	aquarium
+网吧	internet cafe
+游戏厅	arcade
+露营	camping
+烧烤	barbecue
+野餐	picnic
+派对	party
+聚会	gathering
+婚礼	wedding
+葬礼	funeral
+房间	room
+卫生间	bathroom
+书房	study room
+储物间	storage room
+玄关	entrance
+走廊	corridor
+院子	yard
+屋顶	roof
+门锁	door lock
+坐垫	cushion
+被套	duvet cover
+枕套	pillowcase
+台布	tablecloth
+餐巾	napkin
+垃圾袋	garbage bag
+扫帚	broom
+簸箕	dustpan
+吸尘器	vacuum cleaner
+加湿器	humidifier
+取暖器	heater
+电风扇	electric fan
+微波炉	microwave
+烤箱	oven
+电饭煲	rice cooker
+高压锅	pressure cooker
+平底锅	frying pan
+砧板	cutting board
+菜刀	kitchen knife
+锅铲	spatula
+汤勺	ladle
+漏勺	strainer
+保鲜膜	plastic wrap
+锡纸	aluminum foil
+洗洁精	dish soap
+洗衣液	laundry detergent
+柔顺剂	fabric softener
+消毒液	disinfectant
+云端	cloud
+算法	algorithm
+模型	model
+识别	recognition
+语音	voice
+图像	image
+条形码	barcode
+推送	push notification
+提醒	reminder
+备忘录	memo
+通讯录	contacts
+群聊	group chat
+朋友圈	moments
+直播间	live room
+短视频	short video
+弹幕	bullet comment
+滤镜	filter
+美颜	beauty filter
+表情包	sticker
+好友	friend
+黑名单	blacklist
+投诉	complaint
+反馈	feedback
+在线	online
+离线	offline
+流量	data traffic
+套餐	plan
+话费	phone bill
+充值	recharge
+漫游	roaming
+热点	hotspot
+验证码	verification code
+指纹	fingerprint
+人脸识别	face recognition
+风俗	custom
+节日	festival
+春节	Spring Festival
+中秋节	Mid-Autumn Festival
+国庆节	National Day
+端午节	Dragon Boat Festival
+元宵节	Lantern Festival
+圣诞节	Christmas
+情人节	Valentine's Day
+母亲节	Mother's Day
+父亲节	Father's Day
+礼仪	etiquette
+寺庙	temple
+教堂	church
+祈祷	pray
+祝福	blessing
+神话	myth
+传说	legend
+民间	folk
+戏曲	opera
+书法	calligraphy
+国画	Chinese painting
+功夫	kung fu
+中医	traditional Chinese medicine
+中药	Chinese medicine
+针灸	acupuncture
+气功	qigong
+方面	aspect
+领域	field
+行业	industry
+机构	organization
+团体	group
+协会	association
+联盟	alliance
+委员会	committee
+论坛	forum
+峰会	summit
+演讲	speech
+总结	summary
+工程	project
+建设	construction
+施工	construction
+规划	planning
+管理	management
+运营	operation
+收益	income
+亏损	loss
+风险	risk
+危机	crisis
+挑战	challenge
+机遇	opportunity
+形势	situation
+趋势	trend
+前景	prospect
+现状	current situation
+背景	background
+氛围	atmosphere
+前提	premise
+依据	basis
+证据	evidence
+案例	case
+样本	sample
+结论	conclusion
+理论	theory
+概念	concept
+定义	definition
+分类	classification
+类型	type
+种类	kind
+品种	variety
+范围	range
+程度	degree
+比例	proportion
+平均	average
+总数	total
+整体	whole
+局部	part
+细节	detail
+现象	phenomenon
+本质	essence
+特征	characteristic
+属性	attribute
+用途	use
+性能	performance
+指标	indicator
+参数	parameter
+选项	option
+模式	mode
+状态	state
+流程	process
+步骤	step
+周期	cycle
+频率	frequency
+强度	intensity
+幅度	range
+好看	good-looking
+好听	pleasant to hear
+好笑	funny
+好闻	fragrant
+难吃	unpalatable
+难听	unpleasant
+难闻	smelly
+可怕	scary
+可靠	reliable
+可行	feasible
+可怜	pitiful
+可笑	ridiculous
+可惜	a pity
+可恶	hateful
+亲密	close
+亲切	friendly
+体贴	considerate
+忠诚	loyal
+值得	worthwhile
+划算	cost-effective
+高档	high-end
+优质	high quality
+劣质	inferior
+精致	exquisite
+粗糙	rough
+光滑	smooth
+柔软	soft
+坚硬	hard
+脆弱	fragile
+结实	sturdy
+搞定	get done
+处理	handle
+解决	solve
+应对	deal with
+面对	face
+克服	overcome
+适应	adapt
+调整	adjust
+改善	improve
+促进	promote
+推动	promote
+阻碍	hinder
+导致	lead to
+引起	cause
+造成	cause
+避免	avoid
+防止	prevent
+扩大	expand
+缩小	shrink
+提升	improve
+降级	downgrade
+优化	optimize
+简化	simplify
+统一	unify
+分开	separate
+合并	merge
+拆分	split
+排列	arrange
+排序	sort
+比较	compare
+对比	contrast
+区分	distinguish
+评估	evaluate
+评价	evaluate
+测量	measure
+计算	calculate
+统计	count
+估算	estimate
+预测	predict
+策划	plan
+执行	execute
+实施	implement
+落实	implement
+监督	supervise
+检查	check
+审核	review
+批准	approve
+签字	sign
+盖章	stamp
+申请	apply
+办理	handle
+受理	accept
+答复	reply
+催促	urge
+争论	argue
+辩论	debate
+协商	negotiate
+妥协	compromise
+达成	reach
+签署	sign
+生效	take effect
+失效	expire
+续签	renew
+终止	terminate
+延期	extend
+# ==================== 补充（用户点名 / 类别缺漏） ====================
+收集	collect
+手工	handicraft
+添加	add
+移动	move
+通知	notification
+中文	Chinese
+北京	Beijing
+上海	Shanghai
+中国	China
+日本	Japan
+美国	United States
+长城	Great Wall
+中华人民共和国	People's Republic of China
+人民银行	People's Bank of China
+# ==================== 明确单字（含义稳定、可独立对应常用英文） ====================
+一	one
+二	two
+三	three
+四	four
+五	five
+六	six
+七	seven
+八	eight
+九	nine
+十	ten
+零	zero
+百	hundred
+千	thousand
+万	ten thousand
+亿	hundred million
+人	person
+手	hand
+心	heart
+头	head
+眼	eye
+耳	ear
+鼻	nose
+口	mouth
+牙	tooth
+脚	foot
+腿	leg
+血	blood
+骨	bone
+天	day
+水	water
+火	fire
+山	mountain
+海	sea
+河	river
+湖	lake
+雨	rain
+雪	snow
+风	wind
+云	cloud
+星	star
+月	moon
+日	sun
+光	light
+土	soil
+石	stone
+木	wood
+花	flower
+草	grass
+树	tree
+家	home
+门	door
+书	book
+车	car
+钱	money
+饭	meal
+茶	tea
+酒	wine
+药	medicine
+桌	table
+椅	chair
+床	bed
+灯	lamp
+钟	clock
+伞	umbrella
+包	bag
+鞋	shoe
+帽	hat
+衣	clothes
+笔	pen
+纸	paper
+刀	knife
+碗	bowl
+杯	cup
+瓶	bottle
+锅	pot
+猫	cat
+狗	dog
+鱼	fish
+鸟	bird
+马	horse
+牛	cow
+羊	sheep
+猪	pig
+鸡	chicken
+鸭	duck
+虎	tiger
+龙	dragon
+新	new
+大	big
+小	small
+多	many
+高	tall
+低	low
+长	long
+短	short
+快	fast
+慢	slow
+冷	cold
+热	hot
+真	true
+假	false
+好	good
+坏	bad
+美	beautiful
+丑	ugly
+香	fragrant
+甜	sweet
+苦	bitter
+辣	spicy
+酸	sour
+咸	salty
+上	up
+下	down
+中	middle
+东	east
+南	south
+西	west
+北	north
+左	left
+右	right
+前	front
+后	back
+里	inside
+外	outside
+内	inside
+近	near
+远	far
+爱	love
+吃	eat
+喝	drink
+看	look
+听	listen
+说	speak
+走	walk
+跑	run
+写	write
+读	read
+笑	laugh
+哭	cry
+睡	sleep
+坐	sit
+站	stand
+来	come
+去	go
+给	give
+买	buy
+卖	sell
+唱	sing
+跳	jump
+飞	fly
+游	swim
+
+# ==================== 固定短语 ====================
+不用谢	you're welcome
+不好意思	excuse me
+我知道了	I understand
+我喜欢你	I like you
+我不喜欢	I don't like it
+我想要	I want
+我不要	I don't want it
+我需要	I need it
+我忘了	I forgot
+我记得	I remember
+怎么回事	what's going on
+在哪里	where is it
+可以吗	is it okay
+当然可以	of course
+马上回来	be right back
+请等一下	please wait a moment
+祝你顺利	good luck
+欢迎光临	welcome
+下午好	good afternoon
+许愿	make a wish
+麻烦你了	sorry to trouble you
+拜托了	please
+帮个忙	do me a favor
+放心	don't worry
+冷静一点	calm down
+别生气	don't be angry
+请进	come in
+请坐	please sit
+我保证	I promise
+我支持你	I support you
+我相信你	I believe you
+我等你	I'll wait for you
+我想你了	I miss you
+恭喜你	congratulations
+祝贺你	congratulations
+祝你成功	wish you success
+祝你身体健康	wish you good health
+节日快乐	happy holiday
+新年好	happy New Year
+圣诞快乐	merry Christmas
+你说了算	it's up to you
+随便你	up to you
+看情况	it depends
+没办法	there's no way
+无所谓	it doesn't matter
+别放在心上	don't take it to heart
+我理解你	I understand you
+我尽力了	I did my best
+再试一次	try again
+慢慢来	take your time
+别急	take it easy
+坚持一下	hold on
+快到了	almost there
+马上就好	it'll be ready soon
+我来帮你	let me help you
+我来付钱	let me pay
+我去看看	I'll go check
+我回来了	I'm back
+我出门了	I'm leaving
+我到家了	I'm home
+吃饭了吗	have you eaten?
+早点睡	go to bed early
+注意身体	take care of your health
+多喝水	drink more water
+多休息	get more rest
+别熬夜	don't stay up late
+多穿点	wear more clothes
+
+# ==================== 常见短句 ====================
+我要吃饭	I want to eat.
+我要睡觉	I want to sleep.
+我要回家	I want to go home.
+我想回家	I want to go home.
+我想吃饭	I want to eat.
+我想喝水	I want to drink water.
+我要喝水	I want to drink water.
+我不知道怎么办	I don't know what to do.
+你在干什么	What are you doing?
+你吃饭了吗	Have you eaten?
+你在哪里	Where are you?
+你好吗	How are you?
+你叫什么名字	What's your name?
+我在这里	I'm here.
+我马上回来	I'll be right back.
+我现在很忙	I'm busy right now.
+我现在没空	I'm not free right now.
+我需要帮助	I need help.
+请帮帮我	Please help me.
+给我看看	Let me see.
+让我看看	Let me see.
+这是什么	What is this?
+那是什么	What is that?
+这是什么意思	What does this mean?
+太贵了	It's too expensive.
+我买了	I'll take it.
+我不想要	I don't want it.
+我喜欢这个	I like this.
+我不喜欢这个	I don't like this.
+今天怎么样	How is today?
+明天见	See you tomorrow.
+下次见	See you next time.
+祝你好运	Good luck.
+我们一起走吧	Let's go.
+等我一下	Wait for me.
+我饿了	I'm hungry.
+我渴了	I'm thirsty.
+我很累	I'm tired.
+我很忙	I'm busy.
+我很好	I'm fine.
+我没事	I'm okay.
+对不起我迟到了	Sorry I'm late.
+请再说一遍	Please say it again.
+请慢一点	Please slow down.
+我听不懂	I don't understand.
+我会说中文	I can speak Chinese.
+我不会说英文	I can't speak English.
+你几岁了	How old are you?
+你是哪里人	Where are you from?
+很高兴认识你	Nice to meet you.
+你在哪	Where are you?
+你在干嘛	What are you doing?
+现在几点	What time is it now?
+几点了	What time is it?
+今天星期几	What day is it today?
+今天天气怎么样	How's the weather today?
+下雨了吗	Is it raining?
+明天会下雨吗	Will it rain tomorrow?
+我可以坐这里吗	Can I sit here?
+我可以帮你吗	Can I help you?
+你要喝什么	What would you like to drink?
+你要吃什么	What would you like to eat?
+我去买单	I'll pay the bill.
+请问洗手间在哪里	Where is the restroom?
+请问怎么走	How do I get there?
+我迷路了	I'm lost.
+请给我菜单	Please give me the menu.
+这个多少钱	How much is this?
+可以便宜一点吗	Can you make it cheaper?
+我想要这个	I want this.
+我随便	I'm easy.
+都可以	Anything is fine.
+我马上到	I'll be there soon.
+我在路上	I'm on my way.
+路上小心	Take care on the way.
+到家了吗	Are you home?
+早点休息	Rest early.
+做个好梦	Sweet dreams.
+周末愉快	Have a nice weekend.
+一路顺风	Have a safe trip.
+我很开心	I'm happy.
+我很难过	I'm sad.
+我很害怕	I'm scared.
+我很生气	I'm angry.
+我很紧张	I'm nervous.
+我很好奇	I'm curious.
+我们结婚吧	Let's get married.
+这个怎么卖	How much is this?
+便宜点吧	Make it cheaper.
+我考虑一下	Let me think about it.
+我再看看	Let me look around.
+就要这个	I'll take this one.
+请给我发票	Please give me a receipt.
+可以刷卡吗	Can I pay by card?
+怎么去	How do I get there?
+有多远	How far is it?
+我要去机场	I want to go to the airport.
+请带我去这个地址	Please take me to this address.
+我要买票	I want to buy a ticket.
+几点出发	What time does it leave?
+堵车了	There's a traffic jam.
+我在开会	I'm in a meeting.
+请发我邮件	Please email me.
+这个怎么做	How do I do this?
+我不太明白	I don't quite understand.
+请再解释一下	Please explain again.
+我要请假	I want to take leave.
+我下班了	I'm off work.
+我在加班	I'm working overtime.
+手机没电了	My phone is dead.
+信号不好	The signal is bad.
+发我微信	Send me on WeChat.
+连不上网	Can't connect to the internet.
+密码错了	Wrong password.
+重启一下试试	Try restarting.
+今天很热	It's hot today.
+今天很冷	It's cold today.
+要下雨了	It's going to rain.
+天气不错	The weather is nice.
+我出去一下	I'm stepping out.
+我在外面	I'm outside.
+我在地铁上	I'm on the subway.
+我在开车	I'm driving.
+我正在上课	I'm in class.
+我在开会中	I'm in a meeting.
+我忙完了	I'm done.
+我自由了	I'm free.
+我们走吧	Let's go.
+我等你回复	I'll wait for your reply.
+随时联系	Contact me anytime.
+有空吗	Are you free?
+一起吃饭吧	Let's eat together.
+周末一起玩	Let's hang out this weekend.
+我想休息一下	I want to rest a bit.
+我去洗澡	I'm going to take a shower.
+我先睡了	I'm going to bed.
+我起床了	I'm up.
+我去上班了	I'm going to work.
+我下班回家了	I'm heading home from work.
+晚安好梦	Good night and sweet dreams.
+明天加油	Good luck tomorrow.
+考试加油	Good luck on the exam.
+工作顺利	Hope your work goes well.
+身体早日康复	Get well soon.
+注意保暖	Keep warm.
+记得吃饭	Remember to eat.
+早点回来	Come back early.
+别太累了	Don't overwork yourself.
+照顾好自己	Take care of yourself.
+我会想你的	I'll miss you.
+有空再聊	Let's talk later.
+回聊	Talk later.
+下次再聊	Talk next time.
+保持联系	Keep in touch.
+很高兴见到你	Nice to see you.
+好久没见	Haven't seen you for a while.
+最近怎么样	How have you been?
+工作忙吗	Are you busy at work?
+学习怎么样	How's your study?
+最近好吗	How are you lately?
+一切都好	Everything is fine.
+还行吧	It's okay.
+一般般	So-so.
+太好了	That's great.
+真棒	Well done.
+不错	Not bad.
+真可惜	What a pity.
+好可惜	What a pity.
+没办法了	There's nothing we can do.
+顺其自然	Let it be.
+慢慢来吧	Take it easy.
+不要紧	It doesn't matter.
+没事的	It's fine.
+算了吧	Forget it.
+不用了	No need.
+不要了	No more.
+够了	That's enough.
+太多了	Too much.
+太少了	Too little.
+太大了	Too big.
+太小了	Too small.
+太远了	Too far.
+太近了	Too close.
+太便宜了	So cheap.
+太晚了	Too late.
+太早了	Too early.
+
+# ==================== 四字词 / 成语（自然英文） ====================
+一举两得	kill two birds with one stone
+半途而废	give up halfway
+守口如瓶	keep a secret
+三心二意	be indecisive
+七上八下	feel anxious
+一心一意	wholeheartedly
+马马虎虎	so-so
+乱七八糟	messy
+莫名其妙	baffling
+一模一样	identical
+自言自语	talk to oneself
+自由自在	free and easy
+兴高采烈	in high spirits
+眉开眼笑	beaming
+迫不及待	can't wait
+无可奈何	have no choice
+无家可归	homeless
+无论如何	in any case
+显而易见	obvious
+众所周知	well known
+力所能及	within one's ability
+不约而同	coincidentally
+小心翼翼	carefully
+一清二楚	crystal clear
+五颜六色	colorful
+一丝不苟	meticulous
+井井有条	orderly
+津津有味	with relish
+兴致勃勃	enthusiastically
+实事求是	be realistic
+不屈不挠	unyielding
+坚持不懈	persistent
+全力以赴	go all out
+脚踏实地	down-to-earth
+出类拔萃	outstanding
+名列前茅	among the best
+独一无二	unique
+日新月异	changing rapidly
+焕然一新	brand new
+迫在眉睫	imminent
+三思而行	think before you act
+深思熟虑	careful consideration
+粗心大意	careless
+丢三落四	forgetful
+心不在焉	absent-minded
+专心致志	concentrate
+全神贯注	fully focused
+聚精会神	attentive
+循序渐进	step by step
+亡羊补牢	better late than never
+未雨绸缪	prepare for a rainy day
+知足常乐	contentment brings happiness
+一见钟情	love at first sight
+身份证号	ID number
+电话号码	phone number
+电子邮件	email
+社交媒体	social media
+电子商务	e-commerce
+网上购物	online shopping
+移动支付	mobile payment
+扫码支付	scan to pay
+大数据	big data
+云计算	cloud computing
+物联网	internet of things
+笔记本电脑	laptop
+台式电脑	desktop computer
+操作系统	operating system
+指纹识别	fingerprint recognition
+语音识别	speech recognition
+自然语言	natural language
+机器学习	machine learning
+深度学习	deep learning
+神经网络	neural network
+自动驾驶	self-driving
+新能源汽车	new energy vehicle
+高铁站	high-speed rail station
+公交车站	bus stop
+网约车	ride-hailing
+共享单车	shared bike
+快递公司	courier company
+外卖平台	food delivery platform
+# ==================== 扩充批次 3：高频二字词 ====================
+配偶	spouse
+伴侣	partner
+情侣	couple
+夫妻	husband and wife
+夫妇	couple
+表弟	younger male cousin
+表妹	younger female cousin
+堂哥	older male cousin
+堂姐	older female cousin
+侄子	nephew
+侄女	niece
+外甥	nephew
+岳父	father-in-law
+岳母	mother-in-law
+公公	father-in-law
+婆婆	mother-in-law
+儿媳	daughter-in-law
+女婿	son-in-law
+长辈	elder
+晚辈	younger generation
+前辈	senior
+后代	descendants
+祖先	ancestors
+双胞胎	twins
+孤儿	orphan
+单身	single
+恋人	lover
+前任	ex
+对象	partner
+相亲	blind date
+媒人	matchmaker
+伴郎	best man
+伴娘	bridesmaid
+新郎	groom
+新娘	bride
+学徒	apprentice
+实习生	intern
+临时工	temp worker
+兼职	part-time job
+全职	full-time job
+失业	unemployed
+下岗	laid off
+创业	start a business
+合伙	partnership
+个体户	self-employed
+自由职业	freelancer
+电竞	esports
+选手	player
+经纪人	agent
+助理	assistant
+前台	receptionist
+导购	shopping guide
+推销员	salesman
+业务员	sales rep
+采购员	buyer
+仓管	warehouse keeper
+质检	quality inspection
+清洁员	cleaner
+园丁	gardener
+月嫂	maternity nurse
+钟点工	hourly worker
+额头	forehead
+眉毛	eyebrow
+睫毛	eyelash
+眼皮	eyelid
+口腔	oral cavity
+喉咙	throat
+嗓子	voice
+下巴	chin
+脸颊	cheek
+手腕	wrist
+指甲	nail
+拳头	fist
+胳膊	arm
+肘部	elbow
+臀部	hip
+大腿	thigh
+小腿	calf
+脚跟	heel
+肌肉	muscle
+神经	nerve
+血管	blood vessel
+器官	organ
+关节	joint
+脊椎	spine
+汗水	sweat
+眼泪	tears
+鼻涕	snot
+口水	saliva
+拍手	clap
+鼓掌	applause
+举手	raise hand
+伸手	reach out
+转身	turn around
+回头	look back
+抬头	look up
+低头	bow head
+弯腰	bend over
+蹲下	squat down
+站起	stand up
+躺下	lie down
+爬上	climb up
+推开	push away
+拉上	pull up
+拿起	pick up
+放下	put down
+抬起	lift up
+搬动	move
+举起	raise
+扔下	throw down
+捡起	pick up
+握住	hold
+抓紧	hold tight
+松开	let go
+触摸	touch
+敲打	knock
+拍打	pat
+擦拭	wipe
+清洗	wash
+冲洗	rinse
+浸泡	soak
+煮沸	boil
+煎炒	fry
+蒸熟	steam
+烤制	roast
+切成	cut into
+搅拌	stir
+品尝	taste
+咀嚼	chew
+吞咽	swallow
+打喷嚏	sneeze
+打哈欠	yawn
+大笑	laugh
+哭泣	cry
+叹气	sigh
+皱眉	frown
+眨眼	blink
+注视	gaze
+凝视	stare
+偷看	peek
+倾听	listen
+呼喊	shout
+叫喊	yell
+低语	whisper
+沉默	silent
+喜悦	joy
+欢乐	joy
+安宁	peaceful
+温馨	warm
+关怀	care
+思念	miss
+怀念	miss
+渴望	long for
+期盼	look forward to
+烦恼	worry
+忧愁	sad
+悲伤	sad
+痛苦	pain
+委屈	feel wronged
+恼火	annoyed
+厌烦	tired of
+后悔	regret
+遗憾	regret
+震惊	shocked
+恐惧	fear
+担忧	worry
+牵挂	care about
+安心	reassured
+自豪	proud
+得意	pleased
+虚心	modest
+专注	focused
+投入	dedicated
+亲热	affectionate
+疏远	distant
+储藏室	storage room
+杂物间	utility room
+洗手台	washbasin
+鞋柜	shoe cabinet
+书柜	bookcase
+橱柜	cabinet
+壁橱	closet
+门厅	hallway
+阁楼	attic
+地下室	basement
+露台	terrace
+楼道	corridor
+猫眼	peephole
+纱窗	screen window
+玻璃	glass
+挂钟	wall clock
+吊灯	chandelier
+落地灯	floor lamp
+壁灯	wall lamp
+电线	wire
+水管	water pipe
+下水道	drain
+花洒	showerhead
+炒饭	fried rice
+蛋炒饭	egg fried rice
+稀饭	porridge
+米粥	rice porridge
+花卷	steamed roll
+油条	fried dough stick
+烧饼	baked flatbread
+煎饼	pancake
+汤面	noodle soup
+拌面	mixed noodles
+炒面	fried noodles
+拉面	ramen
+刀削面	sliced noodles
+馄饨	wonton
+汤圆	rice ball
+年糕	rice cake
+春卷	spring roll
+锅贴	pot sticker
+小笼包	soup dumpling
+烧麦	shumai
+火锅	hot pot
+串串	skewers
+麻辣烫	malatang
+凉皮	cold noodles
+米线	rice noodles
+米粉	rice noodles
+豆腐	tofu
+豆干	dried tofu
+腐竹	dried bean curd
+海带	kelp
+紫菜	seaweed
+木耳	wood ear
+香菇	shiitake
+金针菇	enoki mushroom
+平菇	oyster mushroom
+豆芽	bean sprout
+韭菜	chives
+芹菜	celery
+生菜	lettuce
+油麦菜	leaf lettuce
+空心菜	water spinach
+西兰花	broccoli
+花菜	cauliflower
+冬瓜	winter melon
+南瓜	pumpkin
+丝瓜	loofah
+苦瓜	bitter melon
+青椒	green pepper
+红椒	red pepper
+豆角	green beans
+豌豆	peas
+红薯	sweet potato
+山药	yam
+莲藕	lotus root
+竹笋	bamboo shoot
+生姜	ginger
+大葱	scallion
+香菜	cilantro
+芝麻	sesame
+核桃	walnut
+腰果	cashew
+杏仁	almond
+葡萄干	raisin
+蜂蜜	honey
+果酱	jam
+花生酱	peanut butter
+奶油	cream
+酸奶	yogurt
+布丁	pudding
+蛋挞	egg tart
+泡芙	cream puff
+甜甜圈	donut
+松饼	pancake
+华夫饼	waffle
+曲奇	cookie
+薯片	potato chips
+爆米花	popcorn
+瓜子	sunflower seeds
+话梅	dried plum
+果冻	jelly
+家禽	poultry
+家畜	livestock
+野生动物	wild animal
+昆虫	insect
+哺乳动物	mammal
+爬行动物	reptile
+两栖动物	amphibian
+海豹	seal
+海象	walrus
+北极熊	polar bear
+鸵鸟	ostrich
+火烈鸟	flamingo
+大雁	wild goose
+野兔	hare
+田鼠	field mouse
+仓鼠	hamster
+豚鼠	guinea pig
+浣熊	raccoon
+水獭	otter
+黄鼠狼	weasel
+穿山甲	pangolin
+树懒	sloth
+羚羊	antelope
+野牛	buffalo
+野马	wild horse
+麋鹿	elk
+梅花鹿	sika deer
+长臂猿	gibbon
+狒狒	baboon
+黑猩猩	chimpanzee
+大猩猩	gorilla
+小熊猫	red panda
+柏树	cypress
+杨树	poplar
+槐树	locust tree
+橡树	oak
+枫树	maple
+椰子树	coconut tree
+果树	fruit tree
+桃树	peach tree
+梨树	pear tree
+葡萄藤	grapevine
+藤蔓	vine
+灌木	shrub
+乔木	tall tree
+花卉	flowers
+野花	wild flower
+蒲公英	dandelion
+睡莲	water lily
+水仙	narcissus
+康乃馨	carnation
+满天星	baby's breath
+薰衣草	lavender
+薄荷	mint
+仙人掌	cactus
+多肉	succulent
+蕨类	fern
+苔藓	moss
+菌类	fungus
+大地	earth
+陆地	land
+海底	seabed
+海面	sea surface
+波浪	wave
+潮水	tide
+礁石	reef
+峡谷	canyon
+峭壁	cliff
+山脚	foot of the mountain
+山顶	summit
+山坡	hillside
+山腰	hillside
+溪水	stream
+沼泽	swamp
+湿地	wetland
+丛林	jungle
+雨林	rainforest
+热带	tropics
+温带	temperate zone
+寒带	polar zone
+极地	polar region
+赤道	equator
+纬度	latitude
+经度	longitude
+海拔	altitude
+气温	air temperature
+湿度	humidity
+风力	wind force
+风速	wind speed
+降水	precipitation
+雷雨	thunderstorm
+冰雹	hail
+大雾	heavy fog
+沙尘	sand dust
+雾霾	smog
+晴朗	clear
+多云	cloudy
+闷热	muggy
+公路	highway
+高速	expressway
+国道	national road
+小路	path
+山路	mountain road
+隧道	tunnel
+天桥	overpass
+人行道	sidewalk
+斑马线	crosswalk
+车道	lane
+快车道	fast lane
+慢车道	slow lane
+停车场	parking lot
+收费站	toll gate
+服务区	service area
+充电桩	charging station
+车牌	license plate
+驾照	driver license
+违章	traffic violation
+扣分	deduct points
+酒驾	drunk driving
+超速	speeding
+爆胎	flat tire
+抛锚	break down
+堵车	traffic jam
+高峰	rush hour
+早高峰	morning rush hour
+晚高峰	evening rush hour
+通勤	commute
+顺风车	car pool
+拼车	carpool
+专车	premium car
+大巴	coach bus
+中巴	minibus
+校车	school bus
+拖车	tow truck
+滑板车	scooter
+平衡车	hoverboard
+游艇	yacht
+货轮	freighter
+客机	airliner
+战斗机	fighter jet
+初中	junior high school
+高中	high school
+博士	doctor
+硕士	master
+学士	bachelor
+本科	undergraduate
+专科	college
+学分	credit
+必修课	required course
+选修课	elective course
+教材	textbook
+参考书	reference book
+练习册	workbook
+试卷	exam paper
+考题	exam question
+正确率	accuracy
+错题	wrong question
+满分	full marks
+及格	pass
+不及格	fail
+留级	repeat a grade
+跳级	skip a grade
+保送	recommended admission
+高考	college entrance exam
+中考	high school entrance exam
+考研	postgraduate exam
+留学	study abroad
+交换生	exchange student
+毕业典礼	graduation ceremony
+开学	school starts
+放假	holiday
+寒假	winter vacation
+暑假	summer vacation
+课间	break time
+早读	morning reading
+晚自习	evening study
+自习	self-study
+教研室	teaching office
+阶梯教室	lecture hall
+报告厅	auditorium
+上班族	office worker
+值班	on duty
+考勤	attendance
+病假	sick leave
+年假	annual leave
+调休	compensatory leave
+轮班	shift work
+白班	day shift
+夜班	night shift
+笔试	written test
+复试	second interview
+转正	become regular
+入职	join the company
+离职	resign
+跳槽	job hop
+晋升	promotion
+加薪	raise
+降职	demotion
+调动	transfer
+外派	overseas assignment
+保密	confidentiality
+绩效	performance
+考核	assessment
+考评	evaluation
+年终	year end
+团建	team building
+培训	training
+提案	proposal
+纪要	minutes
+待办	to-do
+截止	deadline
+交付	delivery
+上线	go live
+迭代	iteration
+需求	requirement
+文档	document
+报表	report
+台账	ledger
+审批	approval
+归档	archive
+平板	tablet
+音箱	speaker
+交换机	switch
+光纤	optical fiber
+宽带	broadband
+无线网	wireless network
+智能手表	smart watch
+智能家居	smart home
+无人机	drone
+分辨率	resolution
+像素	pixel
+处理器	processor
+显卡	graphics card
+固态硬盘	solid state drive
+优盘	USB drive
+存储卡	memory card
+云盘	cloud drive
+网盘	network drive
+客户端	client
+服务端	server side
+域名	domain name
+密保	security question
+定位	location
+导航	navigation
+路线	route
+实时	real-time
+门诊	outpatient
+急诊	emergency
+挂号	register
+预约	appointment
+候诊	wait for treatment
+就诊	see a doctor
+问诊	consultation
+化验	lab test
+拍片	take an X-ray
+化验单	lab report
+处方	prescription
+药方	prescription
+剂量	dosage
+用法	usage
+副作用	side effect
+疗效	efficacy
+疗程	course of treatment
+复诊	follow-up visit
+转院	transfer hospital
+探视	visit
+陪护	caregiver
+护理	nursing
+输液	IV drip
+打点滴	IV drip
+拔牙	extract a tooth
+补牙	fill a tooth
+洗牙	dental cleaning
+矫正	orthodontics
+血糖	blood sugar
+血脂	blood lipid
+心率	heart rate
+抗体	antibody
+抗原	antigen
+核酸	nucleic acid
+隔离	isolation
+酒精	alcohol
+棉签	cotton swab
+创可贴	band-aid
+纱布	gauze
+体温计	thermometer
+听诊器	stethoscope
+手术刀	scalpel
+生意	business
+买卖	trade
+交易	transaction
+成交	deal
+谈判	negotiation
+签约	sign a contract
+违约	breach of contract
+赔偿	compensation
+定金	deposit
+尾款	balance payment
+押金	deposit
+退款	refund
+售后	after-sales
+评分	rating
+好评	positive review
+差评	negative review
+口碑	reputation
+商标	trademark
+专利	patent
+版权	copyright
+加盟	franchise
+连锁	chain
+直营	directly operated
+代理	agent
+经销	distribute
+批发	wholesale
+零售	retail
+团购	group buying
+满减	spend and save
+礼品卡	gift card
+购物卡	shopping card
+理念	idea
+思想	thought
+观念	concept
+看法	view
+见解	opinion
+主张	proposition
+提议	proposal
+策略	strategy
+战略	strategy
+战术	tactics
+方针	policy
+原则	principle
+底线	bottom line
+红线	red line
+界限	boundary
+范畴	category
+维度	dimension
+层面	level
+角度	angle
+视角	perspective
+推理	reasoning
+论证	argument
+误会	misunderstanding
+误解	misunderstanding
+偏见	prejudice
+歧视	discrimination
+公平	fair
+公正	just
+正义	justice
+伦理	ethics
+平等	equality
+民主	democracy
+法治	rule of law
+秩序	order
+稳定	stable
+巨大	huge
+庞大	huge
+微小	tiny
+宽大	spacious
+宽阔	wide
+辽阔	vast
+广阔	broad
+深远	profound
+浅显	shallow
+深厚	deep
+浓厚	strong
+淡薄	faint
+强烈	strong
+微弱	weak
+清晰	clear
+新颖	novel
+陈旧	old
+崭新	brand new
+破烂	shabby
+残缺	incomplete
+华丽	gorgeous
+朴素	plain
+豪华	luxurious
+简陋	simple
+低廉	cheap
+实惠	affordable
+超值	great value
+稀有	rare
+常见	common
+罕见	rare
+平凡	ordinary
+非凡	extraordinary
+杰出	outstanding
+卓越	excellent
+差劲	poor
+糟糕	terrible
+观看	watch
+观赏	view
+欣赏	appreciate
+品味	taste
+体会	experience
+感受	feel
+领悟	realize
+掌握	master
+精通	proficient
+熟悉	familiar
+了解	understand
+认识	know
+结识	get to know
+交往	associate
+相处	get along
+陈述	state
+阐述	elaborate
+讲解	explain
+传授	teach
+指导	guide
+辅导	tutor
+引导	guide
+带领	lead
+指挥	command
+负责	be in charge
+承担	undertake
+担任	serve as
+任职	hold a post
+任命	appoint
+聘用	hire
+辞退	dismiss
+开除	fire
+处罚	punish
+奖励	reward
+表彰	commend
+指责	blame
+责备	scold
+埋怨	complain
+争吵	quarrel
+打架	fight
+冲突	conflict
+矛盾	contradiction
+和解	reconcile
+包容	tolerate
+忍让	forbear
+让步	concede
+争取	strive for
+争夺	contest
+抢夺	snatch
+偷窃	steal
+抢劫	rob
+欺骗	deceive
+撒谎	lie
+隐瞒	hide
+坦白	confess
+承认	admit
+否认	deny
+信任	trust
+依赖	rely on
+依靠	rely on
+借助	with the help of
+借用	borrow
+出租	rent out
+租赁	lease
+购买	purchase
+出售	sell
+交换	exchange
+已经	already
+曾经	once
+正在	currently
+将要	will
+刚刚	just now
+立刻	immediately
+赶紧	hurry
+连忙	hastily
+终于	finally
+忽然	suddenly
+突然	suddenly
+渐渐	gradually
+慢慢	slowly
+逐渐	gradually
+一直	always
+始终	throughout
+永远	forever
+从来	never
+向来	always
+一向	consistently
+时常	often
+往往	often
+通常	usually
+一般	generally
+大约	about
+左右	around
+差不多	almost
+几乎	almost
+简直	simply
+的确	indeed
+确实	indeed
+显然	obviously
+居然	unexpectedly
+竟然	unexpectedly
+果然	as expected
+幸好	luckily
+幸亏	luckily
+难免	unavoidable
+或许	perhaps
+恐怕	afraid
+反而	instead
+既然	since
+如果	if
+假如	if
+除非	unless
+无论	no matter
+不管	regardless
+即使	even if
+尽管	although
+因此	therefore
+于是	so
+然而	however
+不过	but
+但是	but
+而且	moreover
+并且	and
+况且	moreover
+何况	let alone
+至于	as for
+关于	about
+对于	regarding
+根据	according to
+按照	according to
+为了	in order to
+由于	due to
+因为	because
+# ==================== 扩充批次 4 ====================
+实现	achieve
+达到	reach
+取得	obtain
+赢得	win
+失去	lose
+维持	maintain
+修复	repair
+协助	assist
+配合	cooperate
+调查	investigate
+制造	manufacture
+生产	produce
+建造	build
+修建	build
+改装	modify
+拆除	demolish
+清理	clean up
+洗涤	wash
+烘干	dry
+晾晒	dry in the sun
+折叠	fold
+出席	attend
+缺席	absent
+迟到	late
+早退	leave early
+洗漱	wash up
+逛街	go shopping
+收款	collect payment
+汇款	remit
+还款	repay
+借钱	borrow money
+还钱	pay back
+存钱	save money
+花钱	spend money
+赚钱	earn money
+赔钱	lose money
+炒股	trade stocks
+买票	buy a ticket
+订票	book a ticket
+退票	refund a ticket
+改签	change a ticket
+订房	book a room
+入住	check in
+退房	check out
+离开	leave
+散会	adjourn
+发言	speak
+提问	ask a question
+回答	answer
+介绍	introduce
+推荐	recommend
+接待	receive
+送别	see off
+迎接	welcome
+告别	say goodbye
+问候	greet
+打招呼	say hello
+交谈	converse
+救人	save someone
+帮忙	help
+赞成	approve
+答应	agree
+承诺	promise
+做到	accomplish
+尽力	do one's best
+奋斗	strive
+拼搏	work hard
+忍耐	endure
+忍受	endure
+承受	bear
+负担	bear
+经营	operate
+加工	process
+保养	maintain
+检验	inspect
+试验	test
+整洁	neat
+凌乱	messy
+昏暗	dim
+轻便	lightweight
+笨重	bulky
+呆板	rigid
+敏捷	agile
+迟钝	slow
+机智	witty
+凶恶	fierce
+粗暴	rude
+大方	generous
+吝啬	stingy
+轻浮	frivolous
+可信	trustworthy
+可疑	suspicious
+瘦弱	thin
+我把手机忘在家里了	I left my phone at home.
+我找不到我的钥匙	I can't find my keys.
+你能帮我一下吗	Can you help me?
+我等了你很久	I waited for you a long time.
+我们几点见面	What time shall we meet?
+我在门口等你	I'll wait for you at the door.
+你到了告诉我	Let me know when you arrive.
+我可能迟到	I might be late.
+堵车很严重	The traffic is bad.
+今天加班到很晚	I worked overtime until late today.
+我明天休息	I'm off tomorrow.
+周末有空吗	Are you free this weekend?
+一起去喝咖啡吧	Let's grab a coffee.
+我请你吃饭	Let me treat you to a meal.
+这顿饭我请客	It's my treat.
+你想吃什么	What do you want to eat?
+我不吃辣	I don't eat spicy food.
+我对海鲜过敏	I'm allergic to seafood.
+我吃饱了	I'm full.
+再来一碗	One more bowl.
+买单	the bill please
+可以打包吗	Can I have a doggy bag?
+不要香菜	No cilantro please.
+少放盐	Less salt please.
+这个很好吃	This is delicious.
+我吃过饭了	I've already eaten.
+你吃早饭了吗	Did you have breakfast?
+记得吃早饭	Remember to eat breakfast.
+多喝热水	Drink more hot water.
+注意休息	Get some rest.
+你怎么样	How are you?
+我最近很好	I've been well lately.
+我很想你	I miss you a lot.
+我们好久没见了	We haven't seen each other for a while.
+有空一起吃饭	Let's have a meal sometime.
+我在忙晚点回你	I'm busy, I'll reply later.
+稍等片刻	Please wait a moment.
+马上给你回复	I'll reply right away.
+明白了	got it
+我不太确定	I'm not sure.
+让我想想	Let me think.
+我再确认一下	Let me confirm.
+应该没问题	It should be fine.
+我尽力而为	I'll do my best.
+有我在	I'm here for you.
+我支持你的决定	I support your decision.
+你想好了吗	Have you decided?
+我尊重你的选择	I respect your choice.
+我们商量一下	Let's discuss it.
+听你的	up to you
+你决定	you decide
+我无所谓	I don't mind.
+我同意你的看法	I agree with you.
+你说的有道理	You have a point.
+我明白你的意思	I see what you mean.
+别误会	Don't get me wrong.
+我不是这个意思	That's not what I meant.
+请听我解释	Please let me explain.
+对不起是我的错	Sorry, it's my fault.
+我原谅你了	I forgive you.
+别提了	Don't mention it.
+过去的事就算了	Let bygones be bygones.
+我们和好吧	Let's make up.
+别生气了	Don't be angry anymore.
+冷静下来	Calm down.
+我理解你的心情	I understand how you feel.
+我陪着你	I'm with you.
+别一个人扛	Don't carry it alone.
+有困难找我	Come to me if you have trouble.
+需要帮忙就说	Tell me if you need help.
+随时找我	Contact me anytime.
+路上注意安全	Take care on the road.
+到家给我发消息	Text me when you're home.
+到了说一声	Let me know when you arrive.
+我先走了	I'm leaving first.
+改天再聊	Let's talk another day.
+回头再说	We'll talk later.
+就这样吧	That's it.
+先这样	for now
+下周见	See you next week.
+到时候见	See you then.
+不见不散	Be there or be square.
+一言为定	It's a deal.
+说话算数	Keep your word.
+你一定能行	You can do it.
+加油我看好你	Good luck, I believe in you.
+别放弃	Don't give up.
+坚持就是胜利	Persistence wins.
+一步一步来	Step by step.
+别着急	Don't rush.
+时间还早	It's still early.
+来得及	There's still time.
+来不及了	It's too late.
+快点	hurry up
+抓紧时间	Hurry up.
+别浪费时间	Don't waste time.
+时间过得真快	Time flies.
+最近忙什么	What have you been up to?
+工作顺利吗	Is work going well?
+学习加油	Keep studying hard.
+考试顺利	Good luck on the exam.
+祝你考个好成绩	Wish you a good grade.
+保重身体	Take care of your health.
+别太辛苦	Don't work too hard.
+多注意休息	Get more rest.
+万事如意	Everything goes well.
+心想事成	May all your wishes come true.
+好运连连	Good luck always.
+笑口常开	Always smile.
+天天开心	Be happy every day.
+工作加油	Good luck at work.
+事业有成	Success in your career.
+学业进步	Progress in your studies.
+电视机	television
+电磁炉	induction cooker
+热水器	water heater
+饮水机	water dispenser
+净水器	water purifier
+扫地机器人	robot vacuum
+植物园	botanical garden
+科技馆	science museum
+美术馆	art museum
+音乐厅	concert hall
+大剧院	grand theater
+游泳馆	swimming pool
+健身房	gym
+篮球场	basketball court
+足球场	football field
+游泳池	swimming pool
+重要性	importance
+必要性	necessity
+可能性	possibility
+可靠性	reliability
+安全性	safety
+稳定性	stability
+准确性	accuracy
+及时性	timeliness
+灵活性	flexibility
+创新性	innovation
+竞争力	competitiveness
+影响力	influence
+执行力	execution
+凝聚力	cohesion
+生产力	productivity
+创造力	creativity
+想象力	imagination
+记忆力	memory
+注意力	attention
+观察力	observation
+判断力	judgment
+理解力	comprehension
+动力	motivation
+实力	strength
+魅力	charm
+活力	vitality
+潜力	potential
+精力	energy
+体力	physical strength
+开玩笑	joke
+讲笑话	tell a joke
+说实话	tell the truth
+说真话	tell the truth
+想办法	find a way
+找麻烦	cause trouble
+做生意	do business
+做作业	do homework
+做运动	do sports
+做家务	do housework
+做实验	do an experiment
+做决定	make a decision
+做准备	get ready
+做计划	make a plan
+做总结	summarize
+做报告	give a report
+做演讲	give a speech
+找工作	look for a job
+找对象	find a partner
+找朋友	make friends
+发短信	send a text
+发邮件	send an email
+发红包	give a red envelope
+抢红包	grab a red envelope
+收红包	receive a red envelope
+听音乐	listen to music
+上网课	take online classes
+打篮球	play basketball
+踢足球	play football
+打羽毛球	play badminton
+打乒乓球	play table tennis
+打网球	play tennis
+打排球	play volleyball
+打太极	practice tai chi
+练瑜伽	practice yoga
+去健身	go to the gym
+去跑步	go running
+去游泳	go swimming
+去爬山	go hiking
+去钓鱼	go fishing
+去滑雪	go skiing
+去露营	go camping
+去野餐	go on a picnic
+去旅行	go traveling
+逛商场	go to the mall
+逛超市	go to the supermarket
+砍价	bargain
+付钱	pay
+开发票	issue an invoice
+刷信用卡	pay by credit card
+用微信	use WeChat
+收快递	receive a package
+寄快递	send a package
+取快递	pick up a package
+下大雨	rain heavily
+下小雨	drizzle
+下大雪	snow heavily
+刮大风	strong wind
+打雷了	thunder
+出太阳	the sun is out
+阴天了	it's cloudy
+天晴了	it cleared up
+天冷了	it's getting cold
+天热了	it's getting hot
+变天了	the weather changed
+一会儿	in a while
+一下儿	a moment
+差点儿	almost
+一会儿见	see you in a while
+等会儿	wait a bit
+早点儿	a bit earlier
+慢点儿	slow down
+快点儿	hurry up
+停车位	parking space
+充电站	charging station
+地铁口	subway entrance
+十字路口	intersection
+地下通道	underpass
+一家人	the whole family
+两口子	the couple
+独生子	only son
+独生女	only daughter
+# ==================== 扩充批次 5：颜色/形状单字 + 更多高频词 ====================
+红	red
+黄	yellow
+蓝	blue
+绿	green
+黑	black
+白	white
+灰	gray
+紫	purple
+粉	pink
+圆	round
+方	square
+尖	sharp
+平	flat
+直	straight
+弯	curved
+空	empty
+满	full
+轻	light
+重	heavy
+厚	thick
+薄	thin
+宽	wide
+窄	narrow
+深	deep
+浅	shallow
+粗	thick
+细	thin
+硬	hard
+软	soft
+钝	blunt
+早	early
+晚	late
+报酬	reward
+酬劳	reward
+佣金	commission
+香槟	champagne
+威士忌	whisky
+鸡尾酒	cocktail
+汽水	soda
+可乐	cola
+雪碧	Sprite
+橙汁	orange juice
+柠檬水	lemonade
+绿茶	green tea
+红茶	black tea
+花茶	scented tea
+乌龙茶	oolong tea
+珍珠奶茶	bubble tea
+拿铁	latte
+卡布奇诺	cappuccino
+美式咖啡	Americano
+蒸蛋	steamed egg
+炒蛋	scrambled eggs
+荷包蛋	fried egg
+煎蛋	fried egg
+水煮蛋	boiled egg
+咸鸭蛋	salted duck egg
+皮蛋	century egg
+豆腐脑	tofu pudding
+生煎	pan-fried bun
+蛋饼	egg pancake
+饭团	rice ball
+寿司	sushi
+乌冬面	udon
+意面	pasta
+通心粉	macaroni
+汉堡包	hamburger
+热狗	hot dog
+鸡翅	chicken wing
+鸡腿	chicken leg
+牛排	steak
+猪排	pork chop
+沙拉	salad
+夹克	jacket
+风衣	trench coat
+羽绒服	down jacket
+棉衣	cotton coat
+大衣	overcoat
+背心	vest
+短袖	short sleeves
+长袖	long sleeves
+高跟鞋	high heels
+平底鞋	flat shoes
+凉鞋	sandals
+雨鞋	rain boots
+手帕	handkerchief
+发夹	hairpin
+耳环	earring
+项链	necklace
+戒指	ring
+手镯	bracelet
+手链	bracelet
+胸针	brooch
+徽章	badge
+腰疼	backache
+背疼	backache
+嗓子疼	sore throat
+流鼻涕	runny nose
+失眠	insomnia
+熬夜	stay up late
+抑郁	depressed
+中暑	heatstroke
+晕车	carsick
+晕船	seasick
+骨折	fracture
+烫伤	scald
+割伤	cut
+扭伤	sprain
+拉伤	strain
+出血	bleed
+子女	children
+儿女	children
+兄妹	siblings
+姐弟	siblings
+亲友	relatives and friends
+挚友	close friend
+网友	net friend
+室友	roommate
+同桌	deskmate
+街坊	neighbor
+老乡	fellow townsman
+熟人	acquaintance
+生人	stranger
+外人	outsider
+本人	myself
+当事人	the person involved
+礼堂	auditorium
+会议室	meeting room
+茶水间	pantry
+休息室	lounge
+更衣室	dressing room
+浴室	bathroom
+小桥	small bridge
+亭子	pavilion
+长廊	corridor
+街角	street corner
+巷子	alley
+胡同	hutong
+小区	residential area
+楼盘	real estate project
+别墅	villa
+公寓	apartment
+楼层	floor
+露珠	dew
+晚霞	sunset glow
+朝霞	morning glow
+月光	moonlight
+日光	sunlight
+星光	starlight
+霜冻	frost
+冰霜	frost
+冰雪	ice and snow
+雪人	snowman
+雪花	snowflake
+雨滴	raindrop
+雨衣	raincoat
+雷电	thunder and lightning
+雷声	thunder
+风声	sound of wind
+海风	sea breeze
+蟑螂	cockroach
+龙虾	lobster
+打扮	dress up
+卸妆	remove makeup
+剃须	shave
+剪指甲	cut nails
+换衣	change clothes
+试穿	try on
+脱下	take off
+戴上	put on
+摘下	take off
+系上	tie up
+解开	untie
+打结	tie a knot
+熨烫	iron
+缝补	mend
+编织	weave
+种植	plant
+浇水	water
+施肥	fertilize
+修剪	prune
+采摘	pick
+收获	harvest
+播种	sow
+喂养	feed
+遛狗	walk the dog
+擦干	wipe dry
+吹干	blow dry
+卫生	hygiene
+变质	spoiled
+过期	expired
+湿润	moist
+冰冷	icy
+滚烫	boiling hot
+冰凉	icy cold
+微凉	slightly cool
+锋利	sharp
+午安	good afternoon
+晚点见	see you later
+回头聊	talk later
+先忙了	I'm busy now
+我去忙了	I'm off to work
+我在忙	I'm busy
+有空聊	let's talk when free
+稍后联系	contact later
+祝你一切顺利	wish you all the best
+祝你天天开心	wish you happiness every day
+祝你工作愉快	wish you a happy workday
+祝你学习进步	wish you progress in your studies
+祝你旅途愉快	have a pleasant trip
+祝你晚安	good night to you
+睡个好觉	sleep well
+好好休息	have a good rest
+路上平安	safe travels
+平安到家	arrive home safely
+安全第一	safety first
+万事大吉	all the best
+吉祥如意	good luck and happiness
+恭喜发财	wish you prosperity
+步步高升	rise step by step
+生意兴隆	wish your business prosper
+学业有成	success in your studies
+前程似锦	bright future
+一帆风顺	smooth sailing
+大吉大利	good luck and great fortune
+你是谁	who are you?
+你多大了	how old are you?
+你住在哪里	where do you live?
+你做什么工作	what do you do?
+你从哪里来	where are you from?
+你要去哪里	where are you going?
+你喜欢什么	what do you like?
+你怎么了	what's wrong?
+你在想什么	what are you thinking?
+你还好吗	are you okay?
+有事吗	is something up?
+忙什么呢	what are you busy with?
+在吗	are you there?
+在不在	are you there?
+几点下班	what time do you get off work?
+几点上课	what time does class start?
+怎么走	how to get there?
+多久	how long?
+什么时候到	when will you arrive?
+什么时候走	when are you leaving?
+谁说的	who said that?
+哪个好	which is better?
+要不要	do you want it?
+不开心	unhappy
+很高兴	very happy
+不舒服	uncomfortable
+# ==================== 扩充批次 6 ====================
+宣传	promotion
+海报	poster
+标语	slogan
+口号	slogan
+封面	cover
+排版	layout
+字体	font
+字号	font size
+词语	word
+成语	idiom
+谚语	proverb
+名言	famous quote
+诗歌	poetry
+散文	prose
+童话	fairy tale
+寓言	fable
+剧本	script
+台词	lines
+舞台	stage
+直播	live stream
+录制	record
+剪辑	edit
+配音	dubbing
+字幕	subtitle
+特效	special effect
+画面	scene
+镜头	shot
+场景	scene
+剧情	plot
+结局	ending
+主题	theme
+风格	style
+作品	work
+旋律	melody
+节奏	rhythm
+歌词	lyrics
+合唱	chorus
+独唱	solo
+伴奏	accompaniment
+乐队	band
+联赛	league
+赛季	season
+排名	ranking
+战绩	record
+胜率	win rate
+比分	score
+纪录	record
+金牌	gold medal
+银牌	silver medal
+铜牌	bronze medal
+领奖	receive an award
+行程	itinerary
+景点	scenic spot
+门票	ticket
+游客	tourist
+民宿	guesthouse
+预订	book
+退订	cancel booking
+客房	guest room
+标间	standard room
+套房	suite
+双人房	double room
+自助餐	buffet
+温泉	hot spring
+海滩	beach
+潜水	diving
+冲浪	surfing
+徒步	hiking
+骑行	cycling
+自驾	self-driving
+房车	RV
+纪念品	souvenir
+特产	specialty
+免税店	duty-free shop
+办公	office work
+工位	workstation
+结算	settle accounts
+对账	reconcile accounts
+排期	schedule
+里程碑	milestone
+跟进	follow up
+复盘	review
+备课	prepare lessons
+教案	lesson plan
+讲义	handout
+课件	courseware
+板书	blackboard writing
+抢答	quick answer
+展示	present
+活动	activity
+网课	online class
+录播	recorded class
+题库	question bank
+真题	past exam
+模拟	simulation
+昵称	nickname
+头像	avatar
+签名	signature
+动态	update
+相册	album
+私信	private message
+群组	group
+频道	channel
+通话	call
+视频通话	video call
+聊天记录	chat history
+浏览记录	browsing history
+搜索记录	search history
+缓存	cache
+兼容	compatible
+崩溃	crash
+卡顿	lag
+发热	overheating
+耗电	power consumption
+省电	power saving
+待机	standby
+充电	charge
+缺货	out of stock
+补货	restock
+上架	put on the shelf
+下架	remove from the shelf
+特价	special price
+赠品	free gift
+试用装	sample
+样品	sample
+扫码	scan the code
+刷脸	face payment
+假币	counterfeit money
+购物袋	shopping bag
+派送	deliver
+签收	sign for receipt
+退换	return or exchange
+亚健康	sub-health
+免疫力	immunity
+抵抗力	resistance
+新陈代谢	metabolism
+血液循环	blood circulation
+消化	digestion
+吸收	absorption
+排毒	detox
+冥想	meditation
+拉伸	stretch
+热身	warm up
+午休	lunch break
+作息	daily routine
+头晕	dizzy
+恶心	nausea
+乏力	fatigue
+食欲	appetite
+体型	body shape
+身材	figure
+特长	specialty
+天赋	talent
+才华	talent
+智慧	wisdom
+见识	knowledge
+眼界	vision
+格局	mindset
+胸怀	broad mind
+气度	bearing
+修养	cultivation
+素质	quality
+品德	virtue
+品行	conduct
+人格	personality
+人品	character
+信用	credit
+诚信	integrity
+声望	reputation
+名声	reputation
+荣誉	honor
+尊严	dignity
+面子	face
+地位	status
+辈分	seniority
+血缘	blood relation
+亲情	family love
+友情	friendship
+爱情	love
+情绪	emotion
+心态	mindset
+心理	psychology
+意志	will
+信念	belief
+追求	pursuit
+志向	ambition
+抱负	aspiration
+使命	mission
+沉浸	immerse
+陶醉	be enchanted
+沉迷	be addicted
+上瘾	addicted
+拖延	procrastinate
+耽搁	delay
+耽误	delay
+错过	miss
+缓解	relieve
+释放	release
+发泄	vent
+克制	restrain
+压抑	suppress
+隐藏	hide
+暴露	expose
+揭露	expose
+揭示	reveal
+显示	display
+表明	indicate
+证明	prove
+证实	confirm
+反驳	refute
+辩解	defend
+调解	mediate
+仲裁	arbitrate
+裁决	rule
+判决	verdict
+上诉	appeal
+起诉	sue
+控告	accuse
+报案	report to the police
+报警	call the police
+救援	rescue
+抢救	rescue
+治愈	cure
+恶化	worsen
+好转	improve
+痊愈	recover
+传染	infect
+预防	prevent
+接种	vaccinate
+请把门关上	Please close the door.
+请把灯打开	Please turn on the light.
+请把窗户关好	Please close the window.
+房间里有点冷	It's a bit cold in the room.
+把空调开一下	Turn on the air conditioner.
+遥控器在哪里	Where is the remote?
+电视打不开了	The TV won't turn on.
+我的手机没信号	My phone has no signal.
+帮我充下电	Help me charge it.
+充电线在哪里	Where is the charging cable?
+我忘记带钱包了	I forgot my wallet.
+这次我请客	It's on me this time.
+下次你请	You treat next time.
+我请你喝奶茶	Let me buy you milk tea.
+一起去吃饭吧	Let's eat together.
+你想去哪里玩	Where do you want to go?
+我想去看电影	I want to see a movie.
+电影几点开始	What time does the movie start?
+票买好了吗	Are the tickets bought?
+我订好酒店了	I've booked the hotel.
+几点出发合适	What time should we leave?
+路上要多久	How long is the trip?
+天气怎么样	What's the weather like?
+要带伞吗	Should I bring an umbrella?
+多穿点衣服	Wear more clothes.
+外面下雨了	It's raining outside.
+小心地滑	Be careful, the floor is slippery.
+慢点走	Walk slowly.
+等等我	Wait for me.
+我在楼下等你	I'll wait for you downstairs.
+你到了吗	Have you arrived?
+马上到了	I'm almost there.
+我在路上了	I'm on my way.
+堵在路上了	Stuck in traffic.
+我坐地铁过去	I'll take the subway.
+打的比较快	Taking a taxi is faster.
+我们地铁站见	Let's meet at the subway station.
+几点到家	What time will you be home?
+我今天晚点回	I'll be home late today.
+饭菜做好了	Dinner is ready.
+洗手吃饭	Wash your hands and eat.
+碗筷摆好了	The table is set.
+帮我盛碗饭	Please give me a bowl of rice.
+味道不错	It tastes good.
+有点咸	A bit salty.
+有点辣	A bit spicy.
+我吃不下	I can't eat anymore.
+我减肥	I'm on a diet.
+记得吃药	Remember to take your medicine.
+起床了吗	Are you up?
+该起床了	Time to get up.
+别赖床	Don't sleep in.
+早饭在桌上	Breakfast is on the table.
+上班别迟到	Don't be late for work.
+下班早点回	Come home early after work.
+按时吃饭	Eat on time.
+有事给我打电话	Call me if anything happens.
+别失联	Don't disappear.
+有空来玩	Come visit when you're free.
+欢迎来我家	Welcome to my home.
+下次请你吃饭	I'll treat you next time.
+聚一聚吧	Let's get together.
+好久没聚了	Haven't gathered for a while.
+带上家人	Bring your family.
+玩得开心	Have fun.
+记得带伞	Remember to bring an umbrella.
+别忘了带钥匙	Don't forget your keys.
+手机带了吗	Did you bring your phone?
+关门了吗	Did you close the door?
+灯关了吗	Did you turn off the light?
+煤气关了吗	Did you turn off the gas?
+水龙头关了吗	Did you turn off the faucet?
+插头拔了吗	Did you unplug it?
+垃圾倒了吗	Did you take out the trash?
+快递拿了吗	Did you pick up the package?
+作业写完了吗	Have you finished your homework?
+考试考得怎么样	How was the exam?
+成绩出来了吗	Are the results out?
+考了多少分	What score did you get?
+考得不错	You did well.
+继续努力	Keep working hard.
+别灰心	Don't be discouraged.
+下次一定	Next time for sure.
+你可以的	You can do it.
+我为你骄傲	I'm proud of you.
+你真棒	You're great.
+做得好	Well done.
+非常感谢	Thank you very much.
+太感谢了	Thanks a lot.
+应该的	You're welcome.
+这是我应该做的	It's my duty.
+举手之劳	No trouble at all.
+小事一桩	It's a small thing.
+我很乐意	I'm happy to.
+乐意效劳	Happy to help.
+# ==================== 扩充批次 7 ====================
+电器	appliance
+家电	home appliance
+回形针	paper clip
+便签	sticky note
+便条	note
+圆规	compass
+三角板	set square
+白板	whiteboard
+马克笔	marker
+荧光笔	highlighter
+签字笔	sign pen
+毛笔	brush pen
+墨水	ink
+宣纸	rice paper
+灶台	stove
+抽油烟机	range hood
+洗碗机	dishwasher
+案板	cutting board
+擀面杖	rolling pin
+蒸锅	steamer
+炒锅	wok
+汤锅	soup pot
+保温瓶	thermos
+调味料	seasoning
+味精	MSG
+鸡精	chicken essence
+花椒	Sichuan pepper
+八角	star anise
+桂皮	cinnamon
+香叶	bay leaf
+料酒	cooking wine
+蚝油	oyster sauce
+番茄酱	ketchup
+沙拉酱	salad dressing
+辣椒酱	chili sauce
+芝麻酱	sesame paste
+橄榄油	olive oil
+护发素	conditioner
+香皂	soap
+洗手液	hand sanitizer
+洗面奶	facial cleanser
+爽肤水	toner
+乳液	lotion
+面霜	face cream
+防晒霜	sunscreen
+面膜	face mask
+眼霜	eye cream
+精华	essence
+粉底	foundation
+腮红	blush
+眼影	eye shadow
+睫毛膏	mascara
+指甲油	nail polish
+退烧药	fever reducer
+感冒药	cold medicine
+止痛药	painkiller
+消炎药	anti-inflammatory drug
+胃药	stomach medicine
+钙片	calcium tablet
+眼药水	eye drops
+药膏	ointment
+胶囊	capsule
+冲剂	granule
+铅笔盒	pencil case
+文具	stationery
+文具盒	pencil box
+作业本	exercise book
+练习本	notebook
+草稿纸	scratch paper
+答题卡	answer sheet
+准考证	admission ticket
+录取通知书	admission letter
+校园卡	campus card
+校徽	school badge
+跑道	track
+篮球架	basketball hoop
+单杠	horizontal bar
+双杠	parallel bars
+沙坑	sandpit
+交通卡	transit card
+公交卡	bus card
+站台	platform
+候车室	waiting room
+检票口	ticket gate
+安检	security check
+登机牌	boarding pass
+登机口	boarding gate
+行李箱	suitcase
+摆渡车	shuttle bus
+首页	home page
+主页	home page
+菜单栏	menu bar
+工具栏	toolbar
+状态栏	status bar
+通知栏	notification bar
+任务栏	taskbar
+壁纸	wallpaper
+图标	icon
+快捷方式	shortcut
+剪贴板	clipboard
+输入框	input box
+弹窗	pop-up
+存折	passbook
+存单	deposit receipt
+定期	fixed term
+活期	demand deposit
+利率	interest rate
+利息	interest
+本金	principal
+债券	bond
+期货	futures
+外汇	foreign exchange
+黄金	gold
+保费	premium
+保额	coverage
+分红	dividend
+涨跌	rise and fall
+牛市	bull market
+熊市	bear market
+开盘	market open
+收盘	market close
+报道	report
+发布会	press conference
+采访	interview
+头条	headline
+热搜	trending
+舆论	public opinion
+民意	public will
+当选	be elected
+竞选	campaign
+议长	speaker
+首相	prime minister
+女王	queen
+主席	chairman
+总理	premier
+部长	minister
+省长	provincial governor
+市长	mayor
+县长	county head
+村长	village head
+秒表	stopwatch
+沙漏	hourglass
+台历	desk calendar
+挂历	wall calendar
+时钟	clock
+表盘	dial
+指针	hand
+闹铃	alarm
+定时	timer
+倒计时	countdown
+计时器	timer
+惊喜	surprise
+惊恐	terror
+忧虑	anxiety
+苦涩	bitter
+恋爱	fall in love
+失恋	break up
+告白	confession
+表白	confess
+求婚	propose
+订婚	get engaged
+分居	separate
+复婚	remarry
+出轨	cheat
+分手	break up
+和好	make up
+冷战	cold war
+吵架	quarrel
+假期	holiday
+纪念日	anniversary
+度假	vacation
+装修	renovate
+买房	buy a house
+卖房	sell a house
+租房	rent a house
+房租	rent
+房贷	mortgage
+车贷	car loan
+水电费	utility bill
+物业费	property fee
+暖气费	heating fee
+燃气费	gas bill
+网费	internet fee
+生活费	living expenses
+零花钱	pocket money
+压岁钱	lucky money
+救火	firefighting
+灭火	put out a fire
+点燃	light
+熄灭	put out
+燃烧	burn
+融化	melt
+冻结	freeze
+结冰	freeze
+沸腾	boil
+蒸发	evaporate
+沉淀	sediment
+混合	mix
+分离	separate
+提炼	extract
+组装	assemble
+拆卸	dismantle
+拼接	splice
+剪裁	cut
+雕刻	carve
+绘制	draw
+上色	color
+打草稿	draft
+定稿	finalize
+校对	proofread
+印刷	print
+出版	publish
+发行	release
+上映	screen
+播出	broadcast
+转播	rebroadcast
+重播	replay
+回放	playback
+快进	fast forward
+倒带	rewind
+循环	loop
+随机	shuffle
+静音	mute
+音量	volume
+亮度	brightness
+对比度	contrast
+清晰度	clarity
+刷新率	refresh rate
+破旧	shabby
+笨拙	clumsy
+熟练	skilled
+生疏	unfamiliar
+擅长	be good at
+拿手	be good at
+内行	expert
+外行	layman
+专业	professional
+业余	amateur
+初级	beginner
+中级	intermediate
+顶级	top-level
+一流	first-class
+名牌	famous brand
+正版	genuine
+盗版	pirated
+原装	original
+二手	second-hand
+全新	brand new
+物美价廉	good quality and cheap
+一路走好	have a safe journey
+大展宏图	realize your ambition
+五福临门	may all five blessings come
+龙凤呈祥	prosperity and good fortune
+家和万事兴	family harmony brings prosperity
+和气生财	harmony brings wealth
+平安喜乐	peace and joy
+顺顺利利	everything goes smoothly
+健健康康	in good health
+平平安安	safe and sound
+开开心心	happy
+快快乐乐	joyful
+甜甜蜜蜜	sweet
+长长久久	lasting
+白头到老	grow old together
+幸福美满	happy and perfect
+团团圆圆	reunion
+阖家欢乐	family happiness
+万事胜意	may everything go well
+事事顺心	everything goes your way
+天天向上	make progress every day
+好好学习	study hard
+天天进步	improve every day
+前程远大	bright future
+未来可期	the future is promising
+好好生活	live well
+早睡早起	sleep early and rise early
+多运动	exercise more
+少熬夜	stay up less
+少吃垃圾食品	eat less junk food
+多吃蔬菜	eat more vegetables
+按时睡觉	sleep on time
+记得喝水	remember to drink water
+别玩手机了	stop playing with your phone
+保护好眼睛	protect your eyes
+保持微笑	keep smiling
+心态放好	keep a good attitude
+加油干	keep it up
+# ==================== 扩充批次 8 ====================
+面料	fabric
+金属	metal
+塑料	plastic
+橡胶	rubber
+陶瓷	ceramics
+钢材	steel
+水泥	cement
+砖头	brick
+石灰	lime
+科室	department
+窗口	window
+柜台	counter
+大堂	lobby
+大厅	hall
+通道	passage
+出口	exit
+入口	entrance
+扶梯	escalator
+递交	submit
+上交	hand in
+下发	issue
+传达	convey
+宣布	announce
+公布	announce
+发布	release
+颁布	promulgate
+贯彻	implement
+推行	promote
+推广	promote
+普及	popularize
+倡导	advocate
+呼吁	call on
+号召	call on
+倡议	initiative
+动员	mobilize
+协调	coordinate
+统筹	coordinate
+分配	allocate
+调配	deploy
+调换	swap
+调离	transfer away
+调入	transfer in
+严格	strict
+宽松	loose
+温和	mild
+和蔼	kind
+主动	active
+被动	passive
+积极	positive
+消极	negative
+正面	positive
+负面	negative
+等我五分钟	Wait for me five minutes.
+马上出发	Leaving right away.
+准备出发	Get ready to leave.
+路上堵车	Traffic jam on the way.
+我迟到了	I'm late.
+不好意思迟到	Sorry for being late.
+马上开始	Starting right away.
+马上结束	Almost done.
+正在处理	Processing.
+已经完成	Already done.
+还没开始	Not started yet.
+一会儿就好	Just a moment.
+稍等一下	Wait a moment.
+再等等	Wait a bit more.
+快了	Almost there.
+搞定了	Done.
+弄好了	Done.
+准备好了	Ready.
+出发了	Leaving.
+开始了	It started.
+结束了	It's over.
+完成了	Finished.
+成功了	It worked.
+失败了	It failed.
+不用麻烦	No need to bother.
+不麻烦了	Don't bother.
+辛苦你了	Thanks for your effort.
+真是太感谢了	Thanks so much.
+多亏了你	Thanks to you.
+托你的福	Thanks to you.
+都是你的功劳	It's all thanks to you.
+你太客气了	You're too kind.
+哪里哪里	You flatter me.
+过奖了	You flatter me.
+彼此彼此	Same here.
+久仰大名	I've heard a lot about you.
+幸会幸会	Nice to meet you.
+认识你很高兴	Glad to meet you.
+请多关照	Please take care of me.
+多多指教	Please guide me.
+互相学习	Learn from each other.
+共同进步	Make progress together.
+合作愉快	Happy cooperation.
+一起加油	Let's cheer together.
+越来越好	Getting better and better.
+越来越棒	Getting better and better.
+事事顺利	Everything goes well.
+一切顺利	All the best.
+一切平安	Stay safe.
+早日康复	Get well soon.
+好好养病	Rest and recover.
+早点好起来	Get well soon.
+别太担心	Don't worry too much.
+会好起来的	It will get better.
+想开点	Look on the bright side.
+看开点	Look on the bright side.
+别想太多	Don't overthink.
+随遇而安	Take things as they come.
+既来之则安之	Take things as they are.
+船到桥头自然直	Things will work out.
+办法总比困难多	There are more solutions than problems.
+再接再厉	Keep it up.
+继续加油	Keep going.
+努力加油	Keep working hard.
+加油加油	Come on.
+相信自己	Believe in yourself.
+相信明天	Believe in tomorrow.
+明天会更好	Tomorrow will be better.
+一切都会好的	Everything will be fine.
+树木	trees
+树林	woods
+竹林	bamboo forest
+草地	lawn
+花坛	flower bed
+田野	field
+农田	farmland
+稻田	rice field
+麦田	wheat field
+菜地	vegetable plot
+水池	pond
+喷泉	fountain
+假山	rockery
+凉亭	pavilion
+石桥	stone bridge
+拱桥	arch bridge
+木桥	wooden bridge
+步道	walkway
+栈道	boardwalk
+石阶	stone step
+台阶	steps
+围栏	fence
+栏杆	railing
+栅栏	fence
+篱笆	hedge
+大楼	building
+高楼	high-rise
+大厦	mansion
+楼房	building
+平房	bungalow
+瓦房	tile-roofed house
+帐篷	tent
+木屋	log cabin
+宿舍楼	dormitory building
+教学楼	teaching building
+办公楼	office building
+居民楼	residential building
+写字楼	office building
+菜市场	vegetable market
+夜市	night market
+早市	morning market
+集市	market
+花市	flower market
+文具店	stationery store
+服装店	clothing store
+奶茶店	milk tea shop
+咖啡店	cafe
+洗衣店	laundry
+修理店	repair shop
+花店	flower shop
+宠物店	pet shop
+五金店	hardware store
+钞票	banknote
+支票	check
+汇票	money order
+小票	receipt
+收银	checkout
+找钱	give change
+记账	keep accounts
+逛公园	go to the park
+逛夜市	go to the night market
+吃夜宵	eat a late-night snack
+点外卖	order takeout
+点餐	order food
+下单	place an order
+收货	receive goods
+打赏	tip
+退单	cancel an order
+拖地	mop the floor
+擦桌子	wipe the table
+扫地	sweep the floor
+倒垃圾	take out the trash
+晒被子	air the quilt
+换床单	change the sheets
+浇花	water the flowers
+喂猫	feed the cat
+洗头	wash hair
+剪发	haircut
+染发	dye hair
+烫发	perm
+美甲	manicure
+按摩	massage
+足疗	foot massage
+拔罐	cupping
+刮痧	guasha
+慢跑	jog
+快走	brisk walk
+深蹲	squat
+俯卧撑	push-up
+仰卧起坐	sit-up
+引体向上	pull-up
+跳绳	jump rope
+出汗	sweat
+补水	hydrate
+晒太阳	sunbathe
+交接	handover
+巡查	patrol
+巡检	inspection
+盘点	stocktaking
+例会	regular meeting
+周会	weekly meeting
+月会	monthly meeting
+年会	annual meeting
+涨薪	salary increase
+降薪	salary cut
+发工资	pay salary
+领工资	get paid
+# ==================== 扩充批次 9（收尾） ====================
+凌晨	early morning
+清晨	early morning
+黎明	dawn
+拂晓	dawn
+破晓	daybreak
+正午	noon
+晌午	noon
+午后	afternoon
+黄昏	dusk
+深夜	late night
+午夜	midnight
+子夜	midnight
+上旬	first ten days of a month
+中旬	middle ten days of a month
+下旬	last ten days of a month
+月初	beginning of the month
+月底	end of the month
+年初	beginning of the year
+年底	end of the year
+前年	the year before last
+后年	the year after next
+上个月	last month
+下个月	next month
+这个月	this month
+上个星期	last week
+下个星期	next week
+这个星期	this week
+上周末	last weekend
+下周末	next weekend
+工作日	workday
+节假日	holiday
+双休日	two-day weekend
+法定假日	statutory holiday
+黄金周	golden week
+小长假	short holiday
+长假	long holiday
+短假	short break
+早饭	breakfast
+午饭	lunch
+晚饭	dinner
+夜宵	late-night snack
+加餐	extra meal
+零食	snack
+主食	staple food
+副食	side food
+配菜	side dish
+凉菜	cold dish
+热菜	hot dish
+汤菜	soup dish
+甜点	dessert
+饮品	drink
+酒水	drinks
+茶点	tea snack
+厨房用品	kitchenware
+日用品	daily necessities
+生活用品	household goods
+办公用品	office supplies
+学习用品	school supplies
+清洁用品	cleaning supplies
+洗漱用品	toiletries
+厨房用具	kitchen utensils
+餐具	tableware
+厨具	cookware
+洁具	sanitary ware
+五金	hardware
+电料	electrical materials
+签到	check in
+签退	check out
+上下班	commute
+旷工	absenteeism
+早到	arrive early
+通宵	all night
+拍照	take a photo
+自拍	selfie
+合影	group photo
+合照	group photo
+相片	photo
+底片	negative
+胶片	film
+相机	camera
+单反	DSLR
+三脚架	tripod
+闪光灯	flash
+修图	photo editing
+磨皮	smooth skin
+瘦脸	slim face
+拼图	photo collage
+带货	live commerce
+限量	limited edition
+预售	presale
+免运费	free shipping
+包邮	free shipping
+到货	arrive
+发货	ship
+缴费	pay a fee
+提现	withdraw
+奖状	certificate
+书费	book fee
+杂费	miscellaneous fee
+住宿费	accommodation fee
+零用钱	pocket money
+我晚点打给你	I'll call you later.
+我在开会稍后回	I'm in a meeting, I'll reply later.
+稍后给你回电	I'll call you back later.
+我在外面不方便	I'm outside, it's not convenient.
+等我方便了联系你	I'll contact you when I'm free.
+你方便说话吗	Is it convenient to talk?
+现在方便吗	Is now a good time?
+我在忙回头看	I'm busy, I'll check later.
+别急我马上到	Don't worry, I'll be right there.
+我已经出发了	I've already set off.
+我快到了	I'm almost there.
+你在哪个位置	Where are you?
+发个定位给我	Send me your location.
+我找不到你	I can't find you.
+我在这边	I'm over here.
+看到你了	I see you.
+这边走	This way.
+跟我来	Follow me.
+小心台阶	Watch the steps.
+注意脚下	Watch your step.
+慢一点	Slow down.
+等红灯	Wait for the light.
+过马路走斑马线	Cross at the crosswalk.
+坐几号线	Which subway line?
+在哪换乘	Where do I transfer?
+到站提醒我	Remind me when we arrive.
+我坐过站了	I missed my stop.
+这趟车到吗	Does this bus go there?
+多久一班	How often does it come?
+打车要多久	How long by taxi?
+大概二十分钟	About twenty minutes.
+不远很近	Not far, very close.
+走几分钟	A few minutes' walk.
+就在前面	It's just ahead.
+一直走	Go straight.
+左转	Turn left.
+右转	Turn right.
+到了就是	It's right there.
+就是这里	This is the place.
+我到了	I've arrived.
+我先进去了	I'm going in first.
+你直接上来	Come straight up.
+门没锁	The door is unlocked.
+帮我开下门	Open the door for me.
+按门铃	Ring the doorbell.
+我在门口	I'm at the door.
+我按了门铃	I rang the doorbell.
+马上开门	Opening the door.
+进来吧	Come in.
+随便坐	Sit anywhere.
+喝点什么	What would you like to drink?
+不用客气	Make yourself at home.
+当自己家	Make yourself at home.

@@ -72,6 +72,8 @@ data class KeyboardTheme(
     // ---- 候选词 ----
     val candidateTextSize: Float,
     val pinyinTextSize: Float,
+    /** 候选英文释义字号（辅助信息，明显小于 [candidateTextSize]） */
+    val candidateEnglishTextSize: Float,
     /** 候选 / 拼音 pill 的紧凑高度：无论面板多高，背景都只是一小块圆角 */
     val candidateChipHeight: Int,
     val candidateCornerRadius: Float,
@@ -228,6 +230,7 @@ data class KeyboardTheme(
 
                 candidateTextSize = sp(candidateSize.candidateSp),
                 pinyinTextSize = sp(candidateSize.pinyinSp),
+                candidateEnglishTextSize = sp(candidateSize.englishGlossSp),
                 candidateChipHeight = dimen(R.dimen.kb_candidate_chip_height).toInt(),
                 candidateCornerRadius = dimen(R.dimen.kb_panel_pill_corner_radius),
                 candidateMinWidth = dimen(R.dimen.kb_candidate_min_width).toInt(),

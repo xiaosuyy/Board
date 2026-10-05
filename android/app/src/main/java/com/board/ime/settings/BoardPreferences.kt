@@ -80,6 +80,16 @@ class BoardPreferences(context: Context) : SyncContentGate {
         get() = CandidateTextSize.fromName(prefs.getString(KEY_CANDIDATE_SIZE, null))
         set(value) = prefs.edit().putString(KEY_CANDIDATE_SIZE, value.name).apply()
 
+    /**
+     * 候选栏英文释义（P3）。
+     *
+     * 默认**关闭**。只影响候选栏是否在中文候选下方显示一行本地英文释义；
+     * 不参与候选生成 / 排序 / 上屏，也不读取或保存任何用户输入内容。
+     */
+    var candidateEnglishGlossEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CANDIDATE_ENGLISH_GLOSS, false)
+        set(value) = prefs.edit().putBoolean(KEY_CANDIDATE_ENGLISH_GLOSS, value).apply()
+
     /** 敏感剪贴板内容（验证码 / 密码）是否不写入历史 */
     var skipSensitiveClipboard: Boolean
         get() = prefs.getBoolean(KEY_SKIP_SENSITIVE, true)
@@ -185,6 +195,8 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_ENGINE = "engine_kind"
         const val KEY_LAYOUT = "layout_mode"
         const val KEY_CANDIDATE_SIZE = "candidate_text_size"
+        /** 候选栏英文释义开关（默认关闭） */
+        const val KEY_CANDIDATE_ENGLISH_GLOSS = "candidate_english_gloss_enabled"
         const val KEY_SKIP_SENSITIVE = "skip_sensitive_clipboard"
         const val KEY_VOICE_PRIVACY_ACK = "voice_privacy_acknowledged"
         const val KEY_TRANSLATION_SOURCE = "translation_source_language"
