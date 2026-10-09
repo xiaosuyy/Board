@@ -43,6 +43,9 @@ class InputController(
     /** 状态变化回调，由输入法服务用来刷新键盘与候选栏 */
     var onStateChanged: (() -> Unit)? = null
 
+    /** 提示回调（未实现的功能键）：由服务弹一条轻提示 */
+    var onHint: ((String) -> Unit)? = null
+
     var shiftActive: Boolean = false
         private set
 
@@ -66,6 +69,9 @@ class InputController(
     /** 符号层页码：0 = 常用符号，1 = 更多符号 */
     private var symbolPage: Int = 0
 
+    /** 数字层页码：0 = 微信「123」，1 = 微信「34」九宫格小键盘 */
+    private var numberPage: Int = 0
+
     val candidates: List<Candidate>
         get() = engine.candidates()
 
@@ -79,7 +85,7 @@ class InputController(
     val currentLayout: KeyboardLayout
         get() = when (mode) {
             InputMode.ENGLISH, InputMode.CHINESE -> KeyboardLayouts.letters
-            InputMode.NUMBER -> KeyboardLayouts.numbers
+            InputMode.NUMBER -> if (numberPage == 1) KeyboardLayouts.numbersPad else KeyboardLayouts.numbers
             InputMode.SYMBOL -> when {
                 symbolPage == 1 -> KeyboardLayouts.symbolsMore
                 letterMode == InputMode.CHINESE -> KeyboardLayouts.symbolsCjk
@@ -182,6 +188,10 @@ class InputController(
             KeyType.ENTER -> onEnter()
             KeyType.COMMA -> onLiteral(if (letterMode == InputMode.CHINESE) "，" else ",")
             KeyType.PERIOD -> onLiteral(if (letterMode == InputMode.CHINESE) "。" else ".")
+            KeyType.PUNCTUATION -> onLiteral(if (letterMode == InputMode.CHINESE) "，" else ",")
+            KeyType.ENTER_NEWLINE -> onEnterNewline()
+            KeyType.NUMBER_PAGE -> onNumberPage()
+            KeyType.NOT_IMPLEMENTED -> onHint?.invoke("该功能尚未开发")
             // 语言键：切换底层语言；若当前在字母层则同时切换布局
             KeyType.LANGUAGE -> toggleLanguage()
             KeyType.TO_NUMBERS -> switchMode(InputMode.NUMBER)
@@ -278,6 +288,25 @@ class InputController(
         notifyStateChanged()
     }
 
+    /** 只插入换行：先把未完成的组词按原样上屏，再提交一个换行（微信数字/符号层底部的「换行」） */
+    fun onEnterNewline() {
+        dispatch(EngineKey.Enter)
+        commitText("\n")
+        notifyStateChanged()
+    }
+
+    /** 「，。」键长按：句号（中文「。」/ 英文「.」） */
+    fun onPunctuationLongPress() {
+        onLiteral(if (letterMode == InputMode.CHINESE) "。" else ".")
+        notifyStateChanged()
+    }
+
+    /** 数字层第二页（九宫格数字小键盘）切换：微信数字层底部的「12/34」 */
+    fun onNumberPage() {
+        numberPage = if (numberPage == 1) 0 else 1
+        notifyStateChanged()
+    }
+
     private fun onCharacter(key: KeySpec) {
         val text = key.text ?: return
         val output = if (shiftActive || capsLock) text.uppercase() else text
@@ -315,6 +344,8 @@ class InputController(
         commitCompositionInternal(preferCandidate = true)
         mode = newMode
         engine.mode = newMode
+        // 切层时数字层回到第一页（微信「123」）
+        numberPage = 0
         clearModifiers()
         notifyStateChanged()
     }

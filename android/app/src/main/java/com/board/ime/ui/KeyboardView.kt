@@ -320,6 +320,29 @@ class KeyboardView @JvmOverloads constructor(
                 size = theme.keyTextSize,
             )
 
+            // 微信字母层底行的「，。」：显示随语言的标点
+            KeyType.PUNCTUATION -> drawLabel(
+                canvas = canvas,
+                rect = rect,
+                text = if (keyboardMode == InputMode.CHINESE) "，" else ",",
+                color = theme.keyText,
+                size = theme.keyTextSize,
+            )
+
+            KeyType.NUMBER_PAGE -> drawFunctionLabel(
+                canvas,
+                rect,
+                key.displayText.ifEmpty { "12/34" },
+            )
+
+            KeyType.NOT_IMPLEMENTED -> drawLabel(
+                canvas = canvas,
+                rect = rect,
+                text = key.displayText,
+                color = theme.functionKeyText,
+                size = theme.functionKeyTextSize,
+            )
+
             KeyType.SPACE -> drawLabel(
                 canvas = canvas,
                 rect = rect,
@@ -331,11 +354,24 @@ class KeyboardView @JvmOverloads constructor(
             KeyType.SHIFT -> drawShiftGlyph(canvas, rect, onAccentColor)
             KeyType.BACKSPACE -> drawBackspaceGlyph(canvas, rect, theme.functionKeyText)
             KeyType.ENTER -> drawEnterGlyph(canvas, rect, theme.functionKeyText)
-            KeyType.LANGUAGE -> drawGlobeGlyph(canvas, rect, theme.functionKeyText)
+            KeyType.ENTER_NEWLINE -> drawFunctionLabel(
+                canvas,
+                rect,
+                key.displayText.ifEmpty { "换行" },
+            )
 
-            KeyType.TO_NUMBERS -> drawFunctionLabel(canvas, rect, "123")
-            KeyType.TO_LETTERS -> drawFunctionLabel(canvas, rect, "ABC")
-            KeyType.TO_SYMBOLS -> drawFunctionLabel(canvas, rect, "#+=")
+            // 微信的「中/英」键：不再画地球，直接显示文字
+            KeyType.LANGUAGE -> drawLabel(
+                canvas = canvas,
+                rect = rect,
+                text = "中/英",
+                color = theme.functionKeyText,
+                size = theme.functionKeyTextSize * 0.8f,
+            )
+
+            KeyType.TO_NUMBERS -> drawFunctionLabel(canvas, rect, key.displayText.ifEmpty { "123" })
+            KeyType.TO_LETTERS -> drawFunctionLabel(canvas, rect, key.displayText.ifEmpty { "ABC" })
+            KeyType.TO_SYMBOLS -> drawFunctionLabel(canvas, rect, key.displayText.ifEmpty { "符号" })
             KeyType.TO_MORE_SYMBOLS -> drawFunctionLabel(canvas, rect, "更多")
             KeyType.TO_MAIN_SYMBOLS -> drawFunctionLabel(canvas, rect, "1/2")
         }

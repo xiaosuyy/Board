@@ -528,7 +528,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         connection.commitText(text, 1)
     }
     private var rimeEngine: RimeEngine? = null
-    private var controller = InputController(engine)
+    private var controller = InputController(engine).apply { onHint = { message -> showHint(message) } }
     private var appliedEngineKind: EngineKind? = null
 
     private lateinit var dictionaryRepository: DictionaryRepository
@@ -838,7 +838,14 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     override fun onKeyLongPress(key: KeySpec) {
         if (key.type == KeyType.LANGUAGE) {
             getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
+        } else if (key.type == KeyType.PUNCTUATION) {
+            controller.onPunctuationLongPress()
         }
+    }
+
+    /** 未实现的按键功能：弹一条轻提示 */
+    private fun showHint(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     override fun onKeyRepeat(key: KeySpec) {
@@ -1370,7 +1377,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         rimeEngine = newEngine as? RimeEngine
         controller.onStateChanged = null
         engine = newEngine
-        controller = InputController(newEngine, letterMode).also { it.onStateChanged = { refreshInputView() } }
+        controller = InputController(newEngine, letterMode).also {
+            it.onStateChanged = { refreshInputView() }
+            it.onHint = { message -> showHint(message) }
+        }
         appliedEngineKind = kind
     }
 
