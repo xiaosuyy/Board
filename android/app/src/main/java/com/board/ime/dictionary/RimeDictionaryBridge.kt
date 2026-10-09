@@ -246,10 +246,8 @@ object RimeDictionaryBridge {
      * 这里用**音节数**做一个很轻的近似：短词通常是日常词，长词多是专名 / 古语 / 书名，
      * 正好对应「常用扩展词 > 低频扩展词」。真实词频存在时（> 0）优先用真实值。
      */
-    private fun weightForEntry(code: String): Int {
-        val syllables = code.count { it == ' ' } + 1
-        return (16 - syllables).coerceAtLeast(1) * 100
-    }
+    private fun weightForEntry(code: String): Int =
+        ExtraDictWeighting.weightForSyllables(code.count { it == ' ' } + 1)
     /** 清理临时解压出来的工作文件（**gz 保留**）：词典本体 + 占位方案 */
     fun removeStaged(userDir: File, source: DictionarySource) {
         runCatching { rimeDictFile(userDir, source).takeIf { it.exists() }?.delete() }
@@ -295,10 +293,40 @@ object RimeDictionaryBridge {
             append("patch:\n")
             // 单页候选数（Rime 一次生成多少候选，≠ UI 可见数量）。
             // ⚠️ 用户目录里的同名文件会**顶掉**资产目录里的那一份（Rime 不会把两份 patch 合并），
-            // 资产版 luna_pinyin_simp.custom.yaml 里写的是 menu/page_size: 9；
+            // 资产版 luna_pinyin_simp.custom.yaml 里写的也是 menu/page_size: 50；
             // 这里必须显式重复这个设置，否则会掉回 default.yaml 的默认值 5。
             // UI 可横向滑动查看整页候选；这里与 CandidateBar.MAX_CANDIDATES 保持一致。
             append("  menu/page_size: 50\n")
+            // 显式开启用户词典学习：选过的候选会被记录并加权，越用越靠前。
+            // 之前未显式设置，依赖 librime 默认值；实测学习未生效，这里写死为 true。
+            append("  \"translator/enable_user_dict\": true\n")
+            // 关闭整句候选：避免出现「哦哦 / 等等」这类由简拼+整句拼出来的不相关结果，
+            // 只保留词库里的真实词语。
+            append("  \"translator/enable_sentence\": false\n")
+            // 前缀补全：输入前缀即可给出更长的词 / 词组（对应微信的 completion 候选）。
+            // 注意：这会让每次按键的候选更多，但补全候选的权重低于精确匹配，
+            // 最常用的词仍排在前面。
+            append("  \"translator/enable_completion\": true\n")
+            // 用户词优先（对齐微信：用户自定义词 / 常用语优先于基础词库）。
+            // 基础词库权重来自 essay.txt 预置词频（最大约 4.8e6），custom_phrase 默认
+            // initial_quality 只有 1，比基础词低得多 → 自己加的词排不到前面。
+            // 这里给一个明显更大的值，用户自己的词匹配到编码时强制排最前。
+            append("  \"custom_phrase/initial_quality\": 10000000\n")
+            // ------------------------------------------------------------------
+            // 模糊音 + 纠错（对应微信的 fuzzy augmenters：zh/z、ch/c、sh/s、n/l、h/f、前后鼻音）。
+            // pinyin.yaml 已随包发布，这里只把定义挂进 speller/algebra，不改原始 schema。
+            // 顺序必须是「模糊音 → 简拼 → 纠错」：模糊音排在简拼之前，简拼才会带上模糊音；
+            // 全部用 derive（权重低于精确匹配），只扩大覆盖面，不会把生僻词顶到常用词前面。
+            append("  \"speller/algebra\":\n")
+            append("    __patch:\n")
+            append("      - pinyin:/zh_z_bufen\n")
+            append("      - pinyin:/n_l_bufen\n")
+            append("      - pinyin:/hu_f_buhun\n")
+            append("      - pinyin:/eng_ong_bufen\n")
+            append("      - pinyin:/en_eng_bufen\n")
+            append("      - pinyin:/abbreviation\n")
+            append("      - pinyin:/spelling_correction\n")
+            append("      - pinyin:/key_correction\n")
             // ------------------------------------------------------------------
             // 特殊自定义编码（`@` 等 custom_phrase 的 code）需要**能进入 composing**，
             // 否则 custom_phrase 的 translator 永远收不到查询串。
@@ -313,23 +341,42 @@ object RimeDictionaryBridge {
             // ------------------------------------------------------------------
             append("  \"speller/alphabet\": \"zyxwvutsrqponmlkjihgfedcba@0123456789._-\"\n")
             append("  \"recognizer/patterns/custom_code\": \"^[0-9@][0-9A-Za-z@._-]*$\"\n")
+            // ------------------------------------------------------------------
+            // 现代常用词补充词源：essay.txt 高频 2–4 字词（脚本自动注音；essay/luna 都是繁体，
+            // 运行期由 OpenCC 转简体显示，匹配仍按拼音）。
+            // 基础词库 luna_pinyin 是繁体 / 文言词典，缺很多现代常用词；这里补一份高频常用词，
+            // 不加偏移，纯按词频竞争：谁常用谁靠前。
+            //
+            // 额外词源（用户导入的大型词库）与 board_common 挂在**同一个** `engine/translators/+`
+            // 列表里，避免 YAML 出现两个同名键互相覆盖。
+            append("  \"engine/translators/+\":\n")
+            append("    - script_translator@board_common\n")
+            sources.forEach { source ->
+                append("    - script_translator@").append(translatorName(source)).append('\n')
+            }
+            append("  board_common:\n")
+            append("    dictionary: board_common\n")
+            append("    enable_completion: false\n")
+            append("    enable_sentence: false\n")
+            append("    enable_user_dict: false\n")
+            append("    enable_encoder: false\n")
+            append("    initial_quality: 1\n")
+            append("    comment_format:\n")
+            append("      - xform/.+//\n")
+            // **关键**：把 board_common 与导入词典列进 `schema/dependencies`。
+            //
+            // 真机 + librime INFO 日志实测（deployment_tasks.cc）：
+            //   dependencies 的语义是「**方案**」，deployer 会找 `<名字>.schema.yaml`，
+            //   找到就把它当依赖方案、预编译它的 `translator.dictionary`（官方 stroke 即如此），
+            //   找不到只打印 `missing input schema; skipped unsatisfied dependency`。
+            //   所以每个词典都要配套 `<名字>.schema.yaml` 占位方案，
+            //   两边配套才能真正生成 `build/<名>.table.bin`。
+            append("  \"schema/dependencies/+\":\n")
+            append("    - board_common\n")
             if (sources.isEmpty()) {
                 append("  # 没有需要挂接的大型词库\n")
             } else {
                 append("  # 追加「额外词源」：不动原来的 script_translator / luna_pinyin\n")
-                append("  \"engine/translators/+\":\n")
-                sources.forEach { source ->
-                    append("    - script_translator@").append(translatorName(source)).append('\n')
-                }
-                // **关键**：把导入词典列进 `schema/dependencies`。
-                //
-                // 真机 + librime INFO 日志实测（deployment_tasks.cc）：
-                //   dependencies 的语义是「**方案**」，deployer 会找 `<名字>.schema.yaml`，
-                //   找到就把它当依赖方案、预编译它的 `translator.dictionary`（官方 stroke 即如此），
-                //   找不到只打印 `missing input schema; skipped unsatisfied dependency`。
-                //   所以部署时我们**同时**写下 `<逻辑名>.schema.yaml` 占位方案，
-                //   两边配套才能真正生成 `build/board_import_*.table.bin`。
-                append("  \"schema/dependencies/+\":\n")
                 sources.forEach { source ->
                     append("    - ").append(logicalDictionaryName(source)).append('\n')
                 }
@@ -369,15 +416,12 @@ object RimeDictionaryBridge {
      *
      * 产品优先级：**用户学习词 > 基础常用候选 > 常用扩展词 > 低频扩展词**。
      *
-     * 取 `0`：额外词源的词条权重本身就是「按音节数给的轻量词频」（见 [weightForEntry]），
-     * 基础词库的词频来自 essay.txt（中位 265、最大 4,822,928），于是
-     * 基础常用字/词自然排在扩展词之前，扩展词只负责**扩大覆盖面**，
-     * 而不是接管排序（早先用 100 万时，扩展词会压住日常候选 —— 例如 yuan 的常用字被挤掉）。
-     *
-     * 底层一次给 [CandidateBar.MAX_CANDIDATES] 之外的 30 个候选，
-     * 所以排在后面的扩展词依然滑一下就可见，不需要靠抬高 quality 来"被看见"。
+     * 取一个**明显为负**的值（见 [ExtraDictWeighting.INITIAL_QUALITY]）：这样任何基础
+     * 词库候选都会排在扩展词之前，扩展词只负责**扩大覆盖面**。
+     * 早先用 0 时，扩展词自带的伪词频（100~1500）会压过基础常用词（essay 中位约 265），
+     * 表现就是“打某个拼音时生僻词/专名排在前面”。
      */
-    private const val EXTRA_QUALITY = 0
+    private const val EXTRA_QUALITY = ExtraDictWeighting.INITIAL_QUALITY
 
     private const val BUFFER = 64 * 1024
 

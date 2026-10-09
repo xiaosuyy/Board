@@ -91,16 +91,22 @@ class InputController(
 
     // ------------------------------------------------------------ 生命周期
 
-    fun onStartInput(connection: InputConnection?, info: EditorInfo?) {
+    /**
+     * @param keepLayer 系统「重启本次输入」（onStartInputView restarting=true）时保留当前层，
+     *   避免输数字 / 切到符号层后被弹回字母层。新进入输入框（restarting=false）仍回到字母层。
+     */
+    fun onStartInput(connection: InputConnection?, info: EditorInfo?, keepLayer: Boolean = false) {
         inputConnection = connection
         editorInfo = info
         engine.reset()
         clearModifiers()
-        // 重新进入输入框时回到字母层，数字 / 符号层不跨输入框保留
-        symbolPage = 0
-        // 一律回到「用户偏好的字母层」：上一个输入框可能是密码框（被临时切成了英文），
-        // 那个临时状态不能被带到下一个普通输入框。
-        mode = letterMode
+        if (!keepLayer) {
+            // 重新进入输入框时回到字母层，数字 / 符号层不跨输入框保留
+            symbolPage = 0
+            // 一律回到「用户偏好的字母层」：上一个输入框可能是密码框（被临时切成了英文），
+            // 那个临时状态不能被带到下一个普通输入框。
+            mode = letterMode
+        }
         // 密码 / 验证码输入框：**本次会话**强制英文，不写回用户偏好。
         // 默认中文之后必须这么做，否则会在密码框里组拼音、甚至把中文当密码上屏。
         if (info != null && isPasswordEditor(info)) mode = InputMode.ENGLISH

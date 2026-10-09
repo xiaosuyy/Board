@@ -64,6 +64,13 @@ object RimeRuntime {
     @Volatile
     private var userDirPath: String? = null
 
+    /** 首次 [initialize] 时保存的 Context / 版本，用于「重建引擎」时重新 setup */
+    @Volatile
+    private var storedContext: Context? = null
+
+    @Volatile
+    private var storedVersion: String = ""
+
     /** 最近一次「按键/组词」活动时间，用来避免同步任务打断正在进行的输入 */
     @Volatile
     private var lastActivityAt: Long = 0L
@@ -120,6 +127,8 @@ object RimeRuntime {
         lock.withLock {
             if (initialized) return true
             lastError = null
+            storedContext = context.applicationContext
+            storedVersion = appVersion
 
             if (!RimeNative.isAvailable) {
                 lastError = "board_rime.so 未加载"
@@ -256,27 +265,65 @@ object RimeRuntime {
 
     /**
      * 从文本文件导入学习记录。
+     *
+     * 导入只写了磁盘上的 userdb；librime 的翻译器 / 用户词典挂在**进程级 Engine** 上，
+     * 内存里的旧词表不会自动重载。因此默认导入后**重建引擎**，让导入的学习词真正参与候选排序
+     * （否则会表现为「导入的学习词有时无效」，要等进程重启才生效）。
+     *
      * @return 条目数；失败返回 -1
      */
-    fun importUserDict(source: File): Int = withSessionReleased {
-        RimeNative.nativeImportUserDict(USER_DICT_NAME, source.absolutePath)
+    fun importUserDict(source: File, reload: Boolean = true): Int {
+        if (!initialized) return -1
+        val count = lock.withLock {
+            closeSessionLocked()
+            RimeNative.nativeImportUserDict(USER_DICT_NAME, source.absolutePath)
+        }
+        if (reload) {
+            reloadEngine()
+        } else {
+            lock.withLock { if (initialized) openSessionLocked() }
+        }
+        return count
     }
 
-    /** 清空学习记录：删除 userdb 目录后重开会话（本地操作，不涉及网络） */
-    fun clearUserLearning(): Boolean {
+    /**
+     * 重建引擎：finalize 后重新 setup + initialize + 开会话。
+     *
+     * 用于「导入学习词 / 清空学习记录」等直接改动磁盘 userdb 的场景 —— 只有重建 Engine
+     * 才能让内存里的用户词典重新加载。失败返回 false（不抛异常）。
+     */
+    fun reloadEngine(): Boolean {
+        val context = storedContext ?: return false
+        val version = storedVersion
         lock.withLock {
             closeSessionLocked()
+            if (initialized) {
+                RimeNative.nativeFinalize()
+                initialized = false
+            }
+        }
+        val ok = initialize(context, version)
+        if (ok) lock.withLock { openSessionLocked() }
+        return ok
+    }
+
+    /** 清空学习记录：删除 userdb 目录后**重建引擎**（本地操作，不涉及网络） */
+    fun clearUserLearning(): Boolean {
+        val removed = lock.withLock {
+            closeSessionLocked()
             val dir = userDataDir()
-            var removed = false
+            var r = false
             dir?.listFiles()?.forEach { file ->
                 if (file.name.startsWith(USER_DICT_NAME)) {
-                    if (file.deleteRecursively()) removed = true
+                    if (file.deleteRecursively()) r = true
                 }
             }
-            Log.i(TAG, "清空学习记录：removed=$removed dir=${dir?.absolutePath}")
-            if (initialized) openSessionLocked()
-            return removed
+            Log.i(TAG, "清空学习记录：removed=$r dir=${dir?.absolutePath}")
+            r
         }
+        // 删除磁盘 userdb 后必须重建引擎，内存里的用户词典才会真正清空并重新加载
+        reloadEngine()
+        return removed
     }
 
     /**

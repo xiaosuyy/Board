@@ -531,7 +531,7 @@ blueboard/
 android/app/src/main/assets/rime/
 ├── default.yaml / default.custom.yaml / key_bindings.yaml / punctuation.yaml / symbols.yaml
 ├── luna_pinyin.schema.yaml / luna_pinyin_simp.schema.yaml / luna_pinyin.dict.yaml / pinyin.yaml
-├── luna_pinyin_simp.custom.yaml                # menu/page_size = 9（候选更多，便于横向滑动）
+├── luna_pinyin_simp.custom.yaml                # page_size=50 + 模糊音/纠错 + 前缀补全（对齐微信本地行为）
 ├── stroke.schema.yaml / stroke.dict.yaml       # luna_pinyin 声明的 dependencies
 ├── essay.txt / LICENSE (LGPL-3.0) / opencc/
 ```
@@ -576,7 +576,18 @@ adb shell am start -n com.board.ime/.settings.BoardSettingsActivity
   `am get-config` 始终返回 `port`；悬浮布局本身通过「键盘布局 = 悬浮」在竖屏下验证过。
 - **IME 窗口不能自由拖动**（系统决定位置）→ 只做稳定悬浮 + 靠右对齐，**没有**做拖动。
 - MORE 里的 翻译 / 语音 / 常用语 只有入口，点击会提示尚未开发。
-- 候选取 librime 当前页（`page_size = 9`，可横向滑动；未加翻页按钮）。
+- 候选取 librime 当前页（`page_size = 50`，可横向滑动；未加翻页按钮），
+  已开启模糊音（平翘舌 / n-l / h-f / 前后鼻音）、拼写与按键纠错、前缀补全（对齐微信本地候选，
+  不含云端）；模糊音以 `derive` 形式追加，权重低于精确匹配，最常用的词仍排在前面。
+  **用户词优先**：自定义词 / 固定词 / 常用语（Rime `custom_phrase`）的 `initial_quality` 提到
+  基础词频（essay.txt，最大约 4.8e6）之上，输入其编码时排在最前（对齐微信「用户词优先」）。
+  **现代常用词补充词库**：`board_common.dict.yaml`（essay.txt 高频 2–4 字词，脚本自动注音）
+  作为额外词源，补上基础 `luna_pinyin`（繁体 / 文言词典）缺的现代常用词（如 微信）。
+  **英文候选**改为按**词频**排序的 10k 词表（`assets/english_words.txt`）：前缀补全「常用词优先」
+  （`hel` → help / held / helpful / hello…），不再按词长排序；候选上限 8 → 50（与中文候选栏一致，
+  横向可滑动，对齐微信英文「一页 + 展开更多」的量级）。
+  另补充常用**语气词 / 叠词的口语编码**（`嗯=e`、`嗯嗯=e e`、`哦=o`…），
+  对齐微信：输入 `ee` → 首选「嗯嗯」。
 - **剪贴板搜索时整个输入法会变高**（面板 56dp + 结果区 ≤146dp + 键盘）：
   这是为了让「能打字」和「看得见结果」同时成立；TopPanel 本身始终 56dp，
   退出搜索立刻恢复原来的总高度。剪贴板普通状态与键盘状态高度完全一致。

@@ -62,7 +62,14 @@ class RimeDataInstaller(private val context: Context) {
          * assets 数据版本。升到 v2 时把数字加一，用户下次启动会自动重新复制并部署。
          * v1：朙月拼音 + 简体（luna_pinyin_simp）+ OpenCC t2s + stroke 依赖
          * v2：加入 luna_pinyin_simp.custom.yaml（menu/page_size = 9，方便候选横向滑动）
+         * v3：候选对齐微信本地行为 —— 模糊音 + 纠错、前缀补全、一页 50 个候选
+         * v4：用户词优先 —— custom_phrase 的 initial_quality 提到基础词频之上
+         * v5：新增 board_common 现代常用词补充词源（essay.txt 高频 2–4 字词，自动注音）
+         * v6：board_common 加占位方案 + schema/dependencies，deployer 才会编译出 table.bin；
+         *     英文候选改为按词频排序的 10k 词表（assets/english_words.txt）
+         * v7：board_common 追加常用语气词 / 叠词的“口语编码”（如 嗯=e、嗯嗯=e e），
+         *     对齐微信：输入 ee → 嗯嗯 排第一
          */
-        const val ASSET_VERSION = "2"
+        const val ASSET_VERSION = "7"
     }
 }

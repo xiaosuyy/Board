@@ -101,6 +101,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        // 普通 JVM 单测里让 android.util.Log 等桩方法返回默认值（不抛 "not mocked"），
+        // 这样即可单测 RimeDictionaryBridge 生成的 Rime 补丁内容。
+        unitTests.isReturnDefaultValues = true
+    }
+
     signingConfigs {
         /**
          * 正式 release 签名（v1.1.0 起所有正式版本**共用同一把 keystore**）。

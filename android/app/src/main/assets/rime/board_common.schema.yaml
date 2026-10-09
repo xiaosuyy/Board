@@ -1,0 +1,47 @@
+---
+# Board 自动生成：board_common 词典的**挂载点**。
+#
+# librime 的 deployer 只在方案的 `schema/dependencies` 里列的名字上预编译词典
+# （会去找 `<名字>.schema.yaml`，把它当依赖方案编译其 translator.dictionary）。
+# 所以要生成 `build/board_common.table.bin`，必须同时有：
+#   1) 本文件 `board_common.schema.yaml`；
+#   2) 方案 patch 里的 `schema/dependencies/+: [board_common]`。
+# 它不在 schema_list 里，不会出现在方案列表中，也不用于日常输入。
+schema:
+  schema_id: board_common
+  name: "现代常用词补充"
+  version: "1"
+  author:
+    - Board
+  description: |
+    board_common 词典的挂载点，仅用于让 deployer 预编译该词典。
+  dependencies: []
+translator:
+  dictionary: board_common
+  enable_completion: false
+  enable_sentence: false
+  enable_encoder: false
+  enable_user_dict: false
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+engine:
+  processors:
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - script_translator
+...

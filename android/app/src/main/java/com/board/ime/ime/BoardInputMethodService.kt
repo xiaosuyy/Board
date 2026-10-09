@@ -38,6 +38,7 @@ import com.board.ime.dictionary.DictionaryChangeNotifier
 import com.board.ime.dictionary.DictionaryRepository
 import com.board.ime.engine.BasicEngine
 import com.board.ime.engine.ChineseEnglishLexiconLoader
+import com.board.ime.engine.EnglishLexiconLoader
 import com.board.ime.engine.InputEngine
 import com.board.ime.engine.InputMode
 import com.board.ime.engine.RimeEngine
@@ -608,6 +609,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // P3：本地中英释义表（纯本地 assets 小文件，同步读一次；loadOnce 幂等，
         // 读取失败也只按“无释义”处理，不影响输入、不联网、不访问数据库）。
         ChineseEnglishLexiconLoader.loadOnce(this)
+        // 英文词频表（纯本地 assets 小文件，同步读一次；loadOnce 幂等，
+        // 失败时保留内置兜底词表，不影响输入、不联网）。
+        EnglishLexiconLoader.loadOnce(this)
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
         buildController(preferences.engineKind, preferences.mode)
 
@@ -738,7 +742,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         super.onStartInputView(info, restarting)
         // 新的一次输入一定不是「收起键盘」造成的中断，清掉标记，避免残留
         hidingForCollapse = false
-        controller.onStartInput(currentInputConnection, info)
+        controller.onStartInput(currentInputConnection, info, keepLayer = restarting)
         panelController?.resetToIdle()
         stopClipboardObservation()
         refreshBlockedWords()

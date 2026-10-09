@@ -105,6 +105,13 @@ class BasicEngine(initialMode: InputMode = InputMode.ENGLISH) : InputEngine {
     }
 
     private companion object {
-        const val MAX_CANDIDATES = 8
+        /**
+         * 英文候选上限（含"原样输入"那一项）。
+         *
+         * 对齐微信英文：微信是「一页候选 + `∨` 展开更多」；Board 用**同一个可横向滑动的候选栏**，
+         * 因此这里给足一整页（与 [com.board.ime.ui.panel.CandidateBar] 的上限一致），
+         * 不再像早期那样只给 8 个。多出来的候选横向滑动即可看全。
+         */
+        const val MAX_CANDIDATES = 50
     }
 }
