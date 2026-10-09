@@ -524,11 +524,12 @@ class CandidateBar @JvmOverloads constructor(
     /**
      * 右侧按钮的点击判定。
      *
-     * 按钮画在 [dispatchDraw] 的保留条里、不是子 View，所以在这里按「点击位置是否落在
-     * 可视区最右的保留条内」来分派：落在条内 → 展开 / 收起；其余位置 → 原样交给
+     * 按钮画在 [dispatchDraw] 的保留条里、不是子 View；而候选格子在 `scrollX = 0` 时会一直
+     * 铺到右端（行尾 padding 在**可滚动内容**的末尾，不在可视区右侧），所以必须在这里
+     * **先于子 View** 拦截：落在条内 → 展开 / 收起；其余位置 → 原样交给
      * [HorizontalScrollView]（横向滑动不受影响）。
      */
-    override fun onTouchEvent(ev: MotionEvent): Boolean {
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         val inActionStrip = candidates.isNotEmpty() &&
             ev.x >= width - theme.panelHorizontalPadding - actionWidthPx
         if (inActionStrip) {
@@ -542,8 +543,8 @@ class CandidateBar @JvmOverloads constructor(
                     if (actionTouching) {
                         actionTouching = false
                         onExpandToggled?.invoke()
-                        return true
                     }
+                    return true
                 }
 
                 MotionEvent.ACTION_CANCEL -> actionTouching = false
@@ -551,7 +552,7 @@ class CandidateBar @JvmOverloads constructor(
             return true
         }
         actionTouching = false
-        return super.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
     }
 
     private fun dividerWidth(): Int =
