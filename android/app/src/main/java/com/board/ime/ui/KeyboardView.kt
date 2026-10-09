@@ -346,7 +346,10 @@ class KeyboardView @JvmOverloads constructor(
             KeyType.SPACE -> drawLabel(
                 canvas = canvas,
                 rect = rect,
-                text = keyboardMode.displayName,
+                text = when (keyboardMode) {
+                    InputMode.NUMBER, InputMode.SYMBOL -> "空格"
+                    else -> keyboardMode.displayName
+                },
                 color = theme.functionKeyText,
                 size = theme.functionKeyTextSize,
             )
