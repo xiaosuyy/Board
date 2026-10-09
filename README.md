@@ -616,6 +616,10 @@ adb shell am start -n com.board.ime/.settings.BoardSettingsActivity
   横向可滑动，对齐微信英文「一页 + 展开更多」的量级）。
   另补充常用**语气词 / 叠词的口语编码**（`嗯=e`、`嗯嗯=e e`、`哦=o`…），
   对齐微信：输入 `ee` → 首选「嗯嗯」。
+  **逐字选词**（对齐微信）：输入 `xupengcheng` 时，选中只覆盖前几个音节的候选（如「许」）
+  会**保留未选完的拼音**（`pengcheng`）继续给候选，可继续「鹏 → 程」，而不是一次性把整串提交掉。
+  实现见 `RimeEngine.selectAndDrain`：librime 对这类前缀候选的 `select_candidate` 返回 `true`
+  但什么都不做，Board 兜底时用 `nativeGetPreedit` 取音节切分，提交候选文本后把剩余音节重新喂回 librime。
 - **剪贴板搜索时整个输入法会变高**（面板 56dp + 结果区 ≤146dp + 键盘）：
   这是为了让「能打字」和「看得见结果」同时成立；TopPanel 本身始终 56dp，
   退出搜索立刻恢复原来的总高度。剪贴板普通状态与键盘状态高度完全一致。

@@ -26,9 +26,11 @@ sealed interface EngineResult {
     /**
      * 提交文本上屏。
      * [clearComposition] 为 true 时会结束当前 composing 状态。
+     * [composing] 非空时，上屏后仍需保留这段未选完的拼音（逐字选词，如「许」之后的 pengcheng）。
      */
     data class Commit(
         val text: String,
         val clearComposition: Boolean = true,
+        val composing: String = "",
     ) : EngineResult
 }

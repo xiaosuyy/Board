@@ -262,6 +262,25 @@ Java_com_board_ime_engine_rime_RimeNative_nativeGetInput(JNIEnv* env, jobject /*
   return ToJString(env, g_api->get_input(static_cast<RimeSessionId>(session)));
 }
 
+// 当前组词的音节切分（preedit，音节间以空格分隔）；没有则返回 null
+JNIEXPORT jstring JNICALL
+Java_com_board_ime_engine_rime_RimeNative_nativeGetPreedit(JNIEnv* env, jobject /*thiz*/,
+                                                         jlong session) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!EnsureApi() || g_api->get_context == nullptr || session == 0) {
+    return nullptr;
+  }
+  RIME_STRUCT(RimeContext, context);
+  if (g_api->get_context(static_cast<RimeSessionId>(session), &context) != True) {
+    return nullptr;
+  }
+  jstring result = ToJString(env, context.composition.preedit);
+  if (g_api->free_context != nullptr) {
+    g_api->free_context(&context);
+  }
+  return result;
+}
+
 // 当前候选（只取第一页），始终返回数组（可能为空）
 JNIEXPORT jobjectArray JNICALL
 Java_com_board_ime_engine_rime_RimeNative_nativeGetCandidates(JNIEnv* env, jobject /*thiz*/,

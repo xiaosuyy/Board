@@ -57,6 +57,8 @@ object RimeNative {
 
     external fun nativeGetInput(session: Long): String?
 
+    external fun nativeGetPreedit(session: Long): String?
+
     external fun nativeGetCandidates(session: Long): Array<String>?
 
     external fun nativeSetOption(session: Long, option: String, value: Boolean): Boolean

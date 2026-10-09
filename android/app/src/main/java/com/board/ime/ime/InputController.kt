@@ -43,6 +43,13 @@ class InputController(
     /** 状态变化回调，由输入法服务用来刷新键盘与候选栏 */
     var onStateChanged: (() -> Unit)? = null
 
+    /**
+     * 逐字选词上屏后，我们会立刻 setComposingText 保留未选完的拼音；
+     * 紧随其后的 commit 选区回调（composingStart/End = -1）不能把它当作
+     * 「应用侧取消了 composing」而清空。在此时间戳前忽略这类回调。
+     */
+    private var suppressSelectionResetUntil: Long = 0L
+
     /** 提示回调（未实现的功能键）：由服务弹一条轻提示 */
     var onHint: ((String) -> Unit)? = null
 
@@ -148,6 +155,9 @@ class InputController(
      * 同步清空引擎状态，避免 composing 与实际内容不一致。
      */
     fun onSelectionChanged(composingStart: Int, composingEnd: Int) {
+        // 逐字选词上屏后由我们自己 setComposingText 留下未选完的拼音；
+        // 紧随其后的 commit 选区回调不应把它清掉。
+        if (SystemClock.uptimeMillis() < suppressSelectionResetUntil) return
         if (composingStart < 0 && composingEnd < 0 && engine.composing.isNotEmpty()) {
             engine.reset()
             notifyStateChanged()
@@ -389,6 +399,10 @@ class InputController(
                 } else if (result.clearComposition) {
                     inputConnection?.finishComposingText()
                 }
+                if (result.composing.isNotEmpty()) {
+                    inputConnection?.setComposingText(result.composing, CURSOR_AT_END)
+                    suppressSelectionResetUntil = SystemClock.uptimeMillis() + SELECTION_RESET_GRACE_MS
+                }
             }
 
             EngineResult.Handled, EngineResult.Ignored -> Unit
@@ -493,6 +507,9 @@ class InputController(
     private companion object {
         const val CURSOR_AT_END = 1
         const val DOUBLE_TAP_TIMEOUT_MS = 300L
+
+        /** 逐字选词后忽略「选区取消 composing」回调的时间窗 */
+        const val SELECTION_RESET_GRACE_MS = 400L
         const val TAG = "BoardIme"
 
         /**

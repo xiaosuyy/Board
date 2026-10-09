@@ -154,7 +154,7 @@ class RimeEngine(
         return RimeRuntime.withSession(EngineResult.Ignored) { session ->
             lock.withLock {
                 val committed = selectAndDrain(session, index)
-                if (committed.isEmpty()) EngineResult.Ignored else EngineResult.Commit(committed)
+                if (committed.isEmpty()) EngineResult.Ignored else EngineResult.Commit(committed, composing = composingCache)
             }
         }
     }
@@ -234,6 +234,8 @@ class RimeEngine(
         }
 
         if (text.isEmpty()) return EngineResult.Ignored
+        // 逐字选词：仍有未选完的拼音时，不补后缀，保留 composing 继续选下一个字
+        if (composingCache.isNotEmpty()) return EngineResult.Commit(text, composing = composingCache)
         return EngineResult.Commit(text + suffix)
     }
 
@@ -241,15 +243,23 @@ class RimeEngine(
         // index 是「可见候选」的下标，需要映射回 librime 的真实下标（屏蔽词会改变位置）
         val rimeIndex = rimeIndexCache.getOrNull(index) ?: index
         val candidateText = candidatesCache.getOrNull(index)?.text
+        val syllables = RimeNative.nativeGetPreedit(session).orEmpty()
+            .split(' ', '\'').filter { it.isNotEmpty() }
         val selected = RimeNative.nativeSelectCandidate(session, rimeIndex)
         val committed = RimeNative.nativeGetCommit(session).orEmpty()
         if (!selected || committed.isEmpty()) {
             // 真机/模拟器实测：对「拼写不完整」的候选，librime 的 select_candidate* 会返回 true
             // 但**什么都不做**（commit 为空、composition 未清空），表现为「点后面的候选没反应」。
-            // 兜底：直接提交该候选文本并清掉组词，保证点击任何可见候选都有反馈。
+            // 兜底：提交该候选文本。若候选只覆盖前几个音节（如 xu 对应「许」），
+            // 把剩余音节（pengcheng）重新送入 librime，继续逐字选词（对齐微信）。
             if (!candidateText.isNullOrEmpty() && composingCache.isNotEmpty()) {
+                val rest = syllables.drop(candidateText.length).joinToString("")
                 RimeNative.nativeClearComposition(session)
                 RimeNative.nativeGetCommit(session)
+                if (rest.isNotEmpty()) {
+                    rest.forEach { RimeNative.nativeProcessKey(session, RimeKey.of(it), 0) }
+                    RimeNative.nativeGetCommit(session)
+                }
                 refresh(session)
                 return candidateText
             }
