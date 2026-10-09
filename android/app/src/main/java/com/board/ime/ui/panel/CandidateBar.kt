@@ -10,6 +10,7 @@ import android.text.TextUtils
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -57,6 +58,19 @@ class CandidateBar @JvmOverloads constructor(
 
     var onCandidateSelected: ((index: Int) -> Unit)? = null
     var onComposingClicked: (() -> Unit)? = null
+
+    /** 点右侧「∨ / ∧」：展开 / 收起全部候选（对齐微信候选栏的展开按钮） */
+    var onExpandToggled: (() -> Unit)? = null
+
+    /** 是否处于「展开全部候选」状态（决定右侧按钮画 ∨ 还是 ∧） */
+    var expanded: Boolean = false
+        private set
+
+    fun setExpanded(value: Boolean) {
+        if (expanded == value) return
+        expanded = value
+        invalidate()
+    }
 
     private var theme: KeyboardTheme = KeyboardTheme.from(
         context,
@@ -212,18 +226,22 @@ class CandidateBar @JvmOverloads constructor(
     private var selectedBackgroundTwoLine: InsetDrawable? = null
 
     /**
-     * 右侧「还有内容」提示：不新增 View、不使用渐变。
+     * 右侧「展开全部候选」按钮：不新增 View、不使用渐变。
      *
-     * 在行尾预留 [hintWidthPx] 宽的空带，仅当还能向右滚动时画一个极简的 `›`，
-     * 提示落在空带里（不遮挡候选文字、不占用候选点击区域）。
+     * 在行尾预留 [actionWidthPx] 宽的空带，在里面画一个 `∨`（展开）/ `∧`（收起）；
+     * 按钮钉在**可视区右端**，点击判定见 [onTouchEvent]。不遮挡候选文字、
+     * 不占用候选点击区域（空带本身不是候选）。
      */
-    private val hintWidthPx = resources.getDimensionPixelSize(R.dimen.kb_candidate_hint_width)
-    private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val actionWidthPx = resources.getDimensionPixelSize(R.dimen.kb_candidate_action_width)
+    private val actionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeWidth = resources.displayMetrics.density * 1.6f
-        alpha = 150
+        alpha = 170
     }
+
+    /** 右侧展开按钮这一条是否正在被按下（只用于 tap 判定，不影响横向滑动） */
+    private var actionTouching = false
 
     /** 提示底色：与面板同色的极窄平铺遮罩（无渐变），保证提示干净、不压字 */
     private val hintMaskPaint = Paint().apply { style = Paint.Style.FILL }
@@ -234,7 +252,7 @@ class CandidateBar @JvmOverloads constructor(
         row.setPadding(
             theme.panelHorizontalPadding,
             0,
-            theme.panelHorizontalPadding + hintWidthPx,
+            theme.panelHorizontalPadding + actionWidthPx,
             0,
         )
         addView(
@@ -274,7 +292,7 @@ class CandidateBar @JvmOverloads constructor(
         row.setPadding(
             theme.panelHorizontalPadding,
             0,
-            theme.panelHorizontalPadding + hintWidthPx,
+            theme.panelHorizontalPadding + actionWidthPx,
             0,
         )
 
@@ -287,7 +305,7 @@ class CandidateBar @JvmOverloads constructor(
         val twoLineHeight = (theme.topPanelHeight - theme.spaceXs * 2)
             .coerceAtLeast(theme.candidateChipHeight)
         selectedBackgroundTwoLine = insetChip(selectedBackground!!, twoLineHeight)
-        hintPaint.color = theme.candidateMutedText
+        actionPaint.color = theme.candidateMutedText
         hintMaskPaint.color = theme.panelBackground
 
         pillView.apply {
@@ -484,17 +502,56 @@ class CandidateBar @JvmOverloads constructor(
      */
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
-        if (!canScrollHorizontally(1)) return
-        // 极窄同色遮罩 + 一个极简 `›`：状态每次绘制现算（滑到最右即自动消失）
+        if (candidates.isEmpty()) return
+        // 右侧固定「展开全部候选」按钮：同色窄遮罩 + 一个 ∨（展开）/ ∧（收起）。
+        // 位置钉在**可视区右端**（不随横向滚动移动），点击判定见 onTouchEvent。
         val stripRight = (scrollX + width).toFloat()
-        val stripLeft = stripRight - theme.panelHorizontalPadding - hintWidthPx
+        val stripLeft = stripRight - theme.panelHorizontalPadding - actionWidthPx
         canvas.drawRect(stripLeft, 0f, stripRight, height.toFloat(), hintMaskPaint)
-        val cx = stripLeft + hintWidthPx / 2f
+        val cx = stripLeft + actionWidthPx / 2f
         val cy = height / 2f
-        val dx = hintWidthPx * 0.16f
-        val dy = height * 0.13f
-        canvas.drawLine(cx - dx, cy - dy, cx + dx, cy, hintPaint)
-        canvas.drawLine(cx - dx, cy + dy, cx + dx, cy, hintPaint)
+        val dx = actionWidthPx * 0.18f
+        val dy = height * 0.11f
+        if (expanded) {
+            canvas.drawLine(cx - dx, cy + dy, cx, cy - dy, actionPaint)
+            canvas.drawLine(cx, cy - dy, cx + dx, cy + dy, actionPaint)
+        } else {
+            canvas.drawLine(cx - dx, cy - dy, cx, cy + dy, actionPaint)
+            canvas.drawLine(cx, cy + dy, cx + dx, cy - dy, actionPaint)
+        }
+    }
+
+    /**
+     * 右侧按钮的点击判定。
+     *
+     * 按钮画在 [dispatchDraw] 的保留条里、不是子 View，所以在这里按「点击位置是否落在
+     * 可视区最右的保留条内」来分派：落在条内 → 展开 / 收起；其余位置 → 原样交给
+     * [HorizontalScrollView]（横向滑动不受影响）。
+     */
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        val inActionStrip = candidates.isNotEmpty() &&
+            ev.x >= width - theme.panelHorizontalPadding - actionWidthPx
+        if (inActionStrip) {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    actionTouching = true
+                    return true
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    if (actionTouching) {
+                        actionTouching = false
+                        onExpandToggled?.invoke()
+                        return true
+                    }
+                }
+
+                MotionEvent.ACTION_CANCEL -> actionTouching = false
+            }
+            return true
+        }
+        actionTouching = false
+        return super.onTouchEvent(ev)
     }
 
     private fun dividerWidth(): Int =

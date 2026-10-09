@@ -47,6 +47,7 @@ class TopPanelController(
     private val translationPanel: TranslationPanel,
     private val phrasesHeader: PhrasesHeader,
     private val phrasesPanel: PhrasesPanel,
+    private val candidateGridPanel: CandidateGridPanel,
 ) {
 
     var onMoreAction: ((MorePanel.Action) -> Unit)? = null
@@ -274,6 +275,8 @@ class TopPanelController(
         }
         candidateBar.onCandidateSelected = { index -> onCandidateSelected?.invoke(index) }
         candidateBar.onComposingClicked = { onComposingClicked?.invoke() }
+        candidateBar.onExpandToggled = { toggleCandidatesExpanded() }
+        candidateGridPanel.onCandidateSelected = { index -> onCandidateSelected?.invoke(index) }
 
         clipboardHeader.onBack = { handleClipboardBack() }
         voiceHeader.onBack = { onVoiceCancel?.invoke() }
@@ -326,17 +329,38 @@ class TopPanelController(
     ) {
         this.composing = composing
         candidateBar.render(candidates, mode, composing, statusText)
+        candidateGridPanel.render(candidates)
 
         when {
             // 剪贴板是用户显式打开的，不被输入状态打断
             // 剪贴板 / 语音都是用户显式打开的，不被输入状态打断
             state == TopPanelState.CLIPBOARD || state == TopPanelState.VOICE -> Unit
+            // 展开态：还有拼音就继续留在展开态（选完「许」后接着选「鹏 / 程」）
+            state == TopPanelState.CANDIDATES_EXPANDED && composing.isNotEmpty() -> Unit
             // 一开始输入就切到候选栏
             composing.isNotEmpty() -> state = TopPanelState.CANDIDATES
-            // 输入结束（composing 清空）后从候选栏退回工具栏
-            state == TopPanelState.CANDIDATES -> state = TopPanelState.TOOLBAR
+            // 输入结束（composing 清空）后从候选栏 / 展开态退回工具栏
+            state == TopPanelState.CANDIDATES ||
+                state == TopPanelState.CANDIDATES_EXPANDED -> state = TopPanelState.TOOLBAR
             else -> Unit
         }
+        applyState()
+    }
+
+    /** 候选栏右侧 `∨ / ∧`：在「候选栏」与「全部展开」之间切换 */
+    private fun toggleCandidatesExpanded() {
+        state = if (state == TopPanelState.CANDIDATES_EXPANDED) {
+            derivedState()
+        } else {
+            TopPanelState.CANDIDATES_EXPANDED
+        }
+        applyState()
+    }
+
+    /** 外部（返回键 / 输入结束）收起展开态 */
+    fun collapseCandidates() {
+        if (state != TopPanelState.CANDIDATES_EXPANDED) return
+        state = derivedState()
         applyState()
     }
 
@@ -430,6 +454,7 @@ class TopPanelController(
         translationPanel.applyTheme(theme)
         phrasesHeader.applyTheme(theme)
         phrasesPanel.applyTheme(theme)
+        candidateGridPanel.applyTheme(theme)
     }
 
     // ---------------------------------------------------------------- 搜索 / 筛选
@@ -551,6 +576,7 @@ class TopPanelController(
         val layout = when {
             state == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
             state == TopPanelState.PHRASES -> PanelLayoutMode.PHRASES_ONLY
+            state == TopPanelState.CANDIDATES_EXPANDED -> PanelLayoutMode.CANDIDATES_ONLY
             state != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
             searching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
             else -> PanelLayoutMode.CLIPBOARD_ONLY
@@ -558,9 +584,12 @@ class TopPanelController(
 
         if (previousState != state) {
             appliedState = state
+            val candidateVisible = state == TopPanelState.CANDIDATES ||
+                state == TopPanelState.CANDIDATES_EXPANDED
             toolbar.visibility = visibleIf(state == TopPanelState.TOOLBAR)
             voiceHeader.visibility = visibleIf(state == TopPanelState.VOICE)
-            candidateBar.visibility = visibleIf(state == TopPanelState.CANDIDATES)
+            candidateBar.visibility = visibleIf(candidateVisible)
+            candidateBar.setExpanded(state == TopPanelState.CANDIDATES_EXPANDED)
             morePanel.visibility = visibleIf(state == TopPanelState.MORE)
             clipboardHeader.visibility = visibleIf(state == TopPanelState.CLIPBOARD)
             translationHeader.visibility = visibleIf(state == TopPanelState.TRANSLATION)
@@ -577,6 +606,7 @@ class TopPanelController(
     private fun visiblePanelChild(): View? = when (state) {
         TopPanelState.TOOLBAR -> toolbar
         TopPanelState.CANDIDATES -> candidateBar
+        TopPanelState.CANDIDATES_EXPANDED -> candidateBar
         TopPanelState.MORE -> morePanel
         TopPanelState.CLIPBOARD -> clipboardHeader
         TopPanelState.VOICE -> voiceHeader

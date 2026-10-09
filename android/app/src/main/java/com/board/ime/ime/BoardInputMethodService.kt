@@ -659,6 +659,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             translationPanel = binding.translationPanel,
             phrasesHeader = binding.phrasesHeader,
             phrasesPanel = binding.phrasesPanel,
+            candidateGridPanel = binding.candidateGridPanel,
         )
         panel.onCandidateSelected = { index -> controller.pickCandidate(index) }
         panel.onComposingClicked = { controller.commitCompositionAsIs() }
@@ -1307,6 +1308,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.clipboardPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.candidateGridPanel.visibility = View.GONE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = keyboardHeight
                 }
@@ -1316,6 +1318,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.candidateGridPanel.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.VISIBLE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = keyboardHeight
@@ -1326,6 +1329,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.VISIBLE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.candidateGridPanel.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.VISIBLE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = theme.clipboardSearchMaxHeight
@@ -1337,6 +1341,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.candidateGridPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.VISIBLE
                 binding.translationPanel.layoutParams = binding.translationPanel.layoutParams.apply {
                     height = keyboardHeight
@@ -1347,8 +1352,21 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
+                binding.candidateGridPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.VISIBLE
                 binding.phrasesPanel.layoutParams = binding.phrasesPanel.layoutParams.apply {
+                    height = keyboardHeight
+                }
+            }
+
+            PanelLayoutMode.CANDIDATES_ONLY -> {
+                // 候选全部展开：网格占键盘位置，总高度与其它状态完全一致
+                binding.keyboardView.visibility = View.GONE
+                binding.clipboardPanel.visibility = View.GONE
+                binding.translationPanel.visibility = View.GONE
+                binding.phrasesPanel.visibility = View.GONE
+                binding.candidateGridPanel.visibility = View.VISIBLE
+                binding.candidateGridPanel.layoutParams = binding.candidateGridPanel.layoutParams.apply {
                     height = keyboardHeight
                 }
             }
@@ -1361,6 +1379,11 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             val panel = panelController
             if (panel != null && panel.currentState == TopPanelState.CLIPBOARD) {
                 panel.handleClipboardBack()
+                return true
+            }
+            // 候选展开态：返回键先收起，不关闭键盘
+            if (panel != null && panel.currentState == TopPanelState.CANDIDATES_EXPANDED) {
+                panel.collapseCandidates()
                 return true
             }
         }
@@ -1542,16 +1565,17 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }
         binding.keyboardFloat.layoutParams = floatParams
         // 重新算尺寸后，按当前面板状态重排「键盘 / 剪贴板内容区」
-        panelController?.let { panel ->
-            val mode = when {
-                panel.currentState == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
-                panel.currentState == TopPanelState.PHRASES -> PanelLayoutMode.PHRASES_ONLY
-                panel.currentState != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
-                panel.isSearching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
-                else -> PanelLayoutMode.CLIPBOARD_ONLY
-            }
-            applyPanelLayout(mode)
-        }
+        panelController?.let { applyPanelLayout(currentPanelLayoutMode(it)) }
+    }
+
+    /** 当前面板状态对应的「键盘 / 内容区」布局（[applyPanelLayout] 与尺寸重算共用同一处判断） */
+    private fun currentPanelLayoutMode(panel: TopPanelController): PanelLayoutMode = when {
+        panel.currentState == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
+        panel.currentState == TopPanelState.PHRASES -> PanelLayoutMode.PHRASES_ONLY
+        panel.currentState == TopPanelState.CANDIDATES_EXPANDED -> PanelLayoutMode.CANDIDATES_ONLY
+        panel.currentState != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
+        panel.isSearching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
+        else -> PanelLayoutMode.CLIPBOARD_ONLY
     }
 
     private fun floatingCard(theme: KeyboardTheme, radius: Float) = GradientDrawable().apply {

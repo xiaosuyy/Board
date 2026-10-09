@@ -92,6 +92,13 @@
             android:layout_height="0dp"
             android:visibility="gone" />
 
+        <!-- 候选「全部展开」内容区：点候选栏右侧 ∨ 后占键盘位置（总高度不变） -->
+        <com.board.ime.ui.panel.CandidateGridPanel
+            android:id="@+id/candidate_grid_panel"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:visibility="gone" />
+
         <com.board.ime.ui.KeyboardView
             android:id="@+id/keyboard_view"
             android:layout_width="match_parent"
