@@ -66,7 +66,7 @@ object KeyboardLayouts {
 
     val numbers: KeyboardLayout = KeyboardLayout(
         listOf(
-            stripRow(),
+            // 顶部符号条（# % & + …… 《 》 ｜ ✕）已按需求删除
             KeyRow(keys = "1234567890".map { KeySpec(KeyType.CHARACTER, text = it.toString()) }),
             KeyRow(keys = listOf("-", "/", ":", "~", "(", ")", "…", "@", "“", "”").map { s(it) }),
             KeyRow(
@@ -118,7 +118,7 @@ object KeyboardLayouts {
      */
     val numbersPad: KeyboardLayout = KeyboardLayout(
         listOf(
-            strip2Row(),
+            // 顶部符号条（。 ? ! … : ~ + ｜ ✕）已按需求删除
             KeyRow(
                 keys = listOf(
                     padSym("@"), padKey("1"), padKey("2"), padKey("3"),
@@ -159,16 +159,8 @@ object KeyboardLayouts {
             stripRow(),
             KeyRow(keys = listOf("_", "—", ";", "｜", "%", "+", "-", "×", "÷", "=").map { s(it) }),
             KeyRow(keys = listOf("【", "】", "{", "}", "《", "》", "#", "$", "&", "·").map { s(it) }),
-            KeyRow(
-                keys = buildList {
-                    add(KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.5f))
-                    listOf("「", "」", "<", ">", "^", "*").forEach {
-                        add(KeySpec(KeyType.SYMBOL, text = it, units = 7f / 6f))
-                    }
-                    add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
-                },
-            ),
-            // 微信符号层底部是分类标签；Board 落成功能行（← 中/英 / 更多 / 空格 / 搜索）
+            // 原「数字行」（123 「」<>^* ⌫）已按需求删除
+            // 微信符号层底部是分类标签；Board 落成功能行（← 中/英 / 符号 / 空格 / 搜索）
             symbolBottomRow(KeyType.TO_MORE_SYMBOLS),
         ),
     )
@@ -177,7 +169,7 @@ object KeyboardLayouts {
 
     val symbolsMore: KeyboardLayout = KeyboardLayout(
         listOf(
-            KeyRow(keys = listOf("%", "&", "<", ">", "°", "±", "×", "÷", "§", "•").map { s(it) }),
+            // 顶部第一行（% & < > ° ± × ÷ § •）已按需求删除
             KeyRow(keys = listOf("€", "£", "¥", "¢", "©", "®", "™", "¶", "¿", "¡").map { s(it) }),
             KeyRow(
                 keys = buildList {
