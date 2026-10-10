@@ -7,6 +7,9 @@
 >
 > 中文输入 **真正接入 librime**，不是自己写的拼音引擎，也不是占位实现。
 
+> 🎨 视觉规范见 [`DESIGN.md`](DESIGN.md)（Google Stitch / `google-labs-code/design.md`
+> 的 DESIGN.md 格式：YAML 令牌 + 8 段说明）。**改 UI 前先读它，改令牌后同步它。**
+
 ---
 
 ## 1. 顶部动态面板（56dp 固定高度，四种状态互斥）
