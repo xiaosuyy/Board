@@ -67,7 +67,6 @@ object KeyboardLayouts {
     val numbers: KeyboardLayout = KeyboardLayout(
         listOf(
             stripRow(),
-            KeyRow(keys = "1234567890".map { KeySpec(KeyType.CHARACTER, text = it.toString()) }),
             KeyRow(keys = listOf("-", "/", ":", "~", "(", ")", "…", "@", "“", "”").map { s(it) }),
             KeyRow(
                 keys = buildList {
@@ -93,21 +92,6 @@ object KeyboardLayouts {
 
     // ------------------------------------------------------------ 数字层第二页（微信 34：九宫格数字小键盘）
 
-    /** 顶部符号条（数字小键盘页）：。 ? ! … : ~ + ｜ ✕ */
-    private fun strip2Row(): KeyRow = KeyRow(
-        keys = listOf(
-            KeySpec(KeyType.SYMBOL, text = "。", units = STRIP_UNIT),
-            KeySpec(KeyType.SYMBOL, text = "?", units = STRIP_UNIT),
-            KeySpec(KeyType.SYMBOL, text = "!", units = STRIP_UNIT),
-            KeySpec(KeyType.SYMBOL, text = "…", units = STRIP_UNIT),
-            KeySpec(KeyType.SYMBOL, text = ":", units = STRIP_UNIT),
-            KeySpec(KeyType.SYMBOL, text = "~", units = STRIP_UNIT),
-            KeySpec(KeyType.SYMBOL, text = "+", units = STRIP_UNIT),
-            KeySpec(KeyType.SYMBOL, text = "｜", units = STRIP_UNIT),
-            KeySpec(KeyType.NOT_IMPLEMENTED, text = "✕", label = "✕", units = STRIP_UNIT),
-        ),
-    )
-
     private fun padKey(text: String): KeySpec = KeySpec(KeyType.CHARACTER, text = text, units = 2f)
     private fun padSym(text: String): KeySpec = KeySpec(KeyType.SYMBOL, text = text, units = 2f)
 
@@ -118,7 +102,6 @@ object KeyboardLayouts {
      */
     val numbersPad: KeyboardLayout = KeyboardLayout(
         listOf(
-            strip2Row(),
             KeyRow(
                 keys = listOf(
                     padSym("@"), padKey("1"), padKey("2"), padKey("3"),
@@ -156,7 +139,6 @@ object KeyboardLayouts {
 
     private fun wechatSymbols(): KeyboardLayout = KeyboardLayout(
         listOf(
-            stripRow(),
             KeyRow(keys = listOf("_", "—", ";", "｜", "%", "+", "-", "×", "÷", "=").map { s(it) }),
             KeyRow(keys = listOf("【", "】", "{", "}", "《", "》", "#", "$", "&", "·").map { s(it) }),
             KeyRow(
