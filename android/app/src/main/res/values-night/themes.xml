@@ -4,11 +4,38 @@
         <item name="colorPrimary">@color/app_accent</item>
         <item name="colorOnPrimary">@color/app_on_accent</item>
         <item name="colorPrimaryContainer">@color/app_accent_container</item>
+        <item name="colorOnPrimaryContainer">@color/app_on_accent_container</item>
+
+        <item name="colorSecondary">@color/app_on_surface_variant</item>
+        <item name="colorOnSecondary">@color/app_surface</item>
+        <item name="colorSecondaryContainer">@color/app_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/app_on_secondary_container</item>
+
         <item name="colorSurface">@color/app_surface</item>
         <item name="colorOnSurface">@color/app_on_surface</item>
+        <item name="colorSurfaceVariant">@color/app_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/app_on_surface_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/app_background</item>
+        <item name="colorSurfaceContainerLow">@color/app_surface_container</item>
+        <item name="colorSurfaceContainer">@color/app_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/app_surface_container_high</item>
+        <item name="colorSurfaceInverse">@color/app_on_surface</item>
+        <item name="colorOnSurfaceInverse">@color/app_surface</item>
+
         <item name="colorOutline">@color/app_outline</item>
+        <item name="colorOutlineVariant">@color/app_outline_variant</item>
+        <item name="colorError">@color/app_error</item>
+        <item name="colorOnError">@color/app_on_error</item>
+
         <item name="android:colorBackground">@color/app_background</item>
+        <item name="colorOnBackground">@color/app_on_surface</item>
+
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Board.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Board.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Board.Large</item>
+
+        <item name="android:windowBackground">@color/app_background</item>
         <item name="android:statusBarColor">@color/app_background</item>
         <item name="android:navigationBarColor">@color/app_background</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>

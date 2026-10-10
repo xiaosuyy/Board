@@ -1,17 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- 圆角：与 DESIGN.md 一致（sm 8 / md 12 / lg 16）。Material 组件按 small/medium/large
+         取用，卡片另外显式用 app_card_corner_radius。 -->
+    <style name="ShapeAppearance.Board.Small" parent="ShapeAppearance.Material3.Corner.Small">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/app_radius_sm</item>
+    </style>
+    <style name="ShapeAppearance.Board.Medium" parent="ShapeAppearance.Material3.Corner.Medium">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/app_radius_md</item>
+    </style>
+    <style name="ShapeAppearance.Board.Large" parent="ShapeAppearance.Material3.Corner.Large">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/app_radius_lg</item>
+    </style>
+
     <!-- 键盘本身不依赖主题（颜色由 KeyboardTheme 在运行时注入），
-         这里只服务于设置页外观。 -->
+         这里只服务于设置页 / 设置相关的 Material 组件。 -->
     <style name="Theme.Board" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- 强调色（少量使用：主按钮、选中态、滑块、开关） -->
         <item name="colorPrimary">@color/app_accent</item>
         <item name="colorOnPrimary">@color/app_on_accent</item>
         <item name="colorPrimaryContainer">@color/app_accent_container</item>
+        <item name="colorOnPrimaryContainer">@color/app_on_accent_container</item>
+
+        <item name="colorSecondary">@color/app_on_surface_variant</item>
+        <item name="colorOnSecondary">@color/app_surface</item>
+        <item name="colorSecondaryContainer">@color/app_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/app_on_secondary_container</item>
+
+        <!-- 表面：卡片 = surface；页面 = background；低一层容器 = surfaceContainer* -->
         <item name="colorSurface">@color/app_surface</item>
         <item name="colorOnSurface">@color/app_on_surface</item>
+        <item name="colorSurfaceVariant">@color/app_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/app_on_surface_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/app_background</item>
+        <item name="colorSurfaceContainerLow">@color/app_surface_container</item>
+        <item name="colorSurfaceContainer">@color/app_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/app_surface_container_high</item>
+        <item name="colorSurfaceInverse">@color/app_on_surface</item>
+        <item name="colorOnSurfaceInverse">@color/app_surface</item>
+
         <item name="colorOutline">@color/app_outline</item>
+        <item name="colorOutlineVariant">@color/app_outline_variant</item>
+        <item name="colorError">@color/app_error</item>
+        <item name="colorOnError">@color/app_on_error</item>
+
         <item name="android:colorBackground">@color/app_background</item>
+        <item name="colorOnBackground">@color/app_on_surface</item>
+
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Board.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Board.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Board.Large</item>
+
+        <item name="android:windowBackground">@color/app_background</item>
         <item name="android:statusBarColor">@color/app_background</item>
         <item name="android:navigationBarColor">@color/app_background</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>

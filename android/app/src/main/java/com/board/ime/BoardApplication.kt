@@ -15,5 +15,11 @@ class BoardApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         runCatching { CrashRecorder.install(this) }
+        // 设置页 / 对话框跟随「设置 → 外观 → 主题」（键盘颜色另由 KeyboardTheme 解析）
+        runCatching {
+            com.board.ime.settings.AppTheme.apply(
+                com.board.ime.settings.BoardPreferences(this).themeMode,
+            )
+        }
     }
 }

@@ -67,10 +67,25 @@ class BoardSettingsActivity : AppCompatActivity() {
         }
         root.addView(
             TextView(this).apply {
-                text = "Board 设置"
-                textSize = 22f
+                text = "Board"
+                setTextSize(
+                    android.util.TypedValue.COMPLEX_UNIT_PX,
+                    resources.getDimensionPixelSize(R.dimen.app_text_display).toFloat(),
+                )
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(dp(20f), dp(24f), dp(20f), dp(4f))
+                setTextColor(settingsPrimary())
+                setPadding(dp(20f), dp(20f), dp(20f), 0)
+            },
+        )
+        root.addView(
+            TextView(this).apply {
+                text = "输入法设置"
+                setTextSize(
+                    android.util.TypedValue.COMPLEX_UNIT_PX,
+                    resources.getDimensionPixelSize(R.dimen.app_text_callout).toFloat(),
+                )
+                setTextColor(settingsSecondary())
+                setPadding(dp(20f), dp(2f), dp(20f), dp(4f))
             },
         )
 
@@ -98,7 +113,7 @@ class BoardSettingsActivity : AppCompatActivity() {
         SettingsSection.entries.forEachIndexed { index, section ->
             if (index > 0) menu.addView(SettingsUi.divider(this))
             menu.addView(
-                SettingsUi.entryRow(this, section.title, section.summary) {
+                SettingsUi.entryRow(this, section.icon, section.title, section.summary) {
                     openSection(section)
                 },
             )
@@ -109,7 +124,12 @@ class BoardSettingsActivity : AppCompatActivity() {
         if (preferences.developerMode) {
             val dev = SettingsUi.card(this)
             dev.addView(SettingsUi.heading(this, "开发者"))
-            val row = SettingsUi.entryRow(this, "日志详情", "同步与输入法运行日志（不含剪贴板正文）") {
+            val row = SettingsUi.entryRow(
+                this,
+                R.drawable.ic_board_search,
+                "日志详情",
+                "同步与输入法运行日志（不含剪贴板正文）",
+            ) {
                 openSection(SettingsSection.ADVANCED, showLogs = true)
             }
             logEntryRow = row
@@ -240,6 +260,16 @@ class BoardSettingsActivity : AppCompatActivity() {
     private fun background(): Int {
         val value = android.util.TypedValue()
         theme.resolveAttribute(android.R.attr.colorBackground, value, true)
+        return if (value.resourceId != 0) {
+            androidx.core.content.ContextCompat.getColor(this, value.resourceId)
+        } else {
+            value.data
+        }
+    }
+
+    private fun settingsPrimary(): Int {
+        val value = android.util.TypedValue()
+        theme.resolveAttribute(com.google.android.material.R.attr.colorOnSurface, value, true)
         return if (value.resourceId != 0) {
             androidx.core.content.ContextCompat.getColor(this, value.resourceId)
         } else {

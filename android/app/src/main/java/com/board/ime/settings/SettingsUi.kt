@@ -2,13 +2,17 @@ package com.board.ime.settings
 
 import android.content.Context
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.text.InputType
 import android.text.method.PasswordTransformationMethod
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.annotation.DrawableRes
+import androidx.appcompat.content.res.AppCompatResources
 import com.board.ime.R
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
@@ -18,74 +22,115 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 
 /**
- * 设置页的小控件工厂。
+ * 设置页的小控件工厂（**视觉规范见根目录 `DESIGN.md`**）。
  *
- * 设置页大多是「标题 + 说明 + 一个开关 / 一组按钮 / 一个输入框」这类重复结构，
- * 集中在这里生成，避免每个页面各写一套，也避免再堆一个巨大的 XML。
- * 间距 / 圆角都取统一的设计令牌（`dimens.xml` 里的 `kb_radius_*`、`kb_space_*`）。
+ * 设置页大多是「分组标题 + 说明 + 一个开关 / 一组按钮 / 一个输入框 / 一行入口」这类重复结构，
+ * 集中在这里生成，避免每个页面各写一套。
+ *
+ * 令牌来源：
+ * - 颜色：主题属性（`colorSurface` / `colorOnSurface` / `colorOnSurfaceVariant` /
+ *   `colorOutline` / `colorPrimary` / `colorPrimaryContainer`），**不写死黑白**；
+ * - 尺寸：`dimens.xml` 的 `app_*`（圆角 8/12/16、类型刻度、行高）；
+ * - 圆角：卡片 16dp、输入框 12dp、图标底 12dp，按钮 / 分段用 Material 默认 pill。
+ *
+ * 结构约定：卡片 = `surface` + 1dp `outline`，**无阴影**；分组标题是 11sp 的次级标签；
+ * 入口行最小 56dp，带一个 36dp 的强调色图标底。
  */
 object SettingsUi {
 
+    // ---------------------------------------------------------------- 布局骨架
+
     fun screen(context: Context): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(context, 20f), dp(context, 8f), dp(context, 20f), dp(context, 24f))
+        setPadding(dp(context, 20f), dp(context, 4f), dp(context, 20f), dp(context, 28f))
     }
 
-    /** 分组卡片 */
+    /** 分组内容容器（本身不画背景，交给 [cardView] 包一层卡片） */
     fun card(context: Context): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(context, 16f) }
+        )
     }
 
+    /** 卡片外壳：surface + 1dp outline，无阴影，16dp 内边距 */
     fun cardView(context: Context, content: View): MaterialCardView = MaterialCardView(context).apply {
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = dp(context, 12f) }
-        radius = dp(context, 14f).toFloat()
+        radius = dimen(context, R.dimen.app_card_corner_radius).toFloat()
         cardElevation = 0f
         strokeWidth = dp(context, 1f)
-        setContentPadding(dp(context, 16f), dp(context, 16f), dp(context, 16f), dp(context, 16f))
+        setStrokeColor(attrColor(context, com.google.android.material.R.attr.colorOutline))
+        setCardBackgroundColor(attrColor(context, com.google.android.material.R.attr.colorSurface))
+        val pad = dimen(context, R.dimen.app_card_padding)
+        setContentPadding(pad, pad, pad, pad)
         addView(content)
     }
 
-    /** 卡片内的小标题 */
+    // ---------------------------------------------------------------- 文字
+
+    /** 卡片内的小标题：11sp 次级标签，字距略放开 */
     fun heading(context: Context, text: String): TextView = TextView(context).apply {
         this.text = text
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_micro).toFloat())
         setTypeface(typeface, Typeface.BOLD)
-        setPadding(0, 0, 0, dp(context, 4f))
+        letterSpacing = 0.06f
         setTextColor(secondaryColor(context))
+        setPadding(0, 0, 0, dp(context, 10f))
     }
 
     fun label(context: Context, text: String): TextView = TextView(context).apply {
         this.text = text
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_body).toFloat())
+        setTextColor(primaryTextColor(context))
     }
 
     fun hint(context: Context, text: String): TextView = TextView(context).apply {
         this.text = text
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_caption).toFloat())
         setTextColor(secondaryColor(context))
-        setPadding(0, dp(context, 2f), 0, dp(context, 8f))
+        setLineSpacing(dp(context, 3f).toFloat(), 1f)
+        setPadding(0, dp(context, 2f), 0, dp(context, 6f))
     }
 
     fun value(context: Context, text: String): TextView = TextView(context).apply {
         this.text = text
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_subhead).toFloat())
         setTextColor(secondaryColor(context))
+        setLineSpacing(dp(context, 2f).toFloat(), 1f)
         setPadding(0, dp(context, 4f), 0, 0)
     }
 
+    // ---------------------------------------------------------------- 按钮
+
+    /** 次要按钮（描边）。 */
     fun button(context: Context, text: String, onClick: () -> Unit): MaterialButton =
         MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             this.text = text
-            minWidth = 0
+            styleButton(context)
             setOnClickListener { onClick() }
         }
+
+    /** 主要按钮（强调色填充）。用于一组里最重要的那一个动作。 */
+    fun primaryButton(context: Context, text: String, onClick: () -> Unit): MaterialButton =
+        MaterialButton(context).apply {
+            this.text = text
+            styleButton(context)
+            setOnClickListener { onClick() }
+        }
+
+    private fun MaterialButton.styleButton(context: Context) {
+        minWidth = 0
+        minimumHeight = dimen(context, R.dimen.app_row_min_height) / 4 * 3
+        insetTop = 0
+        insetBottom = 0
+        isAllCaps = false
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_subhead).toFloat())
+        letterSpacing = 0f
+    }
 
     fun buttonRow(context: Context, buttons: List<MaterialButton>): LinearLayout =
         LinearLayout(context).apply {
@@ -97,6 +142,9 @@ object SettingsUi {
             }
         }
 
+    // ---------------------------------------------------------------- 行
+
+    /** 一行开关：整行可点，右侧 MaterialSwitch。 */
     fun switchRow(
         context: Context,
         text: String,
@@ -105,15 +153,16 @@ object SettingsUi {
     ): MaterialSwitch = MaterialSwitch(context).apply {
         this.text = text
         isChecked = checked
-        setPadding(0, dp(context, 8f), 0, dp(context, 8f))
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_body).toFloat())
+        setTextColor(primaryTextColor(context))
+        setPadding(0, dp(context, 6f), 0, dp(context, 6f))
+        minimumHeight = dimen(context, R.dimen.app_row_min_height) / 4 * 3
         setOnCheckedChangeListener { _, value -> onChanged(value) }
     }
 
     /**
      * 一行数值调节：`名称  值` + 下面一根 SeekBar。
-     *
-     * 拖动过程中就会回调 [onChange]（实时预览），不等到松手。
-     * 数值显示保留一位小数，单位由调用方给。
+     * 拖动过程中就回调 [onChange]（实时预览），不等到松手。
      */
     fun sliderRow(
         context: Context,
@@ -126,21 +175,22 @@ object SettingsUi {
     ): LinearLayout {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(context, 8f), 0, 0)
+            setPadding(0, dp(context, 10f), 0, 0)
         }
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val valueView = TextView(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_subhead).toFloat())
             setTextColor(secondaryColor(context))
             text = formatValue(value, unit)
         }
         header.addView(
             TextView(context).apply {
                 text = label
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_body).toFloat())
+                setTextColor(primaryTextColor(context))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             },
         )
@@ -180,7 +230,7 @@ object SettingsUi {
         else -> String.format(java.util.Locale.US, "%.1f%s", value, unit)
     }
 
-    /** 单选按钮组：返回的 group 上按 index 取选中项 */
+    /** 单选分段控件：Material 默认 pill 外观，返回的 group 上按 index 取选中项。 */
     fun toggleGroup(
         context: Context,
         options: List<String>,
@@ -196,7 +246,12 @@ object SettingsUi {
             ).apply {
                 text = option
                 minWidth = 0
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                minimumHeight = dimen(context, R.dimen.app_row_min_height) / 4 * 3
+                insetTop = 0
+                insetBottom = 0
+                isAllCaps = false
+                setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_caption).toFloat())
+                letterSpacing = 0f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 isCheckable = true
             }
@@ -260,9 +315,21 @@ object SettingsUi {
         return layout to edit
     }
 
-    /** 首页那种「标题 + 一句话说明 + 右侧箭头」的入口行 */
+    /**
+     * 首页 / 卡片里的「图标 + 标题 + 一句话说明 + 右侧箭头」入口行。
+     *
+     * 有 [iconRes] 时左侧是一个 36dp 的强调色图标底（对齐 iOS 设置那种一屏一眼能扫完的列表）。
+     */
     fun entryRow(
         context: Context,
+        title: String,
+        summary: String,
+        onClick: () -> Unit,
+    ): LinearLayout = entryRow(context, 0, title, summary, onClick)
+
+    fun entryRow(
+        context: Context,
+        @DrawableRes iconRes: Int,
         title: String,
         summary: String,
         onClick: () -> Unit,
@@ -270,17 +337,26 @@ object SettingsUi {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         isClickable = true
-        setPadding(0, dp(context, 14f), 0, dp(context, 14f))
+        isFocusable = true
+        minimumHeight = dimen(context, R.dimen.app_row_min_height)
+        setPadding(0, dp(context, 12f), 0, dp(context, 12f))
+        val ripple = TypedValue()
+        context.theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+        if (ripple.resourceId != 0) setBackgroundResource(ripple.resourceId)
         setOnClickListener { onClick() }
+
+        if (iconRes != 0) addView(iconTile(context, iconRes))
+
         addView(
             LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { if (iconRes != 0) marginStart = dp(context, 14f) }
                 addView(label(context, title))
                 addView(
                     TextView(context).apply {
                         text = summary
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                        setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_caption).toFloat())
                         setTextColor(secondaryColor(context))
                         setPadding(0, dp(context, 2f), 0, 0)
                     },
@@ -296,6 +372,31 @@ object SettingsUi {
         )
     }
 
+    /** 36dp 的强调色图标底：圆角方块 + 居中图标。 */
+    fun iconTile(context: Context, @DrawableRes iconRes: Int): View {
+        val size = dimen(context, R.dimen.app_icon_tile)
+        val bg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dimen(context, R.dimen.app_radius_md).toFloat()
+            setColor(attrColor(context, com.google.android.material.R.attr.colorPrimaryContainer))
+        }
+        return android.widget.FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            background = bg
+            addView(
+                ImageView(context).apply {
+                    setImageResource(iconRes)
+                    setColorFilter(attrColor(context, androidx.appcompat.R.attr.colorPrimary))
+                    layoutParams = android.widget.FrameLayout.LayoutParams(
+                        dimen(context, R.dimen.app_icon_in_tile),
+                        dimen(context, R.dimen.app_icon_in_tile),
+                        Gravity.CENTER,
+                    )
+                },
+            )
+        }
+    }
+
     /** 一条状态：`● 名称：值`，只显示最重要的状态，不带日志/HTTP 码 */
     fun statusRow(
         context: Context,
@@ -305,26 +406,35 @@ object SettingsUi {
     ): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, dp(context, 6f), 0, dp(context, 6f))
+        setPadding(0, dp(context, 7f), 0, dp(context, 7f))
         addView(
-            TextView(context).apply {
-                text = "●"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setTextColor(if (ok) accentColor(context) else secondaryColor(context))
-                setPadding(0, 0, dp(context, 8f), 0)
+            View(context).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(
+                        if (ok) {
+                            attrColor(context, androidx.appcompat.R.attr.colorPrimary)
+                        } else {
+                            attrColor(context, com.google.android.material.R.attr.colorOutline)
+                        },
+                    )
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(context, 8f), dp(context, 8f))
+                    .apply { marginEnd = dp(context, 10f) }
             },
         )
         addView(
             TextView(context).apply {
                 text = name
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setPadding(0, 0, dp(context, 8f), 0)
+                setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_callout).toFloat())
+                setTextColor(primaryTextColor(context))
+                setPadding(0, 0, dp(context, 10f), 0)
             },
         )
         addView(
             TextView(context).apply {
                 text = value
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_callout).toFloat())
                 setTextColor(secondaryColor(context))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             },
@@ -337,6 +447,40 @@ object SettingsUi {
             dp(context, heightDp),
         )
     }
+
+    /** 卡片内分隔线：1dp、`outlineVariant`，左右不缩进。 */
+    fun divider(context: Context): View = View(context).apply {
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(context, 1f),
+        ).apply { topMargin = dp(context, 6f); bottomMargin = dp(context, 6f) }
+        setBackgroundColor(attrColor(context, com.google.android.material.R.attr.colorOutlineVariant))
+    }
+
+    // ---------------------------------------------------------------- 主题取色
+
+    private fun primaryTextColor(context: Context): Int =
+        attrColor(context, com.google.android.material.R.attr.colorOnSurface)
+
+    private fun secondaryColor(context: Context): Int =
+        attrColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant)
+
+    private fun attrColor(context: Context, attr: Int): Int {
+        val value = TypedValue()
+        context.theme.resolveAttribute(attr, value, true)
+        return if (value.resourceId != 0) {
+            androidx.core.content.ContextCompat.getColor(context, value.resourceId)
+        } else {
+            value.data
+        }
+    }
+
+    private fun dimen(context: Context, res: Int): Int = context.resources.getDimensionPixelSize(res)
+
+    private fun dp(context: Context, value: Float): Int =
+        (value * context.resources.displayMetrics.density).toInt()
+
+    // ---------------------------------------------------------------- WindowInsets
 
     /**
      * 让根布局避开状态栏 / 挖孔。
@@ -380,33 +524,4 @@ object SettingsUi {
         }
         androidx.core.view.ViewCompat.requestApplyInsets(view)
     }
-
-    fun divider(context: Context): View = View(context).apply {
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            1,
-        ).apply { topMargin = dp(context, 6f); bottomMargin = dp(context, 6f) }
-        setBackgroundColor(secondaryColor(context))
-        alpha = 0.25f
-    }
-
-    // 颜色统一从主题取，避免这里写死黑白
-    private fun secondaryColor(context: Context): Int =
-        resolve(context, com.google.android.material.R.attr.colorOnSurfaceVariant)
-
-    private fun accentColor(context: Context): Int =
-        resolve(context, androidx.appcompat.R.attr.colorPrimary)
-
-    private fun resolve(context: Context, attr: Int): Int {
-        val value = TypedValue()
-        context.theme.resolveAttribute(attr, value, true)
-        return if (value.resourceId != 0) {
-            androidx.core.content.ContextCompat.getColor(context, value.resourceId)
-        } else {
-            value.data
-        }
-    }
-
-    private fun dp(context: Context, value: Float): Int =
-        (value * context.resources.displayMetrics.density).toInt()
 }

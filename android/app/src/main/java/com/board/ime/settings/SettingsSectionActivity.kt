@@ -141,27 +141,41 @@ class SettingsSectionActivity : AppCompatActivity() {
             setBackgroundColor(background())
         }
 
-        // 标题栏：返回 + 分类名（键盘区域完全不受影响）
+        // 标题栏：圆形返回键 + 分类名（键盘区域完全不受影响）
         root.addView(
             LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(8f), dp(8f), dp(16f), dp(8f))
+                setPadding(dp(16f), dp(8f), dp(16f), dp(8f))
                 addView(
-                    TextView(this@SettingsSectionActivity).apply {
-                        text = "‹"
-                        textSize = 26f
-                        gravity = Gravity.CENTER
-                        setPadding(dp(12f), 0, dp(12f), 0)
+                    android.widget.FrameLayout(this@SettingsSectionActivity).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            shape = android.graphics.drawable.GradientDrawable.OVAL
+                            setColor(themeColor(com.google.android.material.R.attr.colorSurfaceContainer))
+                        }
                         isClickable = true
+                        isFocusable = true
                         setOnClickListener { finish() }
+                        addView(
+                            android.widget.ImageView(this@SettingsSectionActivity).apply {
+                                setImageResource(R.drawable.ic_board_back)
+                                setColorFilter(themeColor(com.google.android.material.R.attr.colorOnSurface))
+                                layoutParams = android.widget.FrameLayout.LayoutParams(dp(20f), dp(20f), Gravity.CENTER)
+                            },
+                        )
+                        layoutParams = LinearLayout.LayoutParams(dp(40f), dp(40f))
                     },
                 )
                 addView(
                     TextView(this@SettingsSectionActivity).apply {
                         text = if (showLogs) "日志详情" else section.title
-                        textSize = 19f
+                        setTextSize(
+                            android.util.TypedValue.COMPLEX_UNIT_PX,
+                            resources.getDimensionPixelSize(R.dimen.app_text_title).toFloat(),
+                        )
                         setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface))
+                        setPadding(dp(14f), 0, 0, 0)
                     },
                 )
             },
@@ -241,6 +255,8 @@ class SettingsSectionActivity : AppCompatActivity() {
                 preferences.themeMode.ordinal,
             ) { index ->
                 preferences.themeMode = ThemeMode.entries[index]
+                // 让设置页本身也切到对应夜间模式（会重建 Activity；键盘颜色由 KeyboardTheme 单独解析）
+                AppTheme.apply(preferences.themeMode)
                 render()
             },
         )
@@ -1777,19 +1793,15 @@ class SettingsSectionActivity : AppCompatActivity() {
 
     private fun isImeEnabled(): Boolean = ImeStatus.isBoardEnabled(this)
 
-    private fun background(): Int {
-        val value = android.util.TypedValue()
-        theme.resolveAttribute(android.R.attr.colorBackground, value, true)
-        return if (value.resourceId != 0) {
-            androidx.core.content.ContextCompat.getColor(this, value.resourceId)
-        } else {
-            value.data
-        }
-    }
+    private fun background(): Int = themeColor(android.R.attr.colorBackground)
 
-    private fun secondaryColor(): Int {
+    private fun secondaryColor(): Int =
+        themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant)
+
+    /** 统一从主题属性取色（设置页不写死黑白）。 */
+    private fun themeColor(attr: Int): Int {
         val value = android.util.TypedValue()
-        theme.resolveAttribute(com.google.android.material.R.attr.colorOnSurfaceVariant, value, true)
+        theme.resolveAttribute(attr, value, true)
         return if (value.resourceId != 0) {
             androidx.core.content.ContextCompat.getColor(this, value.resourceId)
         } else {
