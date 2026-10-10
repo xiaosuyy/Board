@@ -5,13 +5,9 @@ package com.board.ime.keyboard
  *
  * 分层：
  * - [letters]       字母层（英文 / 中文共用）
- * - [numbers]       数字层（微信「123」）
- * - [numbersPad]    数字层第二页（九宫格小键盘）
- * - [symbolsAscii] / [symbolsCjk]  符号层（微信「符号」）
+ * - [numbers]       数字层（微信「123」，含顶部符号条）
+ * - [symbolsAscii] / [symbolsCjk]  符号层（微信「符号」，顶部同样有符号条）
  * - [symbolsMore]   更多符号（第二页）
- *
- * **所有面板统一 4 行**，切换时键盘总高度不变（不再有「顶部符号条」那一行）。
- * 顶部符号条里的符号要么本就重复、要么已在下方的符号行里，去掉后既不重复也不变矮。
  *
  * 每行严格等于 10 个宽度单位，因此布局天然自适应屏幕宽度。
  * 布局只是“键位表”，具体显示哪一层由 `InputController` 决定。
@@ -19,6 +15,19 @@ package com.board.ime.keyboard
 object KeyboardLayouts {
 
     private const val ROW_UNITS = 10f
+
+    private val STRIP_UNIT = ROW_UNITS / 9f
+
+    /** 顶部符号条：微信数字 / 符号层顶上那一行（`# % & + …… 《 》 ｜ ✕`）。 */
+    private fun stripRow(): KeyRow = KeyRow(
+        keys = listOf(
+            sym("#"), sym("%"), sym("&"), sym("+"), sym("……"), sym("《"), sym("》"), sym("｜"),
+            KeySpec(KeyType.NOT_IMPLEMENTED, text = "✕", label = "✕", units = STRIP_UNIT),
+        ),
+    )
+
+    private fun sym(text: String): KeySpec =
+        KeySpec(KeyType.SYMBOL, text = text, units = STRIP_UNIT)
 
     /** 符号键（普通 1 单位） */
     private fun s(text: String): KeySpec = KeySpec(KeyType.SYMBOL, text = text)
@@ -57,6 +66,7 @@ object KeyboardLayouts {
 
     val numbers: KeyboardLayout = KeyboardLayout(
         listOf(
+            stripRow(),
             KeyRow(keys = "1234567890".map { KeySpec(KeyType.CHARACTER, text = it.toString()) }),
             KeyRow(keys = listOf("-", "/", ":", "~", "(", ")", "…", "@", "“", "”").map { s(it) }),
             KeyRow(
@@ -83,6 +93,21 @@ object KeyboardLayouts {
 
     // ------------------------------------------------------------ 数字层第二页（微信 34：九宫格数字小键盘）
 
+    /** 顶部符号条（数字小键盘页）：。 ? ! … : ~ + ｜ ✕ */
+    private fun strip2Row(): KeyRow = KeyRow(
+        keys = listOf(
+            KeySpec(KeyType.SYMBOL, text = "。", units = STRIP_UNIT),
+            KeySpec(KeyType.SYMBOL, text = "?", units = STRIP_UNIT),
+            KeySpec(KeyType.SYMBOL, text = "!", units = STRIP_UNIT),
+            KeySpec(KeyType.SYMBOL, text = "…", units = STRIP_UNIT),
+            KeySpec(KeyType.SYMBOL, text = ":", units = STRIP_UNIT),
+            KeySpec(KeyType.SYMBOL, text = "~", units = STRIP_UNIT),
+            KeySpec(KeyType.SYMBOL, text = "+", units = STRIP_UNIT),
+            KeySpec(KeyType.SYMBOL, text = "｜", units = STRIP_UNIT),
+            KeySpec(KeyType.NOT_IMPLEMENTED, text = "✕", label = "✕", units = STRIP_UNIT),
+        ),
+    )
+
     private fun padKey(text: String): KeySpec = KeySpec(KeyType.CHARACTER, text = text, units = 2f)
     private fun padSym(text: String): KeySpec = KeySpec(KeyType.SYMBOL, text = text, units = 2f)
 
@@ -93,6 +118,7 @@ object KeyboardLayouts {
      */
     val numbersPad: KeyboardLayout = KeyboardLayout(
         listOf(
+            strip2Row(),
             KeyRow(
                 keys = listOf(
                     padSym("@"), padKey("1"), padKey("2"), padKey("3"),
@@ -130,6 +156,7 @@ object KeyboardLayouts {
 
     private fun wechatSymbols(): KeyboardLayout = KeyboardLayout(
         listOf(
+            stripRow(),
             KeyRow(keys = listOf("_", "—", ";", "｜", "%", "+", "-", "×", "÷", "=").map { s(it) }),
             KeyRow(keys = listOf("【", "】", "{", "}", "《", "》", "#", "$", "&", "·").map { s(it) }),
             KeyRow(
