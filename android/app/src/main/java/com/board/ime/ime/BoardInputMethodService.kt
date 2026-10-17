@@ -1531,6 +1531,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             context = this,
             floating = floating,
             geometry = settingsRepository.geometry(scope),
+            keyboardLift = preferences.keyboardLiftEnabled,
         )
         val display = resources.displayMetrics
 

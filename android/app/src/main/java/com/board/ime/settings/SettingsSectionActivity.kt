@@ -646,6 +646,23 @@ class SettingsSectionActivity : AppCompatActivity() {
 
         renderGeometryControls(content, geometryScope)
 
+        // ---- 键盘位置：键盘抬升（只影响底部留白） ----
+        val positionCard = SettingsUi.card(this)
+        positionCard.addView(SettingsUi.heading(this, "键盘位置"))
+        positionCard.addView(
+            SettingsUi.switchRow(this, "键盘抬升", preferences.keyboardLiftEnabled) {
+                preferences.keyboardLiftEnabled = it
+            },
+        )
+        positionCard.addView(
+            SettingsUi.hint(
+                this,
+                "开启后键盘整体上抬：最底一行与屏幕底部留 92px（与微信输入法一致）；" +
+                    "关闭为 24px。只改底部留白，不动键高与顶部留白。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, positionCard))
+
         val behaviour = SettingsUi.card(this)
         behaviour.addView(SettingsUi.heading(this, "按键行为"))
         behaviour.addView(

@@ -65,6 +65,19 @@ class BoardPreferences(context: Context) : SyncContentGate {
         get() = prefs.getBoolean(KEY_VIBRATE, true)
         set(value) = prefs.edit().putBoolean(KEY_VIBRATE, value).apply()
 
+    /**
+     * 键盘抬升：键盘整体上抬，加大**底部留白**。
+     *
+     * - 开启（默认）：底部留白用 `kb_keyboard_padding_bottom`
+     *   （30.67dp；1080×1920 @480dpi 实测 = 92px，与微信输入法一致）；
+     * - 关闭：底部留白回到与顶部留白相同（8dp = 24px），即「没抬升」的原样。
+     *
+     * 只影响底部留白，不动键高 / 顶部留白 / 行距。
+     */
+    var keyboardLiftEnabled: Boolean
+        get() = prefs.getBoolean(KEY_KEYBOARD_LIFT, true)
+        set(value) = prefs.edit().putBoolean(KEY_KEYBOARD_LIFT, value).apply()
+
     /** 中文引擎：Rime 或占位引擎 */
     var engineKind: EngineKind
         get() = EngineKind.fromName(prefs.getString(KEY_ENGINE, null))
@@ -194,6 +207,8 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_VIBRATE = "vibrate_enabled"
         const val KEY_ENGINE = "engine_kind"
         const val KEY_LAYOUT = "layout_mode"
+        /** 键盘抬升（底部留白 92px / 24px） */
+        const val KEY_KEYBOARD_LIFT = "keyboard_lift_enabled"
         const val KEY_CANDIDATE_SIZE = "candidate_text_size"
         /** 候选栏英文释义开关（默认关闭） */
         const val KEY_CANDIDATE_ENGLISH_GLOSS = "candidate_english_gloss_enabled"

@@ -30,19 +30,26 @@ object KeyboardLayoutCalculator {
      * [geometry] 来自 [com.board.ime.settings.SettingsRepository]：
      * 只有用户真的改过（倍率 ≠ 1、间距/圆角已设置）时才覆盖设计默认值，
      * 因此「没配置」= 与旧版本视觉完全一致。
+     *
+     * [keyboardLift]（设置里的「键盘抬升」）：
+     * - `true`（默认）：底部留白取 `kb_keyboard_padding_bottom`（92px @480dpi，对齐微信输入法）；
+     * - `false`：底部留白与顶部留白相同（24px @480dpi），即原来的样子。
+     * 两种情况都只动**底部**留白，顶部留白 / 键高 / 行距不受影响。
      */
     fun configFor(
         context: Context,
         floating: Boolean,
         geometry: com.board.ime.settings.KeyboardGeometry =
             com.board.ime.settings.KeyboardGeometry.DEFAULT,
+        keyboardLift: Boolean = true,
     ): KeyboardLayoutConfig {
+        val res = context.resources
+        // 注意：这里要的是 dp（设计值），不是像素；像素由 metrics() 按 density 换算
+        fun dp(id: Int): Float = res.getDimension(id) / res.displayMetrics.density
+
         val base = if (floating) {
             KeyboardLayoutConfig.LANDSCAPE
         } else {
-            val res = context.resources
-            // 注意：这里要的是 dp（设计值），不是像素；像素由 metrics() 按 density 换算
-            fun dp(id: Int): Float = res.getDimension(id) / res.displayMetrics.density
             KeyboardLayoutConfig(
                 floating = false,
                 fillWidth = true,
@@ -63,7 +70,13 @@ object KeyboardLayoutCalculator {
                 alignEnd = false,
             )
         }
-        return base.withGeometry(geometry, context)
+        // 「键盘抬升」开关：关掉 = 底部留白退回与顶部留白一致（默认值）
+        val lifted = if (keyboardLift) {
+            base.copy(paddingBottomDp = dp(R.dimen.kb_keyboard_padding_bottom))
+        } else {
+            base.copy(paddingBottomDp = base.paddingVerticalDp)
+        }
+        return lifted.withGeometry(geometry, context)
     }
 
     /** 把用户设置叠加到设计基准上（不改调用方传进来的对象） */
