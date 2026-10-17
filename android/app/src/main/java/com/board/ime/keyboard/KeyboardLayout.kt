@@ -5,12 +5,12 @@ package com.board.ime.keyboard
  *
  * 分层：
  * - [letters]       字母层（英文 / 中文共用）
- * - [numbers]       数字层（微信「123」，含顶部符号条）
- * - [symbolsAscii] / [symbolsCjk]  符号层（微信「符号」，顶部同样有符号条）
- * - [symbolsMore]   更多符号（第二页）
+ * - [numbers]       数字层（微信「123」）
+ * - [symbolsAscii] / [symbolsCjk]  符号层（微信「符号」第一页）
+ * - [symbolsMore]   符号层第二页（「更多符号」）
  *
- * 每行严格等于 10 个宽度单位，因此布局天然自适应屏幕宽度。
- * 布局只是“键位表”，具体显示哪一层由 `InputController` 决定。
+ * 五套布局全部是 4 行，切换面板时键盘高度不变；每行严格等于 10 个宽度单位，
+ * 因此布局天然自适应屏幕宽度。布局只是“键位表”，具体显示哪一层由 `InputController` 决定。
  */
 object KeyboardLayouts {
 
