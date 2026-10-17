@@ -57,6 +57,7 @@ object KeyboardLayoutCalculator {
                 keyGapVerticalDp = dp(R.dimen.kb_key_gap_vertical),
                 paddingHorizontalDp = dp(R.dimen.kb_keyboard_padding_horizontal),
                 paddingVerticalDp = dp(R.dimen.kb_keyboard_padding_vertical),
+                paddingBottomDp = dp(R.dimen.kb_keyboard_padding_bottom),
                 cornerRadiusDp = dp(R.dimen.kb_key_corner_radius),
                 edgeMarginDp = 0f,
                 alignEnd = false,
@@ -105,13 +106,14 @@ object KeyboardLayoutCalculator {
         val widthPx = resolveWidth(config, screenWidthPx, density)
 
         val paddingVertical = config.paddingVerticalDp * density
+        val paddingBottom = config.paddingBottomDp * density
         val rowGap = config.keyGapVerticalDp * density
         val rows = rowCount.coerceAtLeast(1)
 
         var keyHeight = config.keyHeightDp * density
         // 高度受限时压缩键高，保证「顶部面板 + 键盘」不会吃掉整个屏幕
         val maxKeyboardHeight = screenHeightPx * config.maxHeightScreenFraction
-        val fixedHeight = paddingVertical * 2f + rowGap * (rows - 1)
+        val fixedHeight = paddingVertical + paddingBottom + rowGap * (rows - 1)
         val available = maxKeyboardHeight - fixedHeight
         if (available > 0f) {
             val maxKeyHeight = available / rows
@@ -128,6 +130,7 @@ object KeyboardLayoutCalculator {
             keyGapVerticalPx = rowGap,
             paddingHorizontalPx = config.paddingHorizontalDp * density,
             paddingVerticalPx = paddingVertical,
+            paddingBottomPx = paddingBottom,
             cornerRadiusPx = config.cornerRadiusDp * density,
             edgeMarginPx = (config.edgeMarginDp * density).toInt(),
             alignEnd = config.alignEnd,

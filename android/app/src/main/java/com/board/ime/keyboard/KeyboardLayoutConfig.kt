@@ -31,6 +31,14 @@ data class KeyboardLayoutConfig(
     val keyGapVerticalDp: Float,
     val paddingHorizontalDp: Float,
     val paddingVerticalDp: Float,
+    /**
+     * 键盘**底部**留白（dp）。
+     *
+     * 默认与 [paddingVerticalDp] 相同；竖屏单独调大，
+     * 让「键盘最底一行 → 屏幕底部」的距离贴近微信输入法。
+     * 顶部留白仍用 [paddingVerticalDp]，不受影响。
+     */
+    val paddingBottomDp: Float = paddingVerticalDp,
     val cornerRadiusDp: Float,
     /** 悬浮时距离屏幕边缘的间距（dp） */
     val edgeMarginDp: Float,
@@ -81,16 +89,18 @@ data class KeyboardLayoutMetrics(
     val keyGapVerticalPx: Float,
     val paddingHorizontalPx: Float,
     val paddingVerticalPx: Float,
+    /** 键盘底部留白（px）；默认与 [paddingVerticalPx] 相同 */
+    val paddingBottomPx: Float = paddingVerticalPx,
     val cornerRadiusPx: Float,
     val edgeMarginPx: Int,
     val alignEnd: Boolean,
     /** 功能键宽度倍率（1.0 = 设计默认） */
     val functionKeyWidthRatio: Float = 1f,
 ) {
-    /** 键盘本体高度（不含顶部面板） */
+    /** 键盘本体高度（不含顶部面板）；顶部留白 + 各按键行 + 行间距 + 底部留白 */
     fun keyboardHeightPx(rowCount: Int): Int {
         val rows = rowCount.coerceAtLeast(1)
-        return (paddingVerticalPx * 2f +
+        return (paddingVerticalPx + paddingBottomPx +
             keyHeightPx * rows +
             keyGapVerticalPx * (rows - 1)).toInt()
     }
