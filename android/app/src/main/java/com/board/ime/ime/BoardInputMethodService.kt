@@ -854,6 +854,15 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         controller.onKeyRepeat(key)
     }
 
+    /**
+     * 空格键横向滑动 → 移动光标（对齐微信输入法）。
+     *
+     * 不做按键音 / 震动：微信这个手势也没有任何反馈，光标移动本身就是反馈。
+     */
+    override fun onCursorMove(direction: Int, steps: Int) {
+        controller.moveCursor(direction, steps)
+    }
+
     // ------------------------------------------------------------ 顶部面板
 
     private fun onMoreAction(action: MorePanel.Action) {

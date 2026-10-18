@@ -257,12 +257,15 @@ class InputController(
         notifyStateChanged()
     }
 
-    /** 光标左右移动（工具栏用），delta 为 -1 / +1 */
-    fun moveCursor(delta: Int) {
+    /** 光标左右移动（工具栏 / 空格键滑动），delta 为 -1 / +1，steps 为连续移动的字符数 */
+    fun moveCursor(delta: Int, steps: Int = 1) {
         val connection = inputConnection ?: return
+        if (delta == 0 || steps <= 0) return
         val keyCode = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
-        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        repeat(steps) {
+            connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+            connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        }
     }
 
     /**

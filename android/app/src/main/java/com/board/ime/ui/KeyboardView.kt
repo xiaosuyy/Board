@@ -18,6 +18,7 @@ import com.board.ime.keyboard.KeyType
 import com.board.ime.keyboard.KeyboardLayout
 import com.board.ime.keyboard.KeyboardLayoutMetrics
 import com.board.ime.keyboard.KeyboardLayouts
+import com.board.ime.keyboard.SpaceCursorDrag
 import kotlin.math.min
 
 /**
@@ -45,6 +46,14 @@ class KeyboardView @JvmOverloads constructor(
 
         /** 连续触发（目前用于退格的连续删除） */
         fun onKeyRepeat(key: KeySpec)
+
+        /**
+         * 空格键左右滑动移动光标。
+         *
+         * @param direction -1 = 左，+1 = 右
+         * @param steps 本次要移动的字符数（≥1）
+         */
+        fun onCursorMove(direction: Int, steps: Int)
     }
 
     var listener: OnKeyboardActionListener? = null
@@ -103,6 +112,18 @@ class KeyboardView @JvmOverloads constructor(
     private var downX = 0f
     private var downY = 0f
     private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+
+    /**
+     * 空格键横向滑动 → 移动光标。
+     *
+     * 死区 50dp / 每 33dp 一个字符，取自微信输入法在 1080×1920 @480dpi 的实测
+     * （见 `reverse engineer/blueboard-test/WECHAT_SPACE_CURSOR.md`）：
+     * 150px（50dp）以内算点按 → 输入空格；250px ≈ 1 字符，350px ≈ 2 字符。
+     */
+    private val spaceCursorDrag = SpaceCursorDrag(
+        deadZonePx = dp(SPACE_CURSOR_DEAD_ZONE_DP),
+        stepPx = dp(SPACE_CURSOR_STEP_DP),
+    )
 
     private val handler = Handler(Looper.getMainLooper())
     private var repeatRunnable: Runnable? = null
@@ -528,6 +549,7 @@ class KeyboardView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
                 downY = event.y
+                spaceCursorDrag.reset()
                 val index = findKeyIndex(event.x, event.y)
                 if (index >= 0) {
                     longPressFired = false
@@ -537,6 +559,16 @@ class KeyboardView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                // 空格键横向滑动：移动光标（判定成立后锁定空格键，不再换键、不再长按）
+                if (keys.getOrNull(pressedIndex)?.type == KeyType.SPACE) {
+                    val move = spaceCursorDrag.onMove(event.x - downX, event.y - downY)
+                    if (spaceCursorDrag.isActive) {
+                        cancelPendingTouch()
+                        emitCursorMove(move)
+                        return true
+                    }
+                }
+
                 // 轻微的抖动 / 滑动不换键：只有离开按下点超过 touch slop 才重新判定
                 val dx = event.x - downX
                 val dy = event.y - downY
@@ -557,9 +589,16 @@ class KeyboardView @JvmOverloads constructor(
             MotionEvent.ACTION_UP -> {
                 val index = pressedIndex
                 val wasLongPress = longPressFired
+                // 滑动移动光标后抬手：不能再输入一个空格
+                val wasCursorDrag = spaceCursorDrag.isActive
+                // 抬手位置也算进去：最后一个 MOVE 与终点差几像素时不会少走一格
+                if (wasCursorDrag) {
+                    emitCursorMove(spaceCursorDrag.onMove(event.x - downX, event.y - downY))
+                }
                 cancelPendingTouch()
                 setPressedIndex(-1)
-                if (index >= 0 && !wasLongPress) {
+                spaceCursorDrag.reset()
+                if (index >= 0 && !wasLongPress && !wasCursorDrag) {
                     listener?.onKey(keys[index])
                 }
                 performClick()
@@ -568,6 +607,7 @@ class KeyboardView @JvmOverloads constructor(
             MotionEvent.ACTION_CANCEL -> {
                 cancelPendingTouch()
                 setPressedIndex(-1)
+                spaceCursorDrag.reset()
             }
         }
         return true
@@ -589,6 +629,12 @@ class KeyboardView @JvmOverloads constructor(
         repeatRunnable = runnable
         // 长按判定成立时先删一个，避免长按后立刻抬手漏掉一次删除
         handler.post(runnable)
+    }
+
+    /** 把「本次要移动的字符数」转成回调（0 表示不用动） */
+    private fun emitCursorMove(steps: Int) {
+        if (steps == 0) return
+        listener?.onCursorMove(if (steps > 0) 1 else -1, if (steps > 0) steps else -steps)
     }
 
     private fun cancelPendingTouch() {
@@ -636,5 +682,14 @@ class KeyboardView @JvmOverloads constructor(
     private companion object {
         const val LONG_PRESS_DELAY_MS = 400L
         const val REPEAT_INTERVAL_MS = 55L
+
+        /**
+         * 空格键横向滑动移动光标：死区 50dp（以内算点按 → 输入空格）。
+         * 微信输入法实测：150px（50dp）不移动、250px ≈ 1 字符。
+         */
+        const val SPACE_CURSOR_DEAD_ZONE_DP = 50f
+
+        /** 越过死区后每 33dp 移动 1 个字符（微信实测 ≈ 100px / 字符 @density 3） */
+        const val SPACE_CURSOR_STEP_DP = 33f
     }
 }
