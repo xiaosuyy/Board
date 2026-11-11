@@ -19,6 +19,7 @@ import com.board.ime.keyboard.KeyboardLayout
 import com.board.ime.keyboard.KeyboardLayoutMetrics
 import com.board.ime.keyboard.KeyboardLayouts
 import com.board.ime.keyboard.SpaceCursorDrag
+import com.board.ime.keyboard.SwipeDownGesture
 import kotlin.math.min
 
 /**
@@ -46,6 +47,9 @@ class KeyboardView @JvmOverloads constructor(
 
         /** 连续触发（目前用于退格的连续删除） */
         fun onKeyRepeat(key: KeySpec)
+
+        /** 字母键按住下滑（z / x / c / v）：全选 / 剪切 / 复制 / 粘贴 */
+        fun onKeySwipeDown(key: KeySpec)
 
         /**
          * 空格键左右滑动移动光标。
@@ -124,6 +128,12 @@ class KeyboardView @JvmOverloads constructor(
         deadZonePx = dp(SPACE_CURSOR_DEAD_ZONE_DP),
         stepPx = dp(SPACE_CURSOR_STEP_DP),
     )
+
+    /**
+     * 字母键「按住下滑」手势：z 全选、x 剪切、c 复制、v 粘贴。
+     * 判定成立后锁定当前键，不再换键、不再长按，抬手也不输入字母。
+     */
+    private val letterSwipeDown = SwipeDownGesture(triggerPx = dp(SWIPE_DOWN_TRIGGER_DP))
 
     private val handler = Handler(Looper.getMainLooper())
     private var repeatRunnable: Runnable? = null
@@ -550,6 +560,7 @@ class KeyboardView @JvmOverloads constructor(
                 downX = event.x
                 downY = event.y
                 spaceCursorDrag.reset()
+                letterSwipeDown.reset()
                 val index = findKeyIndex(event.x, event.y)
                 if (index >= 0) {
                     longPressFired = false
@@ -565,6 +576,19 @@ class KeyboardView @JvmOverloads constructor(
                     if (spaceCursorDrag.isActive) {
                         cancelPendingTouch()
                         emitCursorMove(move)
+                        return true
+                    }
+                }
+
+                // 字母键按住下滑：z / x / c / v（全选 / 剪切 / 复制 / 粘贴）
+                if (letterSwipeDown.isActive) return true
+                val downKey = keys.getOrNull(pressedIndex)
+                if (downKey != null && downKey.type == KeyType.CHARACTER &&
+                    downKey.text in SWIPE_DOWN_LETTERS
+                ) {
+                    if (letterSwipeDown.onMove(event.x - downX, event.y - downY)) {
+                        cancelPendingTouch()
+                        listener?.onKeySwipeDown(downKey)
                         return true
                     }
                 }
@@ -591,6 +615,8 @@ class KeyboardView @JvmOverloads constructor(
                 val wasLongPress = longPressFired
                 // 滑动移动光标后抬手：不能再输入一个空格
                 val wasCursorDrag = spaceCursorDrag.isActive
+                // 下滑快捷操作触发后抬手：不能再输入这个字母
+                val wasSwipeDown = letterSwipeDown.isActive
                 // 抬手位置也算进去：最后一个 MOVE 与终点差几像素时不会少走一格
                 if (wasCursorDrag) {
                     emitCursorMove(spaceCursorDrag.onMove(event.x - downX, event.y - downY))
@@ -598,7 +624,8 @@ class KeyboardView @JvmOverloads constructor(
                 cancelPendingTouch()
                 setPressedIndex(-1)
                 spaceCursorDrag.reset()
-                if (index >= 0 && !wasLongPress && !wasCursorDrag) {
+                letterSwipeDown.reset()
+                if (index >= 0 && !wasLongPress && !wasCursorDrag && !wasSwipeDown) {
                     listener?.onKey(keys[index])
                 }
                 performClick()
@@ -608,6 +635,7 @@ class KeyboardView @JvmOverloads constructor(
                 cancelPendingTouch()
                 setPressedIndex(-1)
                 spaceCursorDrag.reset()
+                letterSwipeDown.reset()
             }
         }
         return true
@@ -691,5 +719,11 @@ class KeyboardView @JvmOverloads constructor(
 
         /** 越过死区后每 20dp 移动 1 个字符（微信是 33dp；这里调小以提高灵敏度） */
         const val SPACE_CURSOR_STEP_DP = 20f
+
+        /** 字母键按住下滑的触发距离：竖直位移超过 28dp 才触发（避免打字时误触） */
+        const val SWIPE_DOWN_TRIGGER_DP = 28f
+
+        /** 支持下滑快捷操作的字母键：z 全选 / x 剪切 / c 复制 / v 粘贴 */
+        val SWIPE_DOWN_LETTERS = setOf("z", "x", "c", "v")
     }
 }

@@ -528,7 +528,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         connection.commitText(text, 1)
     }
     private var rimeEngine: RimeEngine? = null
-    private var controller = InputController(engine).apply { onHint = { message -> showHint(message) } }
+    private var controller = InputController(engine).apply {
+        onHint = { message -> showHint(message) }
+        clipboardText = { readClipboardText() }
+    }
     private var appliedEngineKind: EngineKind? = null
 
     private lateinit var dictionaryRepository: DictionaryRepository
@@ -856,6 +859,11 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         controller.onKeyRepeat(key)
     }
 
+    override fun onKeySwipeDown(key: KeySpec) {
+        playKeyFeedback()
+        controller.onLetterSwipeDown(key.text.orEmpty())
+    }
+
     /**
      * 空格键横向滑动 → 移动光标（对齐微信输入法）。
      *
@@ -1047,6 +1055,13 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val manager = getSystemService(ClipboardManager::class.java) ?: return
         clipboardManager = manager
         manager.addPrimaryClipChangedListener(clipboardListener)
+    }
+
+    /** 系统剪贴板里的文本（按住 v 下滑粘贴用）；没有文本时返回 null */
+    private fun readClipboardText(): CharSequence? {
+        val clip = runCatching { clipboardManager?.primaryClip }.getOrNull() ?: return null
+        if (clip.itemCount == 0) return null
+        return runCatching { clip.getItemAt(0).coerceToText(this) }.getOrNull()
     }
 
     /** 把系统剪贴板里的文本记录到 Room（按内容哈希去重、敏感内容不入库） */
@@ -1414,6 +1429,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         controller = InputController(newEngine, letterMode).also {
             it.onStateChanged = { refreshInputView() }
             it.onHint = { message -> showHint(message) }
+            it.clipboardText = { readClipboardText() }
         }
         appliedEngineKind = kind
     }

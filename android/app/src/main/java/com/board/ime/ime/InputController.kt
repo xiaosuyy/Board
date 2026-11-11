@@ -53,6 +53,9 @@ class InputController(
     /** 提示回调（未实现的功能键）：由服务弹一条轻提示 */
     var onHint: ((String) -> Unit)? = null
 
+    /** 读取系统剪贴板文本（由服务注入，按住 v 下滑粘贴用） */
+    var clipboardText: (() -> CharSequence?)? = null
+
     var shiftActive: Boolean = false
         private set
 
@@ -308,6 +311,38 @@ class InputController(
     fun onEnterNewline() {
         dispatch(EngineKey.Enter)
         commitText("\n")
+        notifyStateChanged()
+    }
+
+    /**
+     * 字母键按住下滑的快捷操作：
+     * z = 全选、x = 剪切、c = 复制、v = 粘贴最新剪贴板内容。
+     *
+     * 剪切 / 复制交给编辑器自己的上下文菜单动作，选区语义与 App 保持一致；
+     * 粘贴直接读取系统剪贴板并上屏（超长文本会分块提交）。
+     */
+    fun onLetterSwipeDown(letter: String) {
+        val connection = inputConnection ?: return
+        val action = letter.lowercase()
+        // 先把未确认的组词按原样上屏，避免操作到 composing 区域
+        dispatch(EngineKey.Enter)
+        when (action) {
+            "z" -> connection.performContextMenuAction(android.R.id.selectAll)
+            "x", "c" -> {
+                val menuAction = if (action == "x") android.R.id.cut else android.R.id.copy
+                if (!connection.performContextMenuAction(menuAction)) {
+                    onHint?.invoke("没有选中文字")
+                }
+            }
+
+            "v" -> {
+                val text = clipboardText?.invoke()?.toString().orEmpty()
+                if (text.isEmpty()) onHint?.invoke("剪贴板为空") else commitText(text)
+            }
+
+            else -> return
+        }
+        clearModifiers()
         notifyStateChanged()
     }
 
