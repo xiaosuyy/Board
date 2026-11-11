@@ -297,11 +297,14 @@ class InputController(
     fun onEnter() {
         // 引擎会先把未确认的组词内容按原样上屏（“回车确认”）
         dispatch(EngineKey.Enter)
-        sendEnterKey()
+        performEditorAction()
         notifyStateChanged()
     }
 
-    /** 只插入换行：先把未完成的组词按原样上屏，再提交一个换行（微信数字/符号层底部的「换行」） */
+    /**
+     * 只插入换行：先把未完成的组词按原样上屏，再提交一个换行。
+     * 入口：长按回车键、数字 / 符号层底部的「换行」键。
+     */
     fun onEnterNewline() {
         dispatch(EngineKey.Enter)
         commitText("\n")
@@ -484,23 +487,19 @@ class InputController(
     }
 
     /**
-     * 发送回车：优先执行 EditorInfo 声明的 editor action（搜索 / 发送 / 完成…），
-     * 否则回退成真正的 Enter 键事件。
+     * 执行 EditorInfo 声明的 editor action（搜索 / 发送 / 完成…）。
+     *
+     * 短按回车只在编辑器声明了动作时生效；没有声明就什么都不做，
+     * 不再回退成 Enter 键事件——换行统一由长按回车触发（见 [onEnterNewline]）。
      */
-    private fun sendEnterKey() {
+    private fun performEditorAction() {
         val connection = inputConnection ?: return
-        val info = editorInfo
-
-        if (info != null) {
-            val action = info.imeOptions and EditorInfo.IME_MASK_ACTION
-            val noEnterAction = info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0
-            val hasAction = action != EditorInfo.IME_ACTION_NONE &&
-                action != EditorInfo.IME_ACTION_UNSPECIFIED
-            if (!noEnterAction && hasAction && connection.performEditorAction(action)) return
-        }
-
-        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        val info = editorInfo ?: return
+        val action = info.imeOptions and EditorInfo.IME_MASK_ACTION
+        val noEnterAction = info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0
+        val hasAction = action != EditorInfo.IME_ACTION_NONE &&
+            action != EditorInfo.IME_ACTION_UNSPECIFIED
+        if (!noEnterAction && hasAction) connection.performEditorAction(action)
     }
 
     private fun notifyStateChanged() {

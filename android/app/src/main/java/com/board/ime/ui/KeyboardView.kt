@@ -41,7 +41,7 @@ class KeyboardView @JvmOverloads constructor(
         /** 正常按下并抬起 */
         fun onKey(key: KeySpec)
 
-        /** 长按（目前用于语言键：打开系统输入法选择器） */
+        /** 长按（语言键打开输入法选择器 / 标点键出句号 / 回车键换行） */
         fun onKeyLongPress(key: KeySpec)
 
         /** 连续触发（目前用于退格的连续删除） */

@@ -841,6 +841,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
         } else if (key.type == KeyType.PUNCTUATION) {
             controller.onPunctuationLongPress()
+        } else if (key.type == KeyType.ENTER) {
+            controller.onEnterNewline()
         }
     }
 
