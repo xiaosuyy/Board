@@ -12,7 +12,7 @@ import com.board.ime.R
  * 顶部面板用到的图标。
  *
  * 全部是 `24×24` viewport 的 VectorDrawable（`res/drawable/ic_board_*.xml`），
- * 统一线宽（1.7–2.0）、统一圆头圆角、统一视觉重量，运行时按主题着色。
+ * 统一微信风格：细线（1.5–1.8）、圆头圆角、几何简洁，运行时按主题着色。
  */
 enum class PanelIcon(@DrawableRes val res: Int) {
     MORE(R.drawable.ic_board_more),
