@@ -5,7 +5,7 @@ import kotlin.math.abs
 /**
  * 空格键「左右滑动移动光标」的手势换算。
  *
- * 行为对齐微信输入法实测（`reverse engineer/blueboard-test/WECHAT_SPACE_CURSOR.md`）：
+ * 行为参考微信输入法实测，但 Board 的死区 / 步长更小（更灵敏）：
  * - 位移不超过 [deadZonePx] → 不算滑动，仍然按**点按**处理（输入空格）；
  * - 越过死区后，每累计 [stepPx] 移动 **1 个字符**；
  * - 采用**绝对映射**：光标位置只由「当前手指相对按下点的位移」决定，

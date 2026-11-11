@@ -116,9 +116,9 @@ class KeyboardView @JvmOverloads constructor(
     /**
      * 空格键横向滑动 → 移动光标。
      *
-     * 死区 50dp / 每 33dp 一个字符，取自微信输入法在 1080×1920 @480dpi 的实测
-     * （见 `reverse engineer/blueboard-test/WECHAT_SPACE_CURSOR.md`）：
-     * 150px（50dp）以内算点按 → 输入空格；250px ≈ 1 字符，350px ≈ 2 字符。
+     * 参考微信输入法实测（死区 50dp / 每 33dp 一字符），但实测手感偏钝：
+     * 要滑很长一段才开始移动。Board 收紧为死区 24dp / 每 20dp 一字符，
+     * 激活更快、每个字符需要的位移更短。
      */
     private val spaceCursorDrag = SpaceCursorDrag(
         deadZonePx = dp(SPACE_CURSOR_DEAD_ZONE_DP),
@@ -684,12 +684,12 @@ class KeyboardView @JvmOverloads constructor(
         const val REPEAT_INTERVAL_MS = 55L
 
         /**
-         * 空格键横向滑动移动光标：死区 50dp（以内算点按 → 输入空格）。
-         * 微信输入法实测：150px（50dp）不移动、250px ≈ 1 字符。
+         * 空格键横向滑动移动光标：死区 24dp（以内算点按 → 输入空格）。
+         * 微信是 50dp；这里调小，让滑动更快进入移动状态。
          */
-        const val SPACE_CURSOR_DEAD_ZONE_DP = 50f
+        const val SPACE_CURSOR_DEAD_ZONE_DP = 24f
 
-        /** 越过死区后每 33dp 移动 1 个字符（微信实测 ≈ 100px / 字符 @density 3） */
-        const val SPACE_CURSOR_STEP_DP = 33f
+        /** 越过死区后每 20dp 移动 1 个字符（微信是 33dp；这里调小以提高灵敏度） */
+        const val SPACE_CURSOR_STEP_DP = 20f
     }
 }
