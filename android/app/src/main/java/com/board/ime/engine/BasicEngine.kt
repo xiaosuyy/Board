@@ -78,8 +78,10 @@ class BasicEngine(initialMode: InputMode = InputMode.ENGLISH) : InputEngine {
         val candidate = candidates().getOrNull(index) ?: return EngineResult.Ignored
         if (!candidate.enabled) return EngineResult.Ignored
         reset()
-        // 英文选词后补一个空格，符合 Gboard 的输入习惯
-        return EngineResult.Commit(candidate.text + " ")
+        // 英文选词后补一个空格，符合 Gboard 的输入习惯；
+        // 数字 / 纯符号候选不补，否则「123」会变成「123 」，和后面的标点或单位隔开。
+        val suffix = if (currentMode == InputMode.ENGLISH && candidate.text.any { it.isLetter() }) " " else ""
+        return EngineResult.Commit(candidate.text + suffix)
     }
 
     private fun commitWith(suffix: String): EngineResult {

@@ -113,12 +113,12 @@ class NumericCustomCodeTest {
         assertEquals(emptyList<String>(), engine.texts())
     }
 
-    // 13（原有数字候选行为不变：BasicEngine 仍补空格）
+    // 13（数字候选不补空格：点「15823」上屏后不应多出一个空格）
     @Test
-    fun `picking raw digits keeps original commit behaviour`() {
+    fun `picking raw digits commits without trailing space`() {
         val engine = engine("15823" to listOf("号码A"))
         engine.type("15823")
-        assertEquals(EngineResult.Commit("15823 "), engine.pickCandidate(0))
+        assertEquals(EngineResult.Commit("15823"), engine.pickCandidate(0))
     }
 
     // 10（刷新后候选消失）
