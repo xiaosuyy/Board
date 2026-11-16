@@ -140,6 +140,37 @@ class SettingsSectionActivity : AppCompatActivity() {
             uri?.let { handleExport(it) }
         }
 
+    /** 账号页：从相册选头像（复制到应用私有目录，不申请存储权限） */
+    private val avatarPickLauncher =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            lifecycleScope.launch {
+                val saved = withContext(Dispatchers.IO) {
+                    com.board.ime.profile.AvatarStore.saveFromUri(this@SettingsSectionActivity, uri)
+                }
+                if (!saved) {
+                    Toast.makeText(this@SettingsSectionActivity, "无法读取所选图片", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                Toast.makeText(this@SettingsSectionActivity, "头像已更新", Toast.LENGTH_SHORT).show()
+                render()
+                val uploaded = withContext(Dispatchers.IO) {
+                    runCatching { SyncEngineHolder.get(this@SettingsSectionActivity).syncProfileOnly() }
+                        .getOrDefault(false)
+                }
+                if (uploaded) {
+                    // 云端可能比本地新（另一台设备刚换过）→ 重新读一次本地头像
+                    render()
+                } else {
+                    Toast.makeText(
+                        this@SettingsSectionActivity,
+                        "头像已保存，将在下次同步时上传",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         section = SettingsSection.fromName(intent.getStringExtra(EXTRA_SECTION))
@@ -325,7 +356,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                 SettingsSection.APPEARANCE -> buildAppearance(content)
                 SettingsSection.DICTIONARY -> buildDictionary(content)
                 SettingsSection.CLIPBOARD -> buildClipboard(content)
-                SettingsSection.SYNC -> buildSync(content)
+                SettingsSection.ACCOUNT -> buildAccount(content)
                 SettingsSection.TRANSLATION -> buildTranslation(content)
                 SettingsSection.VOICE -> buildVoice(content)
                 SettingsSection.ADVANCED -> buildAdvanced(content)
@@ -1780,9 +1811,115 @@ class SettingsSectionActivity : AppCompatActivity() {
         }
     }
 
+    // ---------------------------------------------------------------- 账号
+
+    private fun buildAccount(content: LinearLayout) {
+        val engine = SyncEngineHolder.get(this)
+        val config = engine.loadConfig()
+        val configured = config.isConfigured
+        val avatarStore = com.board.ime.profile.AvatarStore
+
+        val card = SettingsUi.card(this)
+        card.addView(SettingsUi.heading(this, "账号"))
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4f), 0, dp(6f))
+        }
+        val avatar = com.board.ime.ui.AvatarView(this).apply {
+            setAvatar(avatarStore.loadBitmap(this@SettingsSectionActivity))
+            isClickable = true
+            isFocusable = true
+            contentDescription = "设置头像"
+            setOnClickListener { requestAvatarPick(configured) }
+        }
+        row.addView(avatar, LinearLayout.LayoutParams(dp(72f), dp(72f)))
+        val info = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16f), 0, 0, 0)
+        }
+        info.addView(
+            TextView(this).apply {
+                text = if (configured) "WebDAV 已登录" else "未登录"
+                setTextSize(
+                    android.util.TypedValue.COMPLEX_UNIT_PX,
+                    resources.getDimensionPixelSize(R.dimen.app_text_body).toFloat(),
+                )
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface))
+            },
+        )
+        info.addView(
+            TextView(this).apply {
+                text = if (configured) {
+                    config.username.ifBlank { "已连接" }
+                } else {
+                    "点击头像或下方「从相册选择」前，请先登录"
+                }
+                setTextSize(
+                    android.util.TypedValue.COMPLEX_UNIT_PX,
+                    resources.getDimensionPixelSize(R.dimen.app_text_caption).toFloat(),
+                )
+                setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
+                setPadding(0, dp(2f), 0, 0)
+            },
+        )
+        row.addView(info, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        card.addView(row)
+        card.addView(
+            SettingsUi.hint(
+                this,
+                if (configured) {
+                    "头像会自动居中裁成正方形，并随 WebDAV 同步到其它设备。"
+                } else {
+                    "登录 WebDAV 后即可设置头像；头像随同步上传。"
+                },
+            ),
+        )
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(6f), 0, 0)
+        }
+        fun addAction(button: MaterialButton) {
+            button.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { if (actions.childCount > 0) marginStart = dp(12f) }
+            actions.addView(button)
+        }
+        addAction(SettingsUi.button(this, "从相册选择") { requestAvatarPick(configured) })
+        if (avatarStore.hasAvatar(this)) {
+            addAction(
+                SettingsUi.button(this, "清除头像") {
+                    avatarStore.clear(this)
+                    Toast.makeText(this, "已清除头像", Toast.LENGTH_SHORT).show()
+                    render()
+                    lifecycleScope.launch {
+                        withContext(Dispatchers.IO) {
+                            runCatching { SyncEngineHolder.get(this@SettingsSectionActivity).syncProfileOnly() }
+                        }
+                    }
+                },
+            )
+        }
+        card.addView(actions)
+        content.addView(SettingsUi.cardView(this, card))
+
+        // 登录与同步设置：服务器、同步开关、同步内容全部收在这一页
+        buildSync(content, profileSyncOnSave = true)
+    }
+
+    private fun requestAvatarPick(configured: Boolean) {
+        if (!configured) {
+            Toast.makeText(this, "请先在下方填写并保存 WebDAV 配置", Toast.LENGTH_SHORT).show()
+            return
+        }
+        avatarPickLauncher.launch("image/*")
+    }
+
     // ---------------------------------------------------------------- 同步
 
-    private fun buildSync(content: LinearLayout) {
+    private fun buildSync(content: LinearLayout, profileSyncOnSave: Boolean = false) {
         val engine = SyncEngineHolder.get(this)
         val config = engine.loadConfig()
         val status = engine.status.value
@@ -1858,7 +1995,9 @@ class SettingsSectionActivity : AppCompatActivity() {
                 this,
                 listOf(
                     SettingsUi.button(this, "测试连接") { testSync(urlEdit, userEdit, passEdit, dirEdit) },
-                    SettingsUi.button(this, "保存配置") { saveSync(urlEdit, userEdit, passEdit, dirEdit) },
+                    SettingsUi.button(this, if (profileSyncOnSave) "保存并登录" else "保存配置") {
+                        saveSync(urlEdit, userEdit, passEdit, dirEdit, syncProfile = profileSyncOnSave)
+                    },
                 ),
             ),
         )
@@ -1911,7 +2050,7 @@ class SettingsSectionActivity : AppCompatActivity() {
             )
         }
         contentCard.addView(
-            SettingsUi.hint(this, "只同步勾选的内容；账号密码、日志、调试信息永不同步。"),
+            SettingsUi.hint(this, "只同步勾选的内容；头像随账号同步；账号密码、日志、调试信息永不同步。"),
         )
         content.addView(SettingsUi.cardView(this, contentCard))
     }
@@ -2187,6 +2326,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         autoSync: Boolean = SyncEngineHolder.get(this).loadConfig().autoSync,
         allowCleartextHttp: Boolean = SyncEngineHolder.get(this).loadConfig().allowCleartextHttp,
         toast: Boolean = true,
+        syncProfile: Boolean = false,
     ) {
         val config = readConfig(url, user, pass, dir, autoSync, allowCleartextHttp)
         if (!config.isConfigured) {
@@ -2202,6 +2342,15 @@ class SettingsSectionActivity : AppCompatActivity() {
         SyncScheduler.applyAutoSync(this, config.autoSync)
         if (toast) Toast.makeText(this, "配置已保存", Toast.LENGTH_SHORT).show()
         render()
+        if (syncProfile) {
+            // 登录后拉一次云端头像；失败不影响配置保存
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    runCatching { engine.syncProfileOnly() }
+                }
+                render()
+            }
+        }
     }
 
     private fun testSync(url: EditText, user: EditText, pass: EditText, dir: EditText) {

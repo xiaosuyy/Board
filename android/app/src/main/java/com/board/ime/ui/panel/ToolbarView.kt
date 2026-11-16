@@ -1,14 +1,22 @@
 package com.board.ime.ui.panel
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import com.board.ime.profile.AvatarStore
+import com.board.ime.settings.BoardPreferences
 import com.board.ime.ui.KeyboardTheme
+import kotlin.math.max
 
 /**
  * 工具栏（TOOLBAR 状态）—— 顶部那条很薄的功能区域。
@@ -59,6 +67,23 @@ class ToolbarView @JvmOverloads constructor(
 
     private val painter = PanelIconPainter(resources)
     private var pressed: Action? = null
+
+    /** 用户头像：设置过就替换最左侧「更多」的图标 */
+    private var avatar: Bitmap? = null
+    private val avatarPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val avatarRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = resources.displayMetrics.density
+        alpha = 48
+    }
+    private val avatarMatrix = Matrix()
+
+    private val preferences by lazy { BoardPreferences(context.applicationContext) }
+
+    /** 头像换了（设置里选图 / 同步拉取）就重新读文件；未变化时命中 AvatarStore 的缓存 */
+    private val avatarListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == AvatarStore.KEY_AVATAR_UPDATED_AT) refreshAvatar()
+    }
 
     /** 当前布局（列表顺序 = 从右往左） */
     private var tools: List<ToolId> = emptyList()
@@ -178,7 +203,11 @@ class ToolbarView @JvmOverloads constructor(
                 Action.COLLAPSE_KEYBOARD -> PanelIcon.KEYBOARD_HIDE
                 Action.OPEN_MORE -> PanelIcon.MORE
             }
-            painter.draw(canvas, rect.centerX(), rect.centerY(), theme.toolIconSize, icon, theme.iconColor)
+            if (action == Action.OPEN_MORE && avatar != null) {
+                drawAvatar(canvas, rect)
+            } else {
+                painter.draw(canvas, rect.centerX(), rect.centerY(), theme.toolIconSize, icon, theme.iconColor)
+            }
         }
 
         // 工具（只画图标）
@@ -331,6 +360,48 @@ class ToolbarView @JvmOverloads constructor(
         }
     }
 
+    /** 「更多」按钮：有头像时画成圆形头像（比图标略大，仍在 44dp 热区内） */
+    private fun drawAvatar(canvas: Canvas, rect: RectF) {
+        val bitmap = avatar ?: return
+        val diameter = minOf(theme.toolIconSize * 1.3f, rect.width() * 0.66f)
+        if (diameter <= 0f) return
+        val radius = diameter / 2f
+        val centerX = rect.centerX()
+        val centerY = rect.centerY()
+        val shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        val scale = max(diameter / bitmap.width, diameter / bitmap.height)
+        avatarMatrix.reset()
+        avatarMatrix.setScale(scale, scale)
+        avatarMatrix.postTranslate(
+            centerX - bitmap.width * scale / 2f,
+            centerY - bitmap.height * scale / 2f,
+        )
+        shader.setLocalMatrix(avatarMatrix)
+        avatarPaint.shader = shader
+        canvas.drawCircle(centerX, centerY, radius, avatarPaint)
+        avatarRingPaint.color = theme.iconColor
+        canvas.drawCircle(centerX, centerY, radius - avatarRingPaint.strokeWidth / 2f, avatarRingPaint)
+    }
+
+    private fun refreshAvatar() {
+        val bitmap = AvatarStore.loadBitmap(context.applicationContext)
+        if (avatar === bitmap) return
+        avatar = bitmap
+        invalidate()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        preferences.registerListener(avatarListener)
+        refreshAvatar()
+    }
+
+    override fun onDetachedFromWindow() {
+        preferences.unregisterListener(avatarListener)
+        cancelDrag()
+        super.onDetachedFromWindow()
+    }
+
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
         if (visibility != VISIBLE) {
@@ -339,11 +410,6 @@ class ToolbarView @JvmOverloads constructor(
             cancelDrag()
             invalidate()
         }
-    }
-
-    override fun onDetachedFromWindow() {
-        cancelDrag()
-        super.onDetachedFromWindow()
     }
 
     override fun performClick(): Boolean {

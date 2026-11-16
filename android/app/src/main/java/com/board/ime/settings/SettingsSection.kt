@@ -22,7 +22,7 @@ enum class SettingsSection(
     DICTIONARY("词库", "我的词库、学习词、导入导出", R.drawable.ic_board_phrases),
     CLIPBOARD("剪贴板", "历史、敏感内容、清理", R.drawable.ic_board_clipboard),
     LIBRARY("云端资料库", "跨设备的图片与文件", R.drawable.ic_board_cloud),
-    SYNC("同步", "WebDAV、同步内容", R.drawable.ic_board_refresh),
+    ACCOUNT("账号与同步", "WebDAV 登录、头像与同步", R.drawable.ic_board_avatar),
     TRANSLATION("翻译", "翻译服务、隐私说明", R.drawable.ic_board_translate),
     VOICE("语音", "百度实时语音识别、隐私说明", R.drawable.ic_board_voice),
     ADVANCED("高级", "隐私、输入法状态、开发者选项", R.drawable.ic_board_settings),

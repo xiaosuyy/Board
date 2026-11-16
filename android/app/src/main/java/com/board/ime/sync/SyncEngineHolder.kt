@@ -94,6 +94,19 @@ object SyncEngineHolder {
             },
             contentGate = preferences,
             clipboardLogDeviceId = androidDeviceId(context),
+            profileStore = object : ProfileSyncStore {
+                override fun localUpdatedAt(): Long = preferences.avatarUpdatedAt
+
+                override fun encodeAvatar(): String? =
+                    com.board.ime.profile.AvatarStore.encodeBase64(context)
+
+                override fun applyAvatar(base64: String, updatedAt: Long): Boolean =
+                    com.board.ime.profile.AvatarStore.saveFromBase64(context, base64, updatedAt)
+
+                override fun clearAvatar() {
+                    com.board.ime.profile.AvatarStore.clear(context)
+                }
+            },
         )
         // B1：本机真实新增历史条目时，记一条增量事件（只入内存，不联网、不落盘）。
         // 关键：挂在**同一个** clipboardRepository 上 —— 即 IME / 分享页 / 设置页共用的那一个。

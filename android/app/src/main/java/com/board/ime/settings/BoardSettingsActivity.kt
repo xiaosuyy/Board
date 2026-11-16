@@ -41,6 +41,7 @@ class BoardSettingsActivity : AppCompatActivity() {
     private var tapCount = 0
     private var lastTapAt = 0L
     private var logEntryRow: LinearLayout? = null
+    private var headerAvatar: com.board.ime.ui.AvatarView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,6 +55,7 @@ class BoardSettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        headerAvatar?.setAvatar(com.board.ime.profile.AvatarStore.loadBitmap(this))
         refreshStatuses()
     }
 
@@ -65,7 +67,15 @@ class BoardSettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(background())
         }
-        root.addView(
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20f), dp(18f), dp(20f), 0)
+        }
+        val titles = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        titles.addView(
             TextView(this).apply {
                 text = "设置"
                 setTextSize(
@@ -74,10 +84,9 @@ class BoardSettingsActivity : AppCompatActivity() {
                 )
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(settingsPrimary())
-                setPadding(dp(20f), dp(18f), dp(20f), 0)
             },
         )
-        root.addView(
+        titles.addView(
             TextView(this).apply {
                 text = "Board 输入法"
                 setTextSize(
@@ -85,9 +94,23 @@ class BoardSettingsActivity : AppCompatActivity() {
                     resources.getDimensionPixelSize(R.dimen.app_text_callout).toFloat(),
                 )
                 setTextColor(settingsSecondary())
-                setPadding(dp(20f), dp(2f), dp(20f), 0)
+                setPadding(0, dp(2f), 0, 0)
             },
         )
+        header.addView(
+            titles,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        val avatar = com.board.ime.ui.AvatarView(this).apply {
+            contentDescription = "账号与同步"
+            isClickable = true
+            isFocusable = true
+            setAvatar(com.board.ime.profile.AvatarStore.loadBitmap(this@BoardSettingsActivity))
+            setOnClickListener { openSection(SettingsSection.ACCOUNT) }
+        }
+        headerAvatar = avatar
+        header.addView(avatar, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { marginStart = dp(12f) })
+        root.addView(header)
 
         val scroll = android.widget.ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
@@ -120,7 +143,6 @@ class BoardSettingsActivity : AppCompatActivity() {
             "数据与同步" to listOf(
                 SettingsSection.CLIPBOARD,
                 SettingsSection.LIBRARY,
-                SettingsSection.SYNC,
             ),
             "服务与高级" to listOf(
                 SettingsSection.TRANSLATION,

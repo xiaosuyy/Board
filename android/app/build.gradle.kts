@@ -64,10 +64,10 @@ android {
         applicationId = "com.board.ime"
         minSdk = 26
         targetSdk = 36
-        // v1.2.0：设置精简、按钮紧凑化、关于页（项目介绍 / 下载源 / 检查更新）。
-        // versionCode 保持单调递增（1 → 2 → 3 → 4 → 5 → 6），不破坏已有升级链。
-        versionCode = 6
-        versionName = "1.2.0"
+        // v1.2.1：账号与头像（WebDAV 登录、头像同步）、工具栏「更多」显示头像、移除左移/右移图标。
+        // versionCode 保持单调递增（1 → 2 → 3 → 4 → 5 → 6 → 7），不破坏已有升级链。
+        versionCode = 7
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

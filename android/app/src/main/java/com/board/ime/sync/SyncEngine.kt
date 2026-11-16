@@ -81,6 +81,8 @@ class SyncEngine(
      * 为 null（未注入）时，增量历史整体关闭，行为与以前**完全一致**。
      */
     private val clipboardLogDeviceId: String? = null,
+    /** 头像同步（可选：老调用点 / 测试不传也能工作） */
+    private val profileStore: ProfileSyncStore? = null,
 ) {
 
     private val _status = MutableStateFlow(SyncStatus())
@@ -490,6 +492,11 @@ class SyncEngine(
 
             val wordResult = words as? WordOutcome.Applied ?: WordOutcome.Applied(0, 0, 0)
 
+            // ---------- 阶段 4：账号资料（头像） ----------
+            // 失败只记日志，不拖垮整次同步：词库 / 剪贴板已经同步成功。
+            val profileSynced = syncProfile(client)
+            val tProfile = System.currentTimeMillis()
+
             val status = SyncStatus(
                 kind = SyncStatusKind.SUCCESS,
                 lastSyncAt = System.currentTimeMillis(),
@@ -511,8 +518,9 @@ class SyncEngine(
                 "同步完成 上传=$pushCount 下载=$downloaded 冲突=$conflicts 跳过=$skipped " +
                     "词库=${wordResult.words} 学习词=${wordResult.learned} 常用语=${wordResult.phrases} " +
                     "导入词库=${dictionaryPart.label} " +
+                    "头像=${if (profileSynced) "已处理" else "失败（不影响其它数据）"} " +
                     "耗时[目录=${tEnsure - tStart} 剪贴板=${tPull - tEnsure} 导入词库=${tDict - tPull} " +
-                    "词库学习词=${tWords - tDict} 合计=${tWords - tStart}]ms",
+                    "词库学习词=${tWords - tDict} 头像=${tProfile - tWords} 合计=${tProfile - tStart}]ms",
             )
             return@withLock SyncResult(
                 outcome = SyncOutcome.SUCCESS,
@@ -1621,6 +1629,91 @@ class SyncEngine(
         if (skipped > 0) append(" · 跳过 $skipped")
     }
 
+    // ---------------------------------------------------------------- 头像
+
+    /**
+     * 只同步头像（登录后拉一次、换头像后推一次）。
+     *
+     * 和完整同步共用 [syncMutex]，避免与正在跑的词库同步并发改远端文件。
+     */
+    suspend fun syncProfileOnly(): Boolean {
+        val config = loadConfig()
+        if (!config.isConfigured) return false
+        config.securityProblem()?.let { message ->
+            SyncLog.warn(SyncEvent.NETWORK_ERROR, "头像同步被拒绝：$message")
+            return false
+        }
+        return syncMutex.withLock {
+            runCatching {
+                val client = clientFactory(config)
+                val ensure = client.ensureDirectory(config.normalizedDir)
+                if (!ensure.isOk && ensure.error != WebDavError.CONFLICT) return@runCatching false
+                syncProfile(client)
+            }.getOrElse { throwable ->
+                SyncLog.warn(
+                    SyncEvent.NETWORK_ERROR,
+                    "头像同步异常：${throwable.javaClass.simpleName}: ${throwable.message}",
+                )
+                false
+            }
+        }
+    }
+
+    /**
+     * 以 `updatedAt` 后写胜出：远端更新则落盘，本地更新则上传；两边都没有就什么都不做。
+     * 头像属于账号资料，不受「同步内容」开关影响。
+     */
+    private suspend fun syncProfile(client: WebDavClient): Boolean {
+        val store = profileStore ?: return true
+        val localAt = store.localUpdatedAt()
+        val remote = client.getText(FILE_PROFILE)
+        if (remote.isOk) {
+            val json = runCatching { JSONObject(remote.value.orEmpty()) }.getOrNull()
+            val remoteAt = json?.optLong("updatedAt", 0L) ?: 0L
+            val avatar = json?.optString("avatar").orEmpty()
+            if (remoteAt > localAt) {
+                if (avatar.isBlank()) {
+                    store.clearAvatar()
+                    SyncLog.event(SyncEvent.DONE, "头像：云端已删除，本地同步清除")
+                    return true
+                }
+                if (store.applyAvatar(avatar, remoteAt)) {
+                    SyncLog.event(SyncEvent.DONE, "头像：已从云端更新")
+                    return true
+                }
+                SyncLog.warn(SyncEvent.IGNORED_TYPE, "头像：云端图片无法解码，保留本地头像")
+            }
+            if (localAt > remoteAt) return uploadProfile(client, store, localAt)
+            return true
+        }
+        if (remote.error == WebDavError.NOT_FOUND) {
+            return if (localAt > 0L) uploadProfile(client, store, localAt) else true
+        }
+        SyncLog.warn(SyncEvent.NETWORK_ERROR, "头像同步失败：${describe(remote.error, remote.message)}")
+        return false
+    }
+
+    private suspend fun uploadProfile(
+        client: WebDavClient,
+        store: ProfileSyncStore,
+        updatedAt: Long,
+    ): Boolean {
+        // 没有图片（例如用户刚清除头像）也要上传，让其它设备知道「已删除」，
+        // 否则云端旧头像会在下次拉取时又回来。
+        val avatar = store.encodeAvatar().orEmpty()
+        val body = JSONObject()
+            .put("updatedAt", updatedAt)
+            .put("avatar", avatar)
+            .toString()
+        val put = client.putText(FILE_PROFILE, body, CONTENT_TYPE_JSON)
+        if (!put.isOk) {
+            SyncLog.warn(SyncEvent.NETWORK_ERROR, "头像上传失败：${describe(put.error, put.message)}")
+            return false
+        }
+        SyncLog.event(SyncEvent.DONE, if (avatar.isEmpty()) "头像：已上传删除状态" else "头像：已上传")
+        return true
+    }
+
     private fun refreshStatusLabel() {
         val config = loadConfig()
         if (!config.isConfigured) {
@@ -1654,6 +1747,9 @@ class SyncEngine(
 
         /** B1：共享设备注册表（1-H 已存在，只读复用，不新增第二套） */
         const val DEVICES_PATH = "library/devices.json"
+
+        /** 账号资料：头像（base64）与更新时间，单独一个文件 */
+        const val FILE_PROFILE = "library/profile.json"
 
         /** 常用语去抖窗口：连续拖动/连续编辑只同步一次 */
         const val PHRASE_DEBOUNCE_MS = 1500L

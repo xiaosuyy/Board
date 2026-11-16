@@ -209,6 +209,13 @@ class BoardPreferences(context: Context) : SyncContentGate {
             .putString(KEY_RECENT_EMOJIS, value.joinToString(EMOJI_SEPARATOR.toString()))
             .apply()
 
+    /** 头像更新时间（0 = 没有头像）。文件本体在 `files/profile/avatar.jpg`。 */
+    var avatarUpdatedAt: Long
+        get() = prefs.getLong(com.board.ime.profile.AvatarStore.KEY_AVATAR_UPDATED_AT, 0L)
+        set(value) = prefs.edit()
+            .putLong(com.board.ime.profile.AvatarStore.KEY_AVATAR_UPDATED_AT, value)
+            .apply()
+
     /** 同步内容开关（剪贴板 / 用户词库 / 学习词 / 常用语 / 自定义词 / 主题 / 键盘设置） */
     override fun isEnabled(content: SyncContent): Boolean =
         prefs.getBoolean(content.storageKey, content.defaultEnabled)
