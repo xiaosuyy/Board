@@ -1131,8 +1131,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     private fun onMoreAction(action: MorePanel.Action) {
         when (action) {
-            MorePanel.Action.CURSOR_LEFT -> controller.moveCursor(-1)
-            MorePanel.Action.CURSOR_RIGHT -> controller.moveCursor(1)
             // 「主题」与「设置」都指向设置页（外观 / 主题在同一处）
             MorePanel.Action.THEME, MorePanel.Action.SETTINGS -> openSettings()
             // 尚未开发的功能：明确告知，不伪装成可用

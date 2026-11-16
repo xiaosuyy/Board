@@ -19,7 +19,7 @@ import com.board.ime.ui.KeyboardTheme
  *
  * 它**替换** TOOLBAR，占用完全相同的 TopPanel 区域与高度：
  * ```
- * [⌃]  主题   翻译   语音   设置   常用语   左移   右移        →
+ * [⌃]  主题   翻译   语音   设置   常用语        →
  * ```
  * - 左侧固定的收起按钮，其余功能横向可滑动（不做分页控件、不做巨大卡片）
  * - 每项 = 小图标（18dp）+ 简短文字（10sp），紧凑排布、统一视觉（未做视觉改版）
@@ -41,8 +41,6 @@ class MorePanel @JvmOverloads constructor(
         VOICE,
         SETTINGS,
         PHRASES,
-        CURSOR_LEFT,
-        CURSOR_RIGHT,
         CLIPBOARD,
         EMOJI,
     }

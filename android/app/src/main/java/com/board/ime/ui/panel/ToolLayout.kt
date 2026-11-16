@@ -21,8 +21,6 @@ enum class ToolId(
     SETTINGS("settings", "设置", PanelIcon.SETTINGS, MorePanel.Action.SETTINGS),
     PHRASES("phrases", "常用语", PanelIcon.PHRASES, MorePanel.Action.PHRASES),
     EMOJI("emoji", "表情", PanelIcon.EMOJI, MorePanel.Action.EMOJI),
-    CURSOR_LEFT("cursor_left", "左移", PanelIcon.CURSOR_LEFT, MorePanel.Action.CURSOR_LEFT),
-    CURSOR_RIGHT("cursor_right", "右移", PanelIcon.CURSOR_RIGHT, MorePanel.Action.CURSOR_RIGHT),
     ;
 
     companion object {
@@ -90,7 +88,7 @@ data class ToolLayout(
 
         /**
          * 默认布局 = **当前线上默认**：
-         * 工具栏：剪贴板 / 表情；「更多」依次是 主题 / 翻译 / 语音 / 设置 / 常用语 / 左移 / 右移。
+         * 工具栏：剪贴板 / 表情；「更多」依次是 主题 / 翻译 / 语音 / 设置 / 常用语。
          * （剪贴板不再重复出现在「更多」里 —— 它已经常驻工具栏。）
          */
         val DEFAULT = ToolLayout(
@@ -101,8 +99,6 @@ data class ToolLayout(
                 ToolId.VOICE,
                 ToolId.SETTINGS,
                 ToolId.PHRASES,
-                ToolId.CURSOR_LEFT,
-                ToolId.CURSOR_RIGHT,
             ),
         )
 

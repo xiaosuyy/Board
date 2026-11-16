@@ -27,8 +27,6 @@ enum class PanelIcon(@DrawableRes val res: Int) {
     SETTINGS(R.drawable.ic_board_settings),
     PHRASES(R.drawable.ic_board_phrases),
     EMOJI(R.drawable.ic_board_emoji),
-    CURSOR_LEFT(R.drawable.ic_board_cursor_left),
-    CURSOR_RIGHT(R.drawable.ic_board_cursor_right),
     CHECK(R.drawable.ic_board_check),
     CLOSE(R.drawable.ic_board_close),
     SEARCH(R.drawable.ic_board_search),
