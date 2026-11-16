@@ -67,25 +67,25 @@ class BoardSettingsActivity : AppCompatActivity() {
         }
         root.addView(
             TextView(this).apply {
-                text = "Board"
+                text = "设置"
                 setTextSize(
                     android.util.TypedValue.COMPLEX_UNIT_PX,
                     resources.getDimensionPixelSize(R.dimen.app_text_display).toFloat(),
                 )
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(settingsPrimary())
-                setPadding(dp(20f), dp(20f), dp(20f), 0)
+                setPadding(dp(20f), dp(18f), dp(20f), 0)
             },
         )
         root.addView(
             TextView(this).apply {
-                text = "输入法设置"
+                text = "Board 输入法"
                 setTextSize(
                     android.util.TypedValue.COMPLEX_UNIT_PX,
                     resources.getDimensionPixelSize(R.dimen.app_text_callout).toFloat(),
                 )
                 setTextColor(settingsSecondary())
-                setPadding(dp(20f), dp(2f), dp(20f), dp(4f))
+                setPadding(dp(20f), dp(2f), dp(20f), 0)
             },
         )
 
@@ -100,7 +100,8 @@ class BoardSettingsActivity : AppCompatActivity() {
         // ---- 重要状态（只显示状态，不显示账号 / 服务器 / 日志）----
         val statusCard = SettingsUi.card(this)
         statusCard.addView(SettingsUi.heading(this, "状态"))
-        listOf("Board", "Rime", "同步", "数据库").forEach { name ->
+        listOf("Board", "Rime", "同步", "数据库").forEachIndexed { index, name ->
+            if (index > 0) statusCard.addView(SettingsUi.divider(this))
             val row = SettingsUi.statusRow(this, name, "检查中…", ok = true)
             statusRows[name] = row
             statusCard.addView(row)
@@ -108,17 +109,52 @@ class BoardSettingsActivity : AppCompatActivity() {
         statusCard.setOnClickListener { showInputMethodPicker() }
         content.addView(SettingsUi.cardView(this, statusCard))
 
-        // ---- 八个一级分类 ----
-        val menu = SettingsUi.card(this)
-        SettingsSection.entries.forEachIndexed { index, section ->
-            if (index > 0) menu.addView(SettingsUi.divider(this))
-            menu.addView(
-                SettingsUi.entryRow(this, section.icon, section.title, section.summary) {
-                    openSection(section)
-                },
-            )
+        // ---- 一级分类：按用途分三组（每组一张卡片，标签在卡片外）----
+        val groups = listOf(
+            "输入与外观" to listOf(
+                SettingsSection.INPUT,
+                SettingsSection.KEYBOARD,
+                SettingsSection.APPEARANCE,
+                SettingsSection.DICTIONARY,
+            ),
+            "数据与同步" to listOf(
+                SettingsSection.CLIPBOARD,
+                SettingsSection.LIBRARY,
+                SettingsSection.SYNC,
+            ),
+            "服务与高级" to listOf(
+                SettingsSection.TRANSLATION,
+                SettingsSection.VOICE,
+                SettingsSection.ADVANCED,
+            ),
+        )
+        for ((title, sections) in groups) {
+            val menu = SettingsUi.card(this)
+            menu.addView(SettingsUi.heading(this, title))
+            sections.forEachIndexed { index, section ->
+                if (index > 0) menu.addView(SettingsUi.divider(this))
+                menu.addView(
+                    SettingsUi.entryRow(this, section.icon, section.title, section.summary) {
+                        openSection(section)
+                    },
+                )
+            }
+            content.addView(SettingsUi.cardView(this, menu))
         }
-        content.addView(SettingsUi.cardView(this, menu))
+
+        // ---- 关于 ----
+        val about = SettingsUi.card(this)
+        about.addView(
+            SettingsUi.entryRow(
+                this,
+                R.drawable.ic_board_info,
+                "关于",
+                "项目介绍、版本与更新",
+            ) {
+                openSection(SettingsSection.ABOUT)
+            },
+        )
+        content.addView(SettingsUi.cardView(this, about))
 
         // ---- 开发者模式才出现的日志入口 ----
         if (preferences.developerMode) {
@@ -138,16 +174,14 @@ class BoardSettingsActivity : AppCompatActivity() {
         }
 
         // ---- 版本号：连续点 5 次开开发者模式 ----
-        val footer = SettingsUi.card(this)
-        footer.addView(
+        content.addView(
             TextView(this).apply {
                 text = "Board ${BuildConfig.VERSION_NAME}"
-                textSize = 13f
+                textSize = 12f
                 gravity = Gravity.CENTER
                 setTextColor(settingsSecondary())
-                setPadding(0, dp(10f), 0, dp(10f))
+                setPadding(0, dp(26f), 0, dp(8f))
                 isClickable = true
-                // 铺满整行，方便连续点击（宽度不够会点不中）
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -155,11 +189,15 @@ class BoardSettingsActivity : AppCompatActivity() {
                 setOnClickListener { onVersionTapped() }
             },
         )
-        content.addView(footer)
 
         if (preferences.developerMode) {
             content.addView(
-                SettingsUi.value(this, "开发者模式已开启"),
+                TextView(this).apply {
+                    text = "开发者模式已开启"
+                    textSize = 12f
+                    gravity = Gravity.CENTER
+                    setTextColor(settingsSecondary())
+                },
             )
         }
         SettingsUi.applySystemBarInset(root)

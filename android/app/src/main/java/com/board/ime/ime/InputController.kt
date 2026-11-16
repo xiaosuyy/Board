@@ -2,6 +2,7 @@ package com.board.ime.ime
 
 import android.os.SystemClock
 import android.text.InputType
+import android.util.Log
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -56,6 +57,74 @@ class InputController(
     /** 读取系统剪贴板文本（由服务注入，按住 v 下滑粘贴用） */
     var clipboardText: (() -> CharSequence?)? = null
 
+    /** 候选栏第三个位置的表情推荐（由服务注入，不把表情数据层引入控制器） */
+    data class EmojiCandidate(val emoji: String, val display: String, val commit: String)
+
+    var emojiSuggest: ((String) -> EmojiCandidate?)? = null
+    var onEmojiCommitted: ((String) -> Unit)? = null
+
+    /** 日期 / 时间 / 星期等紧跟首选的候选（由服务注入，纯本地计算） */
+    data class SmartCandidate(val display: String, val commit: String)
+
+    var smartSuggest: ((String) -> List<SmartCandidate>)? = null
+
+    /**
+     * 自定义词候选（由服务注入）：命中的词条排在所有候选最前面。
+     *
+     * 走这条路的词条是 Rime `custom_phrase` 放不下的（含换行的长句），
+     * 普通自定义词仍由 Rime 自己匹配，避免同一个词出现两次。
+     */
+    var customSuggest: ((String) -> List<SmartCandidate>)? = null
+
+    /**
+     * 长期不用的学习词（30 天以上没选过）：由服务注入，返回 true 的候选排到后面。
+     * 首选位不参与，保证「打全了的拼音正好是词」时仍排第一。
+     */
+    var staleWord: ((String) -> Boolean)? = null
+
+    /** 每次上屏（引擎提交）通知一次，由服务记录学习词的最后使用时间 */
+    var onWordCommitted: ((String) -> Unit)? = null
+
+    /** 只输入一个 v 再按空格：打开快捷面板（剪贴板 / 常用语 / 符号 / 表情） */
+    var onVSpaceToolbox: (() -> Unit)? = null
+
+    /**
+     * 译模式的实时译文候选（由服务异步注入）。
+     *
+     * @param source 译文对应的原文；服务用它判断结果是否已经过期
+     * @param committedChars 译文覆盖的、光标前**已上屏**的字符数（0 = 只覆盖正在组词的部分）
+     */
+    data class LiveTranslation(
+        val source: String,
+        val display: String,
+        val commit: String,
+        val committedChars: Int,
+    )
+
+    var liveTranslation: LiveTranslation? = null
+        private set
+
+    fun setLiveTranslation(value: LiveTranslation?) {
+        if (liveTranslation == value) return
+        liveTranslation = value
+        notifyStateChanged()
+    }
+
+    /** 中英文自动空格设置（由服务从偏好注入；null = 关闭） */
+    var autoSpace: (() -> AutoSpaceConfig)? = null
+
+    /** `v` + 数字层表达式（如 v1+2*3）的原始输入；null = 不在表达式模式 */
+    private var expression: String? = null
+
+    private sealed interface DisplayAction {
+        data class Engine(val index: Int) : DisplayAction
+        data class Direct(val commit: String, val emoji: String? = null) : DisplayAction
+        data object LiveTranslation : DisplayAction
+    }
+
+    /** 与当前 [candidates] 一一对应的动作：点第几个候选时是选引擎词还是直接上屏 */
+    private var displayActions: List<DisplayAction> = emptyList()
+
     var shiftActive: Boolean = false
         private set
 
@@ -79,23 +148,118 @@ class InputController(
     /** 符号层页码：0 = 常用符号，1 = 更多符号 */
     private var symbolPage: Int = 0
 
-    /** 数字层页码：0 = 微信「123」，1 = 微信「34」九宫格小键盘 */
-    private var numberPage: Int = 0
-
+    /**
+     * 候选列表：引擎候选 + 紧跟首选的日期/时间候选 + 第三个位置的 emoji 推荐。
+     *
+     * 选择时通过 [displayActions] 换算回引擎下标，或直接提交日期 / 金额 / emoji。
+     * 表达式模式（v1+2*3）下只显示计算结果。
+     */
     val candidates: List<Candidate>
-        get() = engine.candidates()
+        get() = buildCandidates()
+
+    private fun buildCandidates(): List<Candidate> {
+        val exp = expression
+        if (exp != null) {
+            val suggestions = smartSuggestions(exp)
+            displayActions = suggestions.map { DisplayAction.Direct(it.commit) }
+            return suggestions.map { Candidate(text = it.display) }
+        }
+
+        val base = engine.candidates()
+        val translation = liveTranslation
+        val custom = customSuggest?.invoke(engine.composing.toString()).orEmpty()
+
+        val out = ArrayList<Candidate>(base.size + custom.size + 6)
+        val actions = ArrayList<DisplayAction>(base.size + custom.size + 6)
+
+        // 命中的自定义词排第一（用户显式定义的词优先于词库）
+        custom.forEach { suggestion ->
+            out += Candidate(text = suggestion.display)
+            actions += DisplayAction.Direct(suggestion.commit)
+        }
+
+        if (base.isEmpty()) {
+            if (translation != null) {
+                // 没有组词（例如整行已上屏）时，译文自己占候选栏
+                out += Candidate(text = translation.display)
+                actions += DisplayAction.LiveTranslation
+            }
+            if (out.isEmpty()) {
+                displayActions = emptyList()
+                return out
+            }
+            displayActions = actions
+            return out
+        }
+
+        out += base[0]
+        actions += DisplayAction.Engine(0)
+
+        // 译模式：译文紧跟首选，点它 / 回车即可替换原文
+        if (translation != null) {
+            out += Candidate(text = translation.display)
+            actions += DisplayAction.LiveTranslation
+        }
+
+        // 日期 / 时间 / 星期：首选后面紧跟真实值（riqi → 日期、2026年11月14日、2026-11-14）
+        smartSuggestions(engine.composing.toString()).forEach { suggestion ->
+            out += Candidate(text = suggestion.display)
+            actions += DisplayAction.Direct(suggestion.commit)
+        }
+
+        // 长期不用的学习词排在普通候选后面（首选位不动：打全了正好是词时仍排第一）
+        val stale = staleWord
+        val rest = (1 until base.size).toList()
+        val ordered = if (stale == null) rest else rest.sortedBy { if (stale(base[it].text)) 1 else 0 }
+        ordered.forEach { index ->
+            out += base[index]
+            actions += DisplayAction.Engine(index)
+        }
+
+        val emoji = emojiSuggestion(base)
+        if (emoji != null) {
+            val index = minOf(EMOJI_CANDIDATE_SLOT, out.size)
+            out.add(index, Candidate(text = emoji.display))
+            actions.add(index, DisplayAction.Direct(emoji.commit, emoji.emoji))
+        }
+
+        displayActions = actions
+        return out
+    }
+
+    private fun emojiSuggestion(base: List<Candidate>): EmojiCandidate? {
+        val suggest = emojiSuggest ?: return null
+        val head = base.firstOrNull()?.text ?: return null
+        if (head.isEmpty()) return null
+        return suggest(head)
+    }
+
+    /**
+     * 候选栏渲染与点击之间会各算一次；同一次组词必须拿到同一份结果，
+     * 否则跨过整分钟时「显示 15:52、提交 15:53」。
+     */
+    private var smartCacheKey: String? = null
+    private var smartCacheValue: List<SmartCandidate> = emptyList()
+
+    private fun smartSuggestions(raw: String): List<SmartCandidate> {
+        if (raw == smartCacheKey) return smartCacheValue
+        val value = smartSuggest?.invoke(raw).orEmpty()
+        smartCacheKey = raw
+        smartCacheValue = value
+        return value
+    }
 
     val composing: CharSequence
-        get() = engine.composing
+        get() = expression ?: engine.composing
 
     val hasComposition: Boolean
-        get() = engine.composing.isNotEmpty()
+        get() = expression != null || engine.composing.isNotEmpty()
 
     /** 当前应该显示的键盘布局 */
     val currentLayout: KeyboardLayout
         get() = when (mode) {
             InputMode.ENGLISH, InputMode.CHINESE -> KeyboardLayouts.letters
-            InputMode.NUMBER -> if (numberPage == 1) KeyboardLayouts.numbersPad else KeyboardLayouts.numbers
+            InputMode.NUMBER -> KeyboardLayouts.numbers
             InputMode.SYMBOL -> when {
                 symbolPage == 1 -> KeyboardLayouts.symbolsMore
                 letterMode == InputMode.CHINESE -> KeyboardLayouts.symbolsCjk
@@ -115,6 +279,7 @@ class InputController(
         inputConnection = connection
         editorInfo = info
         engine.reset()
+        expression = null
         clearModifiers()
         if (!keepLayer) {
             // 重新进入输入框时回到字母层，数字 / 符号层不跨输入框保留
@@ -146,6 +311,7 @@ class InputController(
         inputConnection?.finishComposingText()
         inputConnection = null
         editorInfo = null
+        expression = null
         engine.reset()
         clearModifiers()
         notifyStateChanged()
@@ -203,16 +369,20 @@ class InputController(
             KeyType.PERIOD -> onLiteral(if (letterMode == InputMode.CHINESE) "。" else ".")
             KeyType.PUNCTUATION -> onLiteral(if (letterMode == InputMode.CHINESE) "，" else ",")
             KeyType.ENTER_NEWLINE -> onEnterNewline()
-            KeyType.NUMBER_PAGE -> onNumberPage()
             KeyType.NOT_IMPLEMENTED -> onHint?.invoke("该功能尚未开发")
             // 语言键：切换底层语言；若当前在字母层则同时切换布局
             KeyType.LANGUAGE -> toggleLanguage()
-            KeyType.TO_NUMBERS -> switchMode(InputMode.NUMBER)
+            KeyType.TO_NUMBERS -> if (!enterExpressionIfRequested()) switchMode(InputMode.NUMBER)
             KeyType.TO_LETTERS -> switchMode(letterMode)
             KeyType.TO_SYMBOLS -> showSymbolPage(0)
             KeyType.TO_MORE_SYMBOLS -> showSymbolPage(1)
             KeyType.TO_MAIN_SYMBOLS -> showSymbolPage(0)
         }
+    }
+
+    /** 快捷面板（v + 空格）里的「符号」：直接切到常用符号页 */
+    fun showSymbols() {
+        showSymbolPage(0)
     }
 
     /** 切换符号页；已经在符号层时只需要刷新，不能再走 [switchMode]（它会在模式相同时直接返回） */
@@ -238,7 +408,8 @@ class InputController(
      */
     fun discardComposition() {
         val connection = inputConnection
-        val hadComposition = engine.composing.isNotEmpty()
+        val hadComposition = expression != null || engine.composing.isNotEmpty()
+        expression = null
         engine.reset()
         if (hadComposition) {
             connection?.setComposingText("", CURSOR_AT_END)
@@ -249,13 +420,171 @@ class InputController(
     }
 
     fun pickCandidate(index: Int) {
-        applyEngineResult(engine.pickCandidate(index))
+        // 先按当前组词重建一次显示列表，保证插入位置与候选栏渲染时一致
+        candidates
+        when (val action = displayActions.getOrNull(index)) {
+            is DisplayAction.Direct -> commitDirect(action)
+            is DisplayAction.Engine -> {
+                val replaced = engine.composing.length
+                applyEngineResult(engine.pickCandidate(action.index), replaced)
+                clearModifiers()
+                notifyStateChanged()
+            }
+
+            DisplayAction.LiveTranslation -> commitLiveTranslation()
+            null -> Unit
+        }
+    }
+
+    /**
+     * 上屏译模式的实时译文（回车 / 点候选）。
+     *
+     * 只替换「这次翻译覆盖的那段原文」：先丢弃正在组词的拼音，
+     * 再按 [LiveTranslation.committedChars] 删掉光标前的原文，最后提交译文。
+     * 不动当前行以外的内容。
+     */
+    fun commitLiveTranslation(): Boolean {
+        val translation = liveTranslation ?: return false
+        val connection = inputConnection ?: return false
+        liveTranslation = null
+        expression = null
+        engine.reset()
+        runCatching {
+            connection.setComposingText("", CURSOR_AT_END)
+            connection.finishComposingText()
+            if (translation.committedChars > 0) {
+                connection.deleteSurroundingText(translation.committedChars, 0)
+            }
+        }.onFailure { Log.w(TAG, "译模式替换原文失败：${it.javaClass.simpleName}") }
+        commitText(translation.commit)
+        clearModifiers()
+        notifyStateChanged()
+        return true
+    }
+
+    /** 直接上屏的候选（日期 / 时间 / 金额 / emoji）：丢弃组词或表达式，再提交文本 */
+    private fun commitDirect(action: DisplayAction.Direct) {
+        engine.reset()
+        inputConnection?.let { connection ->
+            connection.setComposingText("", CURSOR_AT_END)
+            connection.finishComposingText()
+        }
+        commitText(action.commit)
+        action.emoji?.let { onEmojiCommitted?.invoke(it) }
+        if (expression != null) {
+            expression = null
+            mode = letterMode
+            engine.mode = letterMode
+        }
         clearModifiers()
         notifyStateChanged()
     }
 
+    // ------------------------------------------------------------ 表达式（v + 数字）
+
+    /**
+     * 中文下只输入了 `v` 时点 123：不切普通数字层，改为进入表达式模式
+     * （`v1+2*3` → 7、`v12345.67` → 金额）。
+     */
+    private fun enterExpressionIfRequested(): Boolean {
+        if (mode != InputMode.CHINESE) return false
+        if (engine.composing.toString() != "v") return false
+        engine.reset()
+        expression = "v"
+        mode = InputMode.NUMBER
+        engine.mode = InputMode.NUMBER
+        inputConnection?.setComposingText("v", CURSOR_AT_END)
+        clearModifiers()
+        notifyStateChanged()
+        return true
+    }
+
+    /** 表达式模式下追加字符；只接受数字和四则运算符，`=` 立刻结算 */
+    private fun appendExpression(text: String) {
+        var current = expression ?: return
+        for (char in text) {
+            if (char == '=') {
+                commitExpressionResult()
+                return
+            }
+            val mapped = when (char) {
+                '×' -> '*'
+                '÷' -> '/'
+                else -> char
+            }
+            val allowed = mapped.isDigit() || mapped in "+-*/()."
+            if (!allowed || current.length >= MAX_EXPRESSION_LENGTH) continue
+            current += mapped
+        }
+        if (current == expression) return
+        expression = current
+        inputConnection?.setComposingText(current, CURSOR_AT_END)
+        notifyStateChanged()
+    }
+
+    /** 空格 / 回车 / `=`：提交第一个计算结果（结果无效时什么都不做） */
+    private fun commitExpressionResult() {
+        val raw = expression ?: return
+        val suggestion = smartSuggest?.invoke(raw)?.firstOrNull() ?: return
+        expression = null
+        inputConnection?.setComposingText("", CURSOR_AT_END)
+        inputConnection?.finishComposingText()
+        commitText(suggestion.commit)
+        mode = letterMode
+        engine.mode = letterMode
+        clearModifiers()
+        notifyStateChanged()
+    }
+
+    /** 放弃表达式（不把 v1+2 当文本上屏），回到字母层 */
+    private fun cancelExpression() {
+        if (expression == null) return
+        expression = null
+        inputConnection?.setComposingText("", CURSOR_AT_END)
+        inputConnection?.finishComposingText()
+        mode = letterMode
+        engine.mode = letterMode
+        clearModifiers()
+        notifyStateChanged()
+    }
+
+    private fun expressionBackspace() {
+        val current = expression ?: return
+        if (current.length <= 1) {
+            cancelExpression()
+            return
+        }
+        expression = current.dropLast(1)
+        inputConnection?.setComposingText(expression.orEmpty(), CURSOR_AT_END)
+        notifyStateChanged()
+    }
+
+    /** 只输入一个 `v` 再按空格：打开快捷面板（回调未注入时按普通空格处理） */
+    private fun openVSpaceToolboxIfRequested(): Boolean {
+        val callback = onVSpaceToolbox ?: return false
+        if (mode != InputMode.CHINESE || engine.composing.toString() != "v") return false
+        engine.reset()
+        inputConnection?.setComposingText("", CURSOR_AT_END)
+        inputConnection?.finishComposingText()
+        clearModifiers()
+        callback()
+        return true
+    }
+
     /** 点击候选栏里的组词区域：按原样把组词内容上屏 */
     fun commitCompositionAsIs() {
+        if (expression != null) {
+            val raw = expression.orEmpty()
+            expression = null
+            inputConnection?.setComposingText("", CURSOR_AT_END)
+            inputConnection?.finishComposingText()
+            commitText(raw)
+            mode = letterMode
+            engine.mode = letterMode
+            clearModifiers()
+            notifyStateChanged()
+            return
+        }
         commitCompositionInternal(preferCandidate = false)
         notifyStateChanged()
     }
@@ -278,6 +607,10 @@ class InputController(
      * 3. 前一个字符
      */
     fun onBackspace() {
+        if (expression != null) {
+            expressionBackspace()
+            return
+        }
         val connection = inputConnection
         val selected = connection?.getSelectedText(0)
         if (connection != null && !selected.isNullOrEmpty()) {
@@ -293,11 +626,23 @@ class InputController(
     }
 
     fun onSpace() {
+        if (expression != null) {
+            commitExpressionResult()
+            return
+        }
+        if (openVSpaceToolboxIfRequested()) {
+            notifyStateChanged()
+            return
+        }
         if (!dispatch(EngineKey.Space)) commitText(" ")
         notifyStateChanged()
     }
 
     fun onEnter() {
+        if (expression != null) {
+            commitExpressionResult()
+            return
+        }
         // 引擎会先把未确认的组词内容按原样上屏（“回车确认”）
         dispatch(EngineKey.Enter)
         performEditorAction()
@@ -346,20 +691,18 @@ class InputController(
         notifyStateChanged()
     }
 
-    /** 「，。」键长按：句号（中文「。」/ 英文「.」） */
-    fun onPunctuationLongPress() {
+    /** 「，。」键上滑 / 长按：句号（中文「。」/ 英文「.」） */
+    fun onPunctuationPeriod() {
         onLiteral(if (letterMode == InputMode.CHINESE) "。" else ".")
-        notifyStateChanged()
-    }
-
-    /** 数字层第二页（九宫格数字小键盘）切换：微信数字层底部的「12/34」 */
-    fun onNumberPage() {
-        numberPage = if (numberPage == 1) 0 else 1
         notifyStateChanged()
     }
 
     private fun onCharacter(key: KeySpec) {
         val text = key.text ?: return
+        if (expression != null) {
+            appendExpression(text)
+            return
+        }
         val output = if (shiftActive || capsLock) text.uppercase() else text
         applyEngineResult(engine.handleKey(EngineKey.Letter(output[0])))
         if (shiftActive && !capsLock) shiftActive = false
@@ -370,6 +713,10 @@ class InputController(
     private fun onLiteral(text: String?) {
         val value = text ?: return
         if (value.isEmpty()) return
+        if (expression != null) {
+            appendExpression(value)
+            return
+        }
         if (!dispatch(EngineKey.Punctuation(value))) commitText(value)
         notifyStateChanged()
     }
@@ -392,11 +739,21 @@ class InputController(
 
     private fun switchMode(newMode: InputMode) {
         if (mode == newMode) return
+        if (expression != null) {
+            // 回到字母层：表达式作废；数字 ↔ 符号之间切换则继续编辑
+            if (newMode.isLetterMode) {
+                cancelExpression()
+                return
+            }
+            mode = newMode
+            engine.mode = newMode
+            clearModifiers()
+            notifyStateChanged()
+            return
+        }
         commitCompositionInternal(preferCandidate = true)
         mode = newMode
         engine.mode = newMode
-        // 切层时数字层回到第一页（微信「123」）
-        numberPage = 0
         clearModifiers()
         notifyStateChanged()
     }
@@ -421,22 +778,27 @@ class InputController(
         }
 
         engine.reset()
-        inputConnection?.commitText(raw, CURSOR_AT_END)
+        commitWithSpacing(raw, 0)
     }
 
     /** @return true 表示引擎已经处理，false 表示需要走默认行为 */
     private fun dispatch(key: EngineKey): Boolean {
+        val replaced = engine.composing.length
         val result = engine.handleKey(key)
-        applyEngineResult(result)
+        applyEngineResult(result, replaced)
         return result !is EngineResult.Ignored
     }
 
-    private fun applyEngineResult(result: EngineResult) {
+    /**
+     * @param replacedComposing 本次上屏会替换掉的组词长度（用于找到光标前真正的
+     *   已提交字符，中英文自动空格按它判断边界）
+     */
+    private fun applyEngineResult(result: EngineResult, replacedComposing: Int = 0) {
         when (result) {
             is EngineResult.Composing -> inputConnection?.setComposingText(result.text, CURSOR_AT_END)
             is EngineResult.Commit -> {
                 if (result.text.isNotEmpty()) {
-                    inputConnection?.commitText(result.text, CURSOR_AT_END)
+                    commitWithSpacing(result.text, replacedComposing)
                 } else if (result.clearComposition) {
                     inputConnection?.finishComposingText()
                 }
@@ -466,6 +828,51 @@ class InputController(
     fun commitText(text: CharSequence): Boolean {
         val connection = inputConnection ?: return false
         val value = text.toString()
+        if (value.isEmpty()) return true
+        return commitValue(connection, withAutoSpace(connection, value, 0))
+    }
+
+    /** 引擎上屏（会替换 [replacedComposing] 个字符的组词）时套用自动空格 */
+    private fun commitWithSpacing(text: String, replacedComposing: Int) {
+        val connection = inputConnection ?: return
+        commitValue(connection, withAutoSpace(connection, text, replacedComposing))
+        onWordCommitted?.invoke(text)
+    }
+
+    /**
+     * 光标前真正的「已提交」字符：先读回组词 + 1 个字符，再把组词部分去掉。
+     * 组词还没上屏时它同样占着输入框，直接读前一个字符会读到拼音。
+     */
+    private fun charBefore(connection: InputConnection, replacedComposing: Int): Char? {
+        if (replacedComposing < 0) return null
+        val before = runCatching { connection.getTextBeforeCursor(replacedComposing + 1, 0) }
+            .getOrNull() ?: return null
+        if (before.length <= replacedComposing) return null
+        return before[before.length - replacedComposing - 1]
+    }
+
+    /** 按当前设置在中英文边界补空格；关闭时原样返回 */
+    private fun withAutoSpace(
+        connection: InputConnection,
+        text: String,
+        replacedComposing: Int,
+    ): String {
+        val config = autoSpace?.invoke() ?: return text
+        if (!config.enabled || text.isEmpty()) return text
+        val before = charBefore(connection, replacedComposing)
+        val after = runCatching { connection.getTextAfterCursor(1, 0)?.firstOrNull() }
+            .getOrNull()
+        val leading = config.needsSpace(before, text.first())
+        val trailing = config.needsSpace(text.last(), after)
+        if (!leading && !trailing) return text
+        return buildString(text.length + 2) {
+            if (leading) append(' ')
+            append(text)
+            if (trailing) append(' ')
+        }
+    }
+
+    private fun commitValue(connection: InputConnection, value: String): Boolean {
         if (value.isEmpty()) return true
 
         if (value.length <= COMMIT_CHUNK_CHARS) {
@@ -556,5 +963,11 @@ class InputController(
          * Binder 约 1MB 的事务上限，所以一次提交是安全的；超过这个长度才切块。
          */
         const val COMMIT_CHUNK_CHARS = 50_000
+
+        /** 表情推荐在候选栏里的位置（第三个候选，从 0 数起 = 2） */
+        const val EMOJI_CANDIDATE_SLOT = 2
+
+        /** 表达式最大长度（与 SmartInput 的上限保持一致） */
+        const val MAX_EXPRESSION_LENGTH = 48
     }
 }

@@ -3,17 +3,27 @@ package com.board.ime.translation
 import java.security.MessageDigest
 
 /**
- * 翻译语言。
+ * 翻译语言（13 种目标语言，与互译模式的语言列表一致）。
  *
- * `code` 是**服务商使用的语种代码**（此处与百度翻译通用文本翻译 API 的 code 一致，
- * 依据官方接入文档：`auto` / `zh` / `en` / `jp` / `kor`）。
+ * - `code` 是**百度翻译通用文本翻译 API 的语种代码**（依据官方接入文档）；
+ * - `promptName` 是给 OpenAI 格式接口的系统提示里用的语言全名，
+ *   避免让模型去猜「fra」「pt」这类缩写。
  */
-enum class TranslationLanguage(val code: String, val label: String) {
-    AUTO("auto", "自动检测"),
-    CHINESE("zh", "中文"),
-    ENGLISH("en", "English"),
-    JAPANESE("jp", "日本語"),
-    KOREAN("kor", "한국어"),
+enum class TranslationLanguage(val code: String, val label: String, val promptName: String) {
+    AUTO("auto", "自动检测", "the source language (detect it automatically)"),
+    CHINESE("zh", "中文", "Simplified Chinese"),
+    ENGLISH("en", "English", "English"),
+    JAPANESE("jp", "日本語", "Japanese"),
+    KOREAN("kor", "한국어", "Korean"),
+    FRENCH("fra", "Français", "French"),
+    GERMAN("de", "Deutsch", "German"),
+    SPANISH("spa", "Español", "Spanish"),
+    RUSSIAN("ru", "Русский", "Russian"),
+    PORTUGUESE("pt", "Português", "Portuguese"),
+    ITALIAN("it", "Italiano", "Italian"),
+    ARABIC("ara", "العربية", "Arabic"),
+    THAI("th", "ไทย", "Thai"),
+    VIETNAMESE("vie", "Tiếng Việt", "Vietnamese"),
     ;
 
     companion object {

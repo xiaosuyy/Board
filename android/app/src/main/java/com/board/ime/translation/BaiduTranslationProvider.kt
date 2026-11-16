@@ -31,13 +31,13 @@ import kotlin.random.Random
  * **绝不记录原文、译文、密钥、Authorization、完整请求 URL。**
  */
 class BaiduTranslationProvider(
-    private val credentialsProvider: () -> TranslationCredentials,
+    private val settingsProvider: () -> TranslationSettings,
     private val client: OkHttpClient = defaultClient(),
 ) : TranslationProvider {
 
     override val displayName: String = "百度翻译"
 
-    override fun isConfigured(): Boolean = credentialsProvider().isComplete
+    override fun isConfigured(): Boolean = settingsProvider().baiduReady
 
     override suspend fun translate(request: TranslationRequest): TranslationOutcome =
         withContext(Dispatchers.IO) {
@@ -48,7 +48,8 @@ class BaiduTranslationProvider(
             if (text.length > MAX_QUERY_CHARS) {
                 return@withContext TranslationOutcome.Failure(TranslationFailure.TooLong)
             }
-            val credentials = credentialsProvider()
+            val settings = settingsProvider()
+            val credentials = TranslationCredentials(settings.appId, settings.secret)
             if (!credentials.isComplete) {
                 return@withContext TranslationOutcome.Failure(TranslationFailure.NotConfigured)
             }

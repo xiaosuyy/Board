@@ -226,7 +226,10 @@ class RimeEngine(
         val text = if (preferCandidate && candidatesCache.isNotEmpty()) {
             selectAndDrain(session, 0)
         } else {
-            val raw = RimeNative.nativeGetInput(session).orEmpty()
+            // 双拼：preedit 是全拼（编辑区显示的内容），回车按显示的全拼上屏，去掉音节间空格
+            val preedit = RimeNative.nativeGetPreedit(session).orEmpty()
+            val raw = (preedit.ifEmpty { RimeNative.nativeGetInput(session).orEmpty() })
+                .replace(" ", "")
             RimeNative.nativeClearComposition(session)
             RimeNative.nativeGetCommit(session)
             refresh(session)
@@ -271,7 +274,11 @@ class RimeEngine(
     }
 
     private fun refresh(session: Long) {
-        composingCache = RimeNative.nativeGetInput(session).orEmpty()
+        val input = RimeNative.nativeGetInput(session).orEmpty()
+        val preedit = RimeNative.nativeGetPreedit(session).orEmpty()
+        // 双拼方案带 preedit_format：preedit 是转换后的全拼（编辑区显示全拼，与微信一致）；
+        // 全拼方案两者相同，行为不变。
+        composingCache = preedit.ifEmpty { input }
         if (composingCache.isEmpty()) {
             candidatesCache = emptyList()
             rimeIndexCache = emptyList()
@@ -286,7 +293,50 @@ class RimeEngine(
             visible += Candidate(text = text)
             indices += index
         }
-        candidatesCache = visible
-        rimeIndexCache = indices
+        val syllables = preedit.split(' ', '\'').count { it.isNotEmpty() }
+        val ordered = orderCandidates(visible, indices, syllables)
+        candidatesCache = ordered.first
+        rimeIndexCache = ordered.second
+    }
+
+    /**
+     * 候选横排：整句只留几个，后面是词，最后是单字。
+     *
+     * 只对 **3 个音节以上**的输入生效：单 / 双音节时 Rime 自己的词频序更准
+     * （例如 `a` 的首选是「啊」而不是两字词），改序反而变差。
+     * 被截掉的整句不丢弃，排在最后，避免所有候选都是长句时选不出来。
+     */
+    private fun orderCandidates(
+        visible: List<Candidate>,
+        indices: List<Int>,
+        syllables: Int,
+    ): Pair<List<Candidate>, List<Int>> {
+        if (syllables < 3 || visible.size < 2) return visible to indices
+
+        val sentences = ArrayList<Int>()
+        val words = ArrayList<Int>()
+        val chars = ArrayList<Int>()
+        visible.indices.forEach { index ->
+            when (visible[index].text.length) {
+                0, 1 -> chars += index
+                in 2..3 -> words += index
+                else -> sentences += index
+            }
+        }
+        val kept = if (words.isEmpty() && chars.isEmpty()) sentences else sentences.take(SENTENCE_LIMIT)
+        val order = ArrayList<Int>(visible.size)
+        order += kept
+        order += words
+        order += chars
+        order += sentences.drop(kept.size)
+
+        val orderedVisible = order.map { visible[it] }
+        val orderedIndices = order.map { indices[it] }
+        return orderedVisible to orderedIndices
+    }
+
+    private companion object {
+        /** 候选栏里最多保留的整句数量（对齐微信：整句只留几个） */
+        const val SENTENCE_LIMIT = 3
     }
 }

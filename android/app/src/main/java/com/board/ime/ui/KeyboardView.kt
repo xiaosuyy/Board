@@ -2,6 +2,7 @@ package com.board.ime.ui
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -51,6 +52,9 @@ class KeyboardView @JvmOverloads constructor(
         /** 字母键按住下滑（z / x / c / v）：全选 / 剪切 / 复制 / 粘贴 */
         fun onKeySwipeDown(key: KeySpec)
 
+        /** 标点键按住上滑：输入句号（中文「。」/ 英文「.」） */
+        fun onKeySwipeUp(key: KeySpec)
+
         /**
          * 空格键左右滑动移动光标。
          *
@@ -71,6 +75,17 @@ class KeyboardView @JvmOverloads constructor(
         }
 
     var keyboardMode: InputMode = InputMode.ENGLISH
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
+    /**
+     * 底层语言是否为中文。「中/EN」键的深浅按它显示：
+     * 符号层里当前层不是字母，但语言键仍要反映中 / 英状态。
+     */
+    var languageIsChinese: Boolean = true
         set(value) {
             if (field == value) return
             field = value
@@ -101,6 +116,9 @@ class KeyboardView @JvmOverloads constructor(
 
     private val keys = ArrayList<KeySpec>()
     private val bounds = ArrayList<RectF>()
+
+    /** 合并块的外接矩形：stackId → 整块范围（数字层左侧 @ % - 连成一块） */
+    private val stackRects = HashMap<Int, RectF>()
 
     /**
      * 实际可点击区域。
@@ -134,6 +152,12 @@ class KeyboardView @JvmOverloads constructor(
      * 判定成立后锁定当前键，不再换键、不再长按，抬手也不输入字母。
      */
     private val letterSwipeDown = SwipeDownGesture(triggerPx = dp(SWIPE_DOWN_TRIGGER_DP))
+
+    /** 标点键「按住上滑」：输入句号 */
+    private val punctuationSwipeUp = SwipeDownGesture(
+        triggerPx = dp(SWIPE_UP_TRIGGER_DP),
+        upward = true,
+    )
 
     private val handler = Handler(Looper.getMainLooper())
     private var repeatRunnable: Runnable? = null
@@ -238,6 +262,7 @@ class KeyboardView @JvmOverloads constructor(
         keys.clear()
         bounds.clear()
         hitBounds.clear()
+        stackRects.clear()
 
         val width = width
         if (width <= 0) return
@@ -250,8 +275,8 @@ class KeyboardView @JvmOverloads constructor(
         // 命中区域向外扩半个间隙 → 键与键之间不再有「点了没反应」的死区
         val expandX = metrics.keyGapHorizontalPx / 2f
         val expandY = metrics.keyGapVerticalPx / 2f
-        // 功能键宽度倍率：只影响功能键（Shift / 退格 / 回车 / 切层…），字母区不变
-        val fnRatio = metrics.functionKeyWidthRatio
+        // 功能键宽度倍率：只影响字母 / 符号层；数字九宫格固定列宽，必须上下对齐
+        val fnRatio = if (keyboardLayout.ignoresFunctionKeyRatio) 1f else metrics.functionKeyWidthRatio
 
         keyboardLayout.rows.forEachIndexed { rowIndex, row ->
             val unit = contentWidth / row.unitsWith(fnRatio)
@@ -277,6 +302,15 @@ class KeyboardView @JvmOverloads constructor(
                 cursor += width
             }
         }
+
+        // 竖列合并块：同一 stackId 的键合成一个外接矩形
+        for (index in keys.indices) {
+            val id = keys[index].stackId
+            if (id == 0) continue
+            val rect = bounds[index]
+            val existing = stackRects[id]
+            if (existing == null) stackRects[id] = RectF(rect) else existing.union(rect)
+        }
     }
 
     /** 某个键在给定功能键倍率下的实际宽度单位 */
@@ -296,14 +330,63 @@ class KeyboardView @JvmOverloads constructor(
         super.onDraw(canvas)
         val radius = resolvedMetrics().cornerRadiusPx
 
+        // 合并块先画整块底色 / 分隔线，再按普通流程画每格的文字
+        if (stackRects.isNotEmpty()) drawStackBackgrounds(canvas, radius)
+
         for (index in keys.indices) {
             val key = keys[index]
             val rect = bounds[index]
             if (rect.width() <= 0f) continue
 
-            keyPaint.color = backgroundColorFor(key, pressed = index == pressedIndex)
-            canvas.drawRoundRect(rect, radius, radius, keyPaint)
+            if (key.stackId == 0) {
+                keyPaint.color = backgroundColorFor(key, pressed = index == pressedIndex)
+                canvas.drawRoundRect(rect, radius, radius, keyPaint)
+            }
             drawKeyContent(canvas, key, rect)
+        }
+    }
+
+    /**
+     * 合并块：整块画成一张圆角卡片，格与格之间只留一条细分隔线。
+     * 按下某一格时只填充那一格，并裁剪到整块圆角内，避免盖住外圈圆角。
+     */
+    private fun drawStackBackgrounds(canvas: Canvas, radius: Float) {
+        val dividerHeight = theme.dividerHeight.coerceAtLeast(1).toFloat()
+
+        for (id in stackRects.keys) {
+            val union = stackRects[id] ?: continue
+            keyPaint.color = theme.keyBackground
+            canvas.drawRoundRect(union, radius, radius, keyPaint)
+
+            keys.forEachIndexed { index, key ->
+                if (key.stackId != id || index != pressedIndex) return@forEachIndexed
+                val rect = bounds[index]
+                glyphPath.reset()
+                glyphPath.addRoundRect(union, radius, radius, Path.Direction.CW)
+                canvas.save()
+                canvas.clipPath(glyphPath)
+                keyPaint.color = theme.keyPressedBackground
+                canvas.drawRect(rect, keyPaint)
+                canvas.restore()
+            }
+
+            var previousBottom = Float.NaN
+            keys.forEachIndexed { index, key ->
+                if (key.stackId != id) return@forEachIndexed
+                val rect = bounds[index]
+                if (!previousBottom.isNaN()) {
+                    val mid = (previousBottom + rect.top) / 2f
+                    keyPaint.color = theme.divider
+                    canvas.drawRect(
+                        rect.left,
+                        mid - dividerHeight / 2f,
+                        rect.right,
+                        mid + dividerHeight / 2f,
+                        keyPaint,
+                    )
+                }
+                previousBottom = rect.bottom
+            }
         }
     }
 
@@ -351,20 +434,27 @@ class KeyboardView @JvmOverloads constructor(
                 size = theme.keyTextSize,
             )
 
-            // 微信字母层底行的「，。」：显示随语言的标点
-            KeyType.PUNCTUATION -> drawLabel(
-                canvas = canvas,
-                rect = rect,
-                text = if (keyboardMode == InputMode.CHINESE) "，" else ",",
-                color = theme.keyText,
-                size = theme.keyTextSize,
-            )
-
-            KeyType.NUMBER_PAGE -> drawFunctionLabel(
-                canvas,
-                rect,
-                key.displayText.ifEmpty { "12/34" },
-            )
+            // 微信字母层底行的「，。」：主标点是逗号，上方小号浅色句号提示上滑输入
+            KeyType.PUNCTUATION -> {
+                val chinese = keyboardMode == InputMode.CHINESE
+                val cx = rect.centerX()
+                drawCenteredText(
+                    canvas = canvas,
+                    cx = cx,
+                    cy = rect.centerY() - rect.height() * 0.17f,
+                    text = if (chinese) "。" else ".",
+                    color = dimmedColor(theme.keyText, PERIOD_HINT_ALPHA),
+                    size = theme.keyTextSize * 0.5f,
+                )
+                drawCenteredText(
+                    canvas = canvas,
+                    cx = cx,
+                    cy = rect.centerY() + rect.height() * 0.15f,
+                    text = if (chinese) "，" else ",",
+                    color = theme.keyText,
+                    size = theme.keyTextSize,
+                )
+            }
 
             KeyType.NOT_IMPLEMENTED -> drawLabel(
                 canvas = canvas,
@@ -394,14 +484,8 @@ class KeyboardView @JvmOverloads constructor(
                 key.displayText.ifEmpty { "换行" },
             )
 
-            // 微信的「中/英」键：不再画地球，直接显示文字
-            KeyType.LANGUAGE -> drawLabel(
-                canvas = canvas,
-                rect = rect,
-                text = "中/英",
-                color = theme.functionKeyText,
-                size = theme.functionKeyTextSize * 0.8f,
-            )
+            // 「中/EN」：当前语言的半区用正常文字色，另一半用同一颜色降透明度
+            KeyType.LANGUAGE -> drawLanguageLabel(canvas, rect)
 
             KeyType.TO_NUMBERS -> drawFunctionLabel(canvas, rect, key.displayText.ifEmpty { "123" })
             KeyType.TO_LETTERS -> drawFunctionLabel(canvas, rect, key.displayText.ifEmpty { "ABC" })
@@ -435,6 +519,56 @@ class KeyboardView @JvmOverloads constructor(
         val baseline = rect.centerY() - (metrics.ascent + metrics.descent) / 2f
         canvas.drawText(text, rect.centerX(), baseline, textPaint)
     }
+
+    /** 以 (cx, cy) 为中心绘制一段文字（保持 textPaint 的居中对齐） */
+    private fun drawCenteredText(canvas: Canvas, cx: Float, cy: Float, text: String, color: Int, size: Float) {
+        textPaint.color = color
+        textPaint.textSize = size
+        val metrics = textPaint.fontMetrics
+        canvas.drawText(text, cx, cy - (metrics.ascent + metrics.descent) / 2f, textPaint)
+    }
+
+    /**
+     * 「中/EN」键：当前语言的半区用正常功能键文字色，另一半同色降透明度。
+     * 透明度变化只会让颜色更浅，不会比整体文字更深；[LANGUAGE_WEAK_ALPHA]
+     * 保留一半不透明度，深色 / 浅色主题下都还能看清。
+     */
+    private fun drawLanguageLabel(canvas: Canvas, rect: RectF) {
+        val size = theme.functionKeyTextSize * 0.8f
+        val strong = theme.functionKeyText
+        val weak = dimmedColor(strong, LANGUAGE_WEAK_ALPHA)
+        val zh = "中"
+        val slash = "/"
+        val en = "EN"
+
+        textPaint.textSize = size
+        textPaint.textAlign = Paint.Align.LEFT
+        val metrics = textPaint.fontMetrics
+        val baseline = rect.centerY() - (metrics.ascent + metrics.descent) / 2f
+        val wZh = textPaint.measureText(zh)
+        val wSlash = textPaint.measureText(slash)
+        val wEn = textPaint.measureText(en)
+        var x = rect.centerX() - (wZh + wSlash + wEn) / 2f
+
+        textPaint.color = if (languageIsChinese) strong else weak
+        canvas.drawText(zh, x, baseline, textPaint)
+        x += wZh
+        textPaint.color = weak
+        canvas.drawText(slash, x, baseline, textPaint)
+        x += wSlash
+        textPaint.color = if (languageIsChinese) weak else strong
+        canvas.drawText(en, x, baseline, textPaint)
+
+        textPaint.textAlign = Paint.Align.CENTER
+    }
+
+    /** 同色降低不透明度（只会更浅，不会比原色更深） */
+    private fun dimmedColor(color: Int, alpha: Float): Int = Color.argb(
+        (Color.alpha(color) * alpha).toInt(),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color),
+    )
 
     // 下面四个功能键全部用矢量绘制，避免依赖字体里是否存在 ⇧ ⌫ ↵ 🌐 这些符号
     // （Path / RectF 全部复用字段，绘制阶段零分配）
@@ -561,6 +695,7 @@ class KeyboardView @JvmOverloads constructor(
                 downY = event.y
                 spaceCursorDrag.reset()
                 letterSwipeDown.reset()
+                punctuationSwipeUp.reset()
                 val index = findKeyIndex(event.x, event.y)
                 if (index >= 0) {
                     longPressFired = false
@@ -576,6 +711,17 @@ class KeyboardView @JvmOverloads constructor(
                     if (spaceCursorDrag.isActive) {
                         cancelPendingTouch()
                         emitCursorMove(move)
+                        return true
+                    }
+                }
+
+                // 标点键按住上滑：句号（判定成立后锁定，抬手不再输入逗号）
+                if (punctuationSwipeUp.isActive) return true
+                val punctuationKey = keys.getOrNull(pressedIndex)
+                if (punctuationKey != null && punctuationKey.type == KeyType.PUNCTUATION) {
+                    if (punctuationSwipeUp.onMove(event.x - downX, event.y - downY)) {
+                        cancelPendingTouch()
+                        listener?.onKeySwipeUp(punctuationKey)
                         return true
                     }
                 }
@@ -617,6 +763,8 @@ class KeyboardView @JvmOverloads constructor(
                 val wasCursorDrag = spaceCursorDrag.isActive
                 // 下滑快捷操作触发后抬手：不能再输入这个字母
                 val wasSwipeDown = letterSwipeDown.isActive
+                // 上滑句号触发后抬手：不能再输入逗号
+                val wasSwipeUp = punctuationSwipeUp.isActive
                 // 抬手位置也算进去：最后一个 MOVE 与终点差几像素时不会少走一格
                 if (wasCursorDrag) {
                     emitCursorMove(spaceCursorDrag.onMove(event.x - downX, event.y - downY))
@@ -625,7 +773,8 @@ class KeyboardView @JvmOverloads constructor(
                 setPressedIndex(-1)
                 spaceCursorDrag.reset()
                 letterSwipeDown.reset()
-                if (index >= 0 && !wasLongPress && !wasCursorDrag && !wasSwipeDown) {
+                punctuationSwipeUp.reset()
+                if (index >= 0 && !wasLongPress && !wasCursorDrag && !wasSwipeDown && !wasSwipeUp) {
                     listener?.onKey(keys[index])
                 }
                 performClick()
@@ -636,6 +785,7 @@ class KeyboardView @JvmOverloads constructor(
                 setPressedIndex(-1)
                 spaceCursorDrag.reset()
                 letterSwipeDown.reset()
+                punctuationSwipeUp.reset()
             }
         }
         return true
@@ -722,6 +872,15 @@ class KeyboardView @JvmOverloads constructor(
 
         /** 字母键按住下滑的触发距离：竖直位移超过 28dp 才触发（避免打字时误触） */
         const val SWIPE_DOWN_TRIGGER_DP = 28f
+
+        /** 标点键按住上滑的触发距离：24dp（比下滑略短，句号是高频操作） */
+        const val SWIPE_UP_TRIGGER_DP = 24f
+
+        /** 逗号键上方的句号提示：同色半透明，浅一点但仍可辨认 */
+        const val PERIOD_HINT_ALPHA = 0.55f
+
+        /** 「中/EN」未激活的一半：保留 50% 不透明度，浅但不至于看不见 */
+        const val LANGUAGE_WEAK_ALPHA = 0.5f
 
         /** 支持下滑快捷操作的字母键：z 全选 / x 剪切 / c 复制 / v 粘贴 */
         val SWIPE_DOWN_LETTERS = setOf("z", "x", "c", "v")

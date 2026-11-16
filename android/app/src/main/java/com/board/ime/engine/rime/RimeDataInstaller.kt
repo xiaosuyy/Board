@@ -69,7 +69,11 @@ class RimeDataInstaller(private val context: Context) {
          *     英文候选改为按词频排序的 10k 词表（assets/english_words.txt）
          * v7：board_common 追加常用语气词 / 叠词的“口语编码”（如 嗯=e、嗯嗯=e e），
          *     对齐微信：输入 ee → 嗯嗯 排第一
+         * v8：开启整句候选（xiangquzijieshangban → 想去字节上班）
+         * v9：board_common 补 字节 / GitHub；候选按「整句 → 词 → 单字」重排
+         * v10：7 种双拼方案（自然码 / 小鹤 / 微软 / 搜狗 / 智能ABC / 紫光 / 拼音加加）；
+         *      模糊音 / 繁体改由运行期影子 schema 注入（12 组单独开关）
          */
-        const val ASSET_VERSION = "7"
+        const val ASSET_VERSION = "10"
     }
 }

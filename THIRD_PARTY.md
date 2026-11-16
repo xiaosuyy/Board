@@ -55,3 +55,13 @@ Rime 的**数据文件**是 **LGPL-3.0**（不是 librime 的 BSD）：
 | Kotlin 标准库 / kotlinx-coroutines | Apache-2.0 |
 | Room | Apache-2.0 |
 | Android Gradle Plugin / KSP | Apache-2.0 |
+
+## 4. Emoji 数据（`assets/emoji/`）
+
+| 文件 | 来源 | 许可证 |
+|------|------|--------|
+| `cldr.tsv` | Unicode CLDR 注释（中 / 英文关键词），取自 [Unicode emoji-test / CLDR](https://cldr.unicode.org/) | **Unicode License v3** |
+| `zh-extra.tsv` | 聊天常用词表（手工整理），参考 [Gloridust/WowType](https://github.com/Gloridust/WowType)（MIT OR Apache-2.0） | MIT（本仓库按 MIT 使用） |
+| `search.tsv` | 由上面两份用 `tools/gen_emoji_search.py`（依赖 pypinyin，MIT）生成的拼音 / 首字母索引 | 同源数据许可证 |
+
+emoji 数据随 APK 分发、只在设备本地解析，不联网、不上传输入内容。

@@ -17,8 +17,8 @@ enum class SettingsSection(
     @param:DrawableRes val icon: Int,
 ) {
     INPUT("输入", "中文输入、输入引擎", R.drawable.ic_board_edit),
-    KEYBOARD("键盘", "高度、间距、圆角、按键行为", R.drawable.ic_board_keyboard_hide),
-    APPEARANCE("外观", "主题、强调色、颜色与圆角", R.drawable.ic_board_theme),
+    KEYBOARD("键盘", "布局、位置、按键行为", R.drawable.ic_board_keyboard_hide),
+    APPEARANCE("外观", "主题、尺寸、颜色与圆角", R.drawable.ic_board_theme),
     DICTIONARY("词库", "我的词库、学习词、导入导出", R.drawable.ic_board_phrases),
     CLIPBOARD("剪贴板", "历史、敏感内容、清理", R.drawable.ic_board_clipboard),
     LIBRARY("云端资料库", "跨设备的图片与文件", R.drawable.ic_board_cloud),
@@ -26,6 +26,7 @@ enum class SettingsSection(
     TRANSLATION("翻译", "翻译服务、隐私说明", R.drawable.ic_board_translate),
     VOICE("语音", "百度实时语音识别、隐私说明", R.drawable.ic_board_voice),
     ADVANCED("高级", "隐私、输入法状态、开发者选项", R.drawable.ic_board_settings),
+    ABOUT("关于", "项目介绍、版本与更新", R.drawable.ic_board_info),
     ;
 
     companion object {

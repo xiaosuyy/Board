@@ -2,6 +2,7 @@ package com.board.ime.translation
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 翻译面板的状态机（**不引入额外复杂状态**） */
@@ -26,8 +27,8 @@ enum class TranslationUiState {
  * 翻译会话：**原文与译文只存在于这里的内存字段**。
  *
  * 生命周期（与隐私基线一致）：
- * - 打开：读取当前输入框文本（一次性，只放内存）→ 显示；
- * - 翻译：只有用户点 [翻译] 才发一次请求；请求可被取消；
+ * - 打开：读取当前输入框文本（一次性，只放内存）→ 短暂停顿后**自动翻译一次**；
+ * - 翻译：除打开时的自动翻译外，只有用户点 [翻译] / [重试] 才会再发请求；请求可被取消；
  * - 退出 / 替换 / 失败 / IME 销毁：立即清空 `sourceText`、`resultText`；
  * - **没有历史、没有缓存、没有最近翻译**，也不写任何本地存储与日志。
  *
@@ -80,7 +81,7 @@ class TranslationSession(
 
     private var job: Job? = null
 
-    /** 打开面板：读一次当前输入框文本（只放内存），不发起任何网络请求 */
+    /** 打开面板：读一次当前输入框文本（只放内存）；停顿一下自动翻译一次 */
     fun open() {
         cancelJob()
         sourceText = host.currentInputText().orEmpty()
@@ -88,10 +89,17 @@ class TranslationSession(
         host.showTranslationPanel()
         state = if (isProviderReady()) TranslationUiState.IDLE else TranslationUiState.NOT_CONFIGURED
         render()
+        if (state == TranslationUiState.IDLE && sourceText.isNotBlank()) {
+            startTranslation(AUTO_TRANSLATE_DELAY_MS)
+        }
     }
 
-    /** 用户点 [翻译]：这是**唯一**会联网的入口 */
+    /** 用户点 [翻译] / [重试]：发起一次请求（可被新的请求或关闭取消） */
     fun translate() {
+        startTranslation(0L)
+    }
+
+    private fun startTranslation(delayMs: Long) {
         val text = sourceText.trim()
         if (text.isEmpty()) {
             state = TranslationUiState.ERROR
@@ -108,8 +116,12 @@ class TranslationSession(
         state = TranslationUiState.LOADING
         resultText = ""
         render()
+        // 语言在发起时就固定：请求途中切换语言不会把结果标错
+        val source = sourceLanguage
+        val target = targetLanguage
         job = scope.launch {
-            when (val outcome = active.translate(TranslationRequest(text, sourceLanguage, targetLanguage))) {
+            if (delayMs > 0L) delay(delayMs)
+            when (val outcome = active.translate(TranslationRequest(text, source, target))) {
                 is TranslationOutcome.Success -> {
                     resultText = outcome.result.translatedText
                     state = TranslationUiState.RESULT
@@ -134,12 +146,21 @@ class TranslationSession(
         sourceLanguage = nextOf(TranslationLanguage.SOURCE_OPTIONS, sourceLanguage)
         saveSourceLanguage(sourceLanguage)
         render()
+        refreshAfterLanguageChange()
     }
 
     fun cycleTargetLanguage() {
         targetLanguage = nextOf(TranslationLanguage.TARGET_OPTIONS, targetLanguage)
         saveTargetLanguage(targetLanguage)
         render()
+        refreshAfterLanguageChange()
+    }
+
+    /** 语言变了旧译文就作废：稍等一下再翻，连续切换只发最后一次 */
+    private fun refreshAfterLanguageChange() {
+        if (state == TranslationUiState.NOT_CONFIGURED) return
+        if (sourceText.isBlank()) return
+        startTranslation(LANGUAGE_SWITCH_DELAY_MS)
     }
 
     /** 用户点 [复制]：写系统剪贴板（不自动做，也不自动写编辑框） */
@@ -204,5 +225,13 @@ class TranslationSession(
     ): TranslationLanguage {
         val index = options.indexOf(current)
         return options[(index + 1).mod(options.size)]
+    }
+
+    private companion object {
+        /** 打开面板后的停顿：太短会在用户挑语言时白翻，太长又不像「停一下就翻」 */
+        const val AUTO_TRANSLATE_DELAY_MS = 350L
+
+        /** 切语言合并窗口：快速连点几个语言只请求最后停留的那个 */
+        const val LANGUAGE_SWITCH_DELAY_MS = 250L
     }
 }

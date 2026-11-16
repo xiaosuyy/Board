@@ -1,6 +1,8 @@
 package com.board.ime.settings
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
@@ -13,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.ColorUtils
 import com.board.ime.R
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
@@ -22,19 +25,19 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 
 /**
- * 设置页的小控件工厂（**视觉规范见根目录 `DESIGN.md`**）。
+ * 设置页的小控件工厂（视觉参考 Lyra：大标题、卡片外分组标签、无描边卡片、蓝色图标）。
  *
  * 设置页大多是「分组标题 + 说明 + 一个开关 / 一组按钮 / 一个输入框 / 一行入口」这类重复结构，
  * 集中在这里生成，避免每个页面各写一套。
  *
  * 令牌来源：
  * - 颜色：主题属性（`colorSurface` / `colorOnSurface` / `colorOnSurfaceVariant` /
- *   `colorOutline` / `colorPrimary` / `colorPrimaryContainer`），**不写死黑白**；
- * - 尺寸：`dimens.xml` 的 `app_*`（圆角 8/12/16、类型刻度、行高）；
- * - 圆角：卡片 16dp、输入框 12dp、图标底 12dp，按钮 / 分段用 Material 默认 pill。
+ *   `colorOutline` / `colorPrimary`），**不写死黑白**；
+ * - 尺寸：`dimens.xml` 的 `app_*`（圆角 10/16/28、类型刻度、行高）；
  *
- * 结构约定：卡片 = `surface` + 1dp `outline`，**无阴影**；分组标题是 11sp 的次级标签；
- * 入口行最小 56dp，带一个 36dp 的强调色图标底。
+ * 结构约定（参考 Lyra）：卡片 = `surface` 色、28dp 圆角、**无描边无阴影**；
+ * 分组标题是卡片外的一行 12sp 淡色标签；入口行最小 60dp，左侧是 22dp 蓝色图标本体
+ * （不再加色块底），右侧是蓝色箭头。
  */
 object SettingsUi {
 
@@ -42,7 +45,12 @@ object SettingsUi {
 
     fun screen(context: Context): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(context, 20f), dp(context, 4f), dp(context, 20f), dp(context, 28f))
+        setPadding(
+            dimen(context, R.dimen.app_screen_padding),
+            dp(context, 6f),
+            dimen(context, R.dimen.app_screen_padding),
+            dp(context, 32f),
+        )
     }
 
     /** 分组内容容器（本身不画背景，交给 [cardView] 包一层卡片） */
@@ -54,32 +62,60 @@ object SettingsUi {
         )
     }
 
-    /** 卡片外壳：surface + 1dp outline，无阴影，16dp 内边距 */
-    fun cardView(context: Context, content: View): MaterialCardView = MaterialCardView(context).apply {
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(context, 12f) }
-        radius = dimen(context, R.dimen.app_card_corner_radius).toFloat()
-        cardElevation = 0f
-        strokeWidth = dp(context, 1f)
-        setStrokeColor(attrColor(context, com.google.android.material.R.attr.colorOutline))
-        setCardBackgroundColor(attrColor(context, com.google.android.material.R.attr.colorSurface))
-        val pad = dimen(context, R.dimen.app_card_padding)
-        setContentPadding(pad, pad, pad, pad)
-        addView(content)
+    /**
+     * 卡片外壳：surface、28dp 圆角、**无描边无阴影**。
+     *
+     * 内容第一行如果是 [heading]，会被提到卡片**外面**（Lyra 的分组标签就挂在卡片上方）。
+     * 这样所有现有页面不用改调用方式就能得到「标签在卡外」的排版。
+     */
+    fun cardView(context: Context, content: View): LinearLayout {
+        val card = MaterialCardView(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            radius = dimen(context, R.dimen.app_card_corner_radius).toFloat()
+            cardElevation = 0f
+            strokeWidth = 0
+            setCardBackgroundColor(attrColor(context, com.google.android.material.R.attr.colorSurface))
+            val pad = dimen(context, R.dimen.app_card_padding)
+            setContentPadding(pad, dp(context, 12f), pad, dp(context, 14f))
+            addView(content)
+        }
+
+        val wrapper = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(context, 16f) }
+        }
+        if (content is LinearLayout && content.childCount > 0) {
+            val first = content.getChildAt(0)
+            if (first is TextView && first.tag == HEADING_TAG) {
+                content.removeViewAt(0)
+                first.setPadding(dp(context, 8f), dp(context, 22f), 0, dp(context, 8f))
+                (wrapper.layoutParams as LinearLayout.LayoutParams).topMargin = 0
+                wrapper.addView(first)
+            }
+        }
+        wrapper.addView(card)
+        return wrapper
     }
+
+    private const val HEADING_TAG = "settings_heading"
 
     // ---------------------------------------------------------------- 文字
 
-    /** 卡片内的小标题：11sp 次级标签，字距略放开 */
+    /** 分组标签：12sp、46% 主文字色（Lyra 的 "应用 / 播放" 式标签） */
     fun heading(context: Context, text: String): TextView = TextView(context).apply {
         this.text = text
         setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_micro).toFloat())
-        setTypeface(typeface, Typeface.BOLD)
-        letterSpacing = 0.06f
-        setTextColor(secondaryColor(context))
-        setPadding(0, 0, 0, dp(context, 10f))
+        setTypeface(typeface, Typeface.NORMAL)
+        letterSpacing = 0f
+        setTextColor(ColorUtils.setAlphaComponent(primaryTextColor(context), (0.46f * 255).toInt()))
+        setPadding(0, 0, 0, dp(context, 8f))
+        tag = HEADING_TAG
     }
 
     fun label(context: Context, text: String): TextView = TextView(context).apply {
@@ -106,11 +142,14 @@ object SettingsUi {
 
     // ---------------------------------------------------------------- 按钮
 
-    /** 次要按钮（描边）。 */
+    /** 次要按钮：淡灰填充、无描边、16dp 圆角（Lyra 的 secondary 按钮） */
     fun button(context: Context, text: String, onClick: () -> Unit): MaterialButton =
         MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             this.text = text
             styleButton(context)
+            strokeWidth = 0
+            backgroundTintList = ColorStateList.valueOf(translucent(primaryTextColor(context), 0.08f))
+            setTextColor(primaryTextColor(context))
             setOnClickListener { onClick() }
         }
 
@@ -119,25 +158,38 @@ object SettingsUi {
         MaterialButton(context).apply {
             this.text = text
             styleButton(context)
+            backgroundTintList = ColorStateList.valueOf(attrColor(context, androidx.appcompat.R.attr.colorPrimary))
+            setTextColor(attrColor(context, com.google.android.material.R.attr.colorOnPrimary))
             setOnClickListener { onClick() }
         }
 
     private fun MaterialButton.styleButton(context: Context) {
         minWidth = 0
-        minimumHeight = dimen(context, R.dimen.app_row_min_height) / 4 * 3
+        minimumHeight = dp(context, 40f)
         insetTop = 0
         insetBottom = 0
+        insetLeft = 0
+        insetRight = 0
         isAllCaps = false
+        cornerRadius = dimen(context, R.dimen.app_radius_md)
         setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_subhead).toFloat())
         letterSpacing = 0f
+        setPadding(dp(context, 20f), paddingTop, dp(context, 20f), paddingBottom)
+        // 单独放进卡片时按内容收窄，别铺成一大块；连续按钮之间留出间距。
+        // buttonRow 会重新指定 layoutParams（等比平分），不受这里影响。
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(context, 8f) }
     }
 
     fun buttonRow(context: Context, buttons: List<MaterialButton>): LinearLayout =
         LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(context, 4f), 0, dp(context, 4f))
             for ((index, button) in buttons.withIndex()) {
                 button.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { if (index > 0) marginStart = dp(context, 8f) }
+                    .apply { if (index > 0) marginStart = dp(context, 12f) }
                 addView(button)
             }
         }
@@ -155,8 +207,17 @@ object SettingsUi {
         isChecked = checked
         setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_body).toFloat())
         setTextColor(primaryTextColor(context))
-        setPadding(0, dp(context, 6f), 0, dp(context, 6f))
-        minimumHeight = dimen(context, R.dimen.app_row_min_height) / 4 * 3
+        setPadding(0, dp(context, 8f), 0, dp(context, 8f))
+        minimumHeight = dimen(context, R.dimen.app_row_min_height)
+        // Lyra / iOS 的开关：打开 = 绿色轨道 + 白色滑块；关闭 = 淡灰轨道
+        thumbTintList = ColorStateList.valueOf(Color.WHITE)
+        trackTintList = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(
+                androidx.core.content.ContextCompat.getColor(context, R.color.app_green),
+                translucent(primaryTextColor(context), 0.22f),
+            ),
+        )
         setOnCheckedChangeListener { _, value -> onChanged(value) }
     }
 
@@ -230,7 +291,7 @@ object SettingsUi {
         else -> String.format(java.util.Locale.US, "%.1f%s", value, unit)
     }
 
-    /** 单选分段控件：Material 默认 pill 外观，返回的 group 上按 index 取选中项。 */
+    /** 单选分段控件：淡灰轨道 + 选中项浅蓝填充（无描边），返回的 group 上按 index 取选中项。 */
     fun toggleGroup(
         context: Context,
         options: List<String>,
@@ -238,6 +299,28 @@ object SettingsUi {
         onSelect: (Int) -> Unit,
     ): MaterialButtonToggleGroup = MaterialButtonToggleGroup(context).apply {
         isSingleSelection = true
+        val pad = dp(context, 3f)
+        setPadding(pad, pad, pad, pad)
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dimen(context, R.dimen.app_radius_md).toFloat()
+            setColor(translucent(primaryTextColor(context), 0.06f))
+        }
+        val checkedStates = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        val trackColors = ColorStateList(
+            checkedStates,
+            intArrayOf(
+                androidx.core.content.ContextCompat.getColor(context, R.color.app_accent_container),
+                Color.TRANSPARENT,
+            ),
+        )
+        val textColors = ColorStateList(
+            checkedStates,
+            intArrayOf(
+                androidx.core.content.ContextCompat.getColor(context, R.color.app_accent),
+                primaryTextColor(context),
+            ),
+        )
         for ((index, option) in options.withIndex()) {
             val button = MaterialButton(
                 context,
@@ -246,14 +329,23 @@ object SettingsUi {
             ).apply {
                 text = option
                 minWidth = 0
-                minimumHeight = dimen(context, R.dimen.app_row_min_height) / 4 * 3
+                minimumHeight = dp(context, 40f)
                 insetTop = 0
                 insetBottom = 0
+                insetLeft = 0
+                insetRight = 0
+                strokeWidth = 0
+                cornerRadius = dimen(context, R.dimen.app_radius_md) - pad
                 isAllCaps = false
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, R.dimen.app_text_caption).toFloat())
                 letterSpacing = 0f
+                // 选项多时（键盘高度 5 档）默认 16dp 内边距会把
+                // 「标准 / 特大 / 自定义」截成「标… / 特… / 自…」，这里收紧为 4dp。
+                setPadding(dp(context, 4f), paddingTop, dp(context, 4f), paddingBottom)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 isCheckable = true
+                backgroundTintList = trackColors
+                setTextColor(textColors)
             }
             addView(button)
             if (index == selectedIndex) check(button.id)
@@ -284,18 +376,28 @@ object SettingsUi {
                 InputType.TYPE_CLASS_TEXT
             }
             setSingleLine(true)
+            // 去掉 Material 自带的底部横线（Lyra 的输入框只有底色）
+            background = null
+            setPadding(dp(context, 14f), dp(context, 13f), dp(context, 14f), dp(context, 13f))
         }
+        val radius = dimen(context, R.dimen.app_radius_md)
         val layout = TextInputLayout(
             context,
             null,
             com.google.android.material.R.style.Widget_Material3_TextInputLayout_OutlinedBox,
         ).apply {
             hint = hintText
+            // 无描边、淡灰填充（Lyra 的输入框）：只留底色和 16dp 圆角
+            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_FILLED
+            setBoxBackgroundColor(translucent(primaryTextColor(context), 0.08f))
+            setBoxCornerRadii(radius.toFloat(), radius.toFloat(), radius.toFloat(), radius.toFloat())
+            boxStrokeWidth = 0
+            boxStrokeWidthFocused = 0
             if (password) endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(context, 8f) }
+            ).apply { topMargin = dp(context, 10f) }
             addView(edit)
             if (password) {
                 // 默认打码（真机上出现过「一打开页面密码就是明文」）。
@@ -351,7 +453,7 @@ object SettingsUi {
             LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { if (iconRes != 0) marginStart = dp(context, 14f) }
+                    .apply { if (iconRes != 0) marginStart = dp(context, 16f) }
                 addView(label(context, title))
                 addView(
                     TextView(context).apply {
@@ -367,33 +469,18 @@ object SettingsUi {
             TextView(context).apply {
                 text = "›"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-                setTextColor(secondaryColor(context))
+                setTextColor(attrColor(context, androidx.appcompat.R.attr.colorPrimary))
             },
         )
     }
 
-    /** 36dp 的强调色图标底：圆角方块 + 居中图标。 */
+    /** 入口行左侧：22dp 的强调色图标本体（Lyra 那种不带色块底的写法）。 */
     fun iconTile(context: Context, @DrawableRes iconRes: Int): View {
-        val size = dimen(context, R.dimen.app_icon_tile)
-        val bg = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dimen(context, R.dimen.app_radius_md).toFloat()
-            setColor(attrColor(context, com.google.android.material.R.attr.colorPrimaryContainer))
-        }
-        return android.widget.FrameLayout(context).apply {
+        val size = dimen(context, R.dimen.app_icon_in_tile)
+        return ImageView(context).apply {
+            setImageResource(iconRes)
+            setColorFilter(attrColor(context, androidx.appcompat.R.attr.colorPrimary))
             layoutParams = LinearLayout.LayoutParams(size, size)
-            background = bg
-            addView(
-                ImageView(context).apply {
-                    setImageResource(iconRes)
-                    setColorFilter(attrColor(context, androidx.appcompat.R.attr.colorPrimary))
-                    layoutParams = android.widget.FrameLayout.LayoutParams(
-                        dimen(context, R.dimen.app_icon_in_tile),
-                        dimen(context, R.dimen.app_icon_in_tile),
-                        Gravity.CENTER,
-                    )
-                },
-            )
         }
     }
 
@@ -406,16 +493,16 @@ object SettingsUi {
     ): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, dp(context, 7f), 0, dp(context, 7f))
+        setPadding(0, dp(context, 10f), 0, dp(context, 10f))
         addView(
             View(context).apply {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(
                         if (ok) {
-                            attrColor(context, androidx.appcompat.R.attr.colorPrimary)
+                            androidx.core.content.ContextCompat.getColor(context, R.color.app_green)
                         } else {
-                            attrColor(context, com.google.android.material.R.attr.colorOutline)
+                            translucent(primaryTextColor(context), 0.3f)
                         },
                     )
                 }
@@ -448,13 +535,13 @@ object SettingsUi {
         )
     }
 
-    /** 卡片内分隔线：1dp、`outlineVariant`，左右不缩进。 */
+    /** 行间分隔线：1dp、主文字色 10%，左侧让过图标（Lyra 的 inset separator）。 */
     fun divider(context: Context): View = View(context).apply {
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             dp(context, 1f),
-        ).apply { topMargin = dp(context, 6f); bottomMargin = dp(context, 6f) }
-        setBackgroundColor(attrColor(context, com.google.android.material.R.attr.colorOutlineVariant))
+        ).apply { marginStart = dimen(context, R.dimen.app_divider_inset) }
+        setBackgroundColor(translucent(primaryTextColor(context), 0.10f))
     }
 
     // ---------------------------------------------------------------- 主题取色
@@ -464,6 +551,10 @@ object SettingsUi {
 
     private fun secondaryColor(context: Context): Int =
         attrColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant)
+
+    /** 把主题色压成淡色（铺在卡片底色上做填充，不用写死透明灰）。 */
+    private fun translucent(color: Int, fraction: Float): Int =
+        ColorUtils.setAlphaComponent(color, (fraction * 255).toInt().coerceIn(0, 255))
 
     private fun attrColor(context: Context, attr: Int): Int {
         val value = TypedValue()

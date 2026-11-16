@@ -298,7 +298,8 @@ class CandidateBar @JvmOverloads constructor(
 
         selectedBackground = GradientDrawable().apply {
             setColor(theme.candidateSelectedBackground)
-            cornerRadius = theme.radiusSmall
+            // 「候选 Chip 圆角」是外观设置里的独立项；之前写死 radiusSmall 导致调了没反应
+            cornerRadius = theme.candidateCornerRadius
         }
         selectedBackgroundInset = insetChip(selectedBackground!!, theme.candidateChipHeight)
         // 两行模式：内缩更小，圆角块包住两行；仍受固定面板高度约束（不会撑高）
@@ -320,7 +321,7 @@ class CandidateBar @JvmOverloads constructor(
             background = insetChip(
                 GradientDrawable().apply {
                     setColor(theme.pinyinBackground)
-                    cornerRadius = theme.radiusSmall
+                    cornerRadius = theme.candidateCornerRadius
                 },
                 theme.candidateChipHeight,
             )

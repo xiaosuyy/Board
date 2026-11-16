@@ -96,6 +96,11 @@ class SettingsRepository(context: Context) {
 
     // ---------------------------------------------------------------- 外观
 
+    /** 配色主题（默认「标准」，即原有的白 / 黑 / 灰 + 蓝） */
+    var palette: KeyboardPalette
+        get() = KeyboardPalette.fromName(prefs.getString(KEY_PALETTE, null))
+        set(value) = prefs.edit().putString(KEY_PALETTE, value.name).apply()
+
     fun appearance(): AppearanceConfig {
         val colors = HashMap<AppearanceColor, Int>()
         AppearanceColor.entries.forEach { target ->
@@ -133,11 +138,12 @@ class SettingsRepository(context: Context) {
         }.apply()
     }
 
-    /** 一键恢复默认外观（白 / 黑 / 灰 + 少量蓝） */
+    /** 一键恢复默认外观（白 / 黑 / 灰 + 少量蓝，配色主题回到「标准」） */
     fun resetAppearance() {
         prefs.edit().apply {
             AppearanceColor.entries.forEach { remove(colorKey(it)) }
             AppearanceRadius.entries.forEach { remove(radiusKey(it)) }
+            remove(KEY_PALETTE)
         }.apply()
     }
 
@@ -158,6 +164,7 @@ class SettingsRepository(context: Context) {
         /** 颜色未设置时的哨兵值 */
         private const val NO_COLOR = 0
 
+        private const val KEY_PALETTE = "palette"
         private const val KEY_LEVEL = "height_level"
         private const val KEY_HEIGHT_FACTOR = "height_factor"
         private const val KEY_GAP = "key_gap"

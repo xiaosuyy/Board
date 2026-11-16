@@ -3,8 +3,11 @@ package com.board.ime.settings
 import android.content.Context
 import android.content.SharedPreferences
 import com.board.ime.engine.InputMode
+import com.board.ime.engine.rime.RimeFuzzyGroup
+import com.board.ime.engine.rime.ShuangpinScheme
 import com.board.ime.sync.SyncContent
 import com.board.ime.sync.SyncContentGate
+import com.board.ime.update.UpdateDownloadSource
 
 /**
  * 键盘设置。
@@ -103,6 +106,43 @@ class BoardPreferences(context: Context) : SyncContentGate {
         get() = prefs.getBoolean(KEY_CANDIDATE_ENGLISH_GLOSS, false)
         set(value) = prefs.edit().putBoolean(KEY_CANDIDATE_ENGLISH_GLOSS, value).apply()
 
+    /**
+     * 中英文之间自动加空格（默认关闭）：
+     * 字母 / 数字**分别**开关，只作用于汉字与半角字符的交界处。
+     */
+    var autoSpaceLetters: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_SPACE_LETTERS, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_SPACE_LETTERS, value).apply()
+
+    var autoSpaceDigits: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_SPACE_DIGITS, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_SPACE_DIGITS, value).apply()
+
+    /**
+     * 繁体输出（默认关闭 = 简体）。
+     *
+     * 只切换 Rime 的 simplification 开关：基础词库（luna_pinyin）是繁体词典，
+     * 关闭简化即为繁体输出；用户词 / 扩展词保持自身字形。
+     */
+    var traditionalOutput: Boolean
+        get() = prefs.getBoolean(KEY_TRADITIONAL_OUTPUT, false)
+        set(value) = prefs.edit().putBoolean(KEY_TRADITIONAL_OUTPUT, value).apply()
+
+    /** 双拼方案（默认全拼）。改方案需要重新部署 Rime 方案。 */
+    var shuangpin: ShuangpinScheme
+        get() = ShuangpinScheme.fromName(prefs.getString(KEY_SHUANGPIN, null))
+        set(value) = prefs.edit().putString(KEY_SHUANGPIN, value.name).apply()
+
+    /**
+     * 模糊音 / 简拼 / 纠错分组（12 组单独开关）。
+     *
+     * 存的是 [RimeFuzzyGroup.key] 集合；从未设置过时返回内置默认（与随包方案一致）。
+     */
+    var rimeFuzzyGroups: Set<String>
+        get() = prefs.getStringSet(KEY_RIME_FUZZY_GROUPS, null)?.toSet()
+            ?: RimeFuzzyGroup.defaults()
+        set(value) = prefs.edit().putStringSet(KEY_RIME_FUZZY_GROUPS, value.toSet()).apply()
+
     /** 敏感剪贴板内容（验证码 / 密码）是否不写入历史 */
     var skipSensitiveClipboard: Boolean
         get() = prefs.getBoolean(KEY_SKIP_SENSITIVE, true)
@@ -136,6 +176,11 @@ class BoardPreferences(context: Context) : SyncContentGate {
         get() = prefs.getBoolean(KEY_DEVELOPER, false)
         set(value) = prefs.edit().putBoolean(KEY_DEVELOPER, value).apply()
 
+    /** 更新包下载通道：GitHub 直连 / gh-proxy 加速（只影响下载地址，检查更新始终直连） */
+    var updateDownloadSource: UpdateDownloadSource
+        get() = UpdateDownloadSource.fromStorage(prefs.getString(KEY_UPDATE_SOURCE, null))
+        set(value) = prefs.edit().putString(KEY_UPDATE_SOURCE, value.storageValue).apply()
+
     /**
      * 工具栏 / 更多 的工具布局（逗号分隔的 storageKey）。
      *
@@ -149,6 +194,20 @@ class BoardPreferences(context: Context) : SyncContentGate {
     var moreTools: String?
         get() = prefs.getString(KEY_MORE_TOOLS, null)
         set(value) = prefs.edit().putString(KEY_MORE_TOOLS, value).apply()
+
+    /**
+     * 表情面板的最近使用（只存 emoji 字符本身）。
+     *
+     * 用不可见分隔符存成一个字符串，避免 SharedPreferences 的 StringSet 打乱顺序。
+     */
+    var recentEmojis: List<String>
+        get() = prefs.getString(KEY_RECENT_EMOJIS, null)
+            .orEmpty()
+            .split(EMOJI_SEPARATOR)
+            .filter { it.isNotEmpty() }
+        set(value) = prefs.edit()
+            .putString(KEY_RECENT_EMOJIS, value.joinToString(EMOJI_SEPARATOR.toString()))
+            .apply()
 
     /** 同步内容开关（剪贴板 / 用户词库 / 学习词 / 常用语 / 自定义词 / 主题 / 键盘设置） */
     override fun isEnabled(content: SyncContent): Boolean =
@@ -212,13 +271,23 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_CANDIDATE_SIZE = "candidate_text_size"
         /** 候选栏英文释义开关（默认关闭） */
         const val KEY_CANDIDATE_ENGLISH_GLOSS = "candidate_english_gloss_enabled"
+        /** 中英文自动空格（字母 / 数字分别开关，默认都关） */
+        const val KEY_AUTO_SPACE_LETTERS = "auto_space_letters"
+        const val KEY_AUTO_SPACE_DIGITS = "auto_space_digits"
+        /** 繁体输出 / 双拼方案 / 模糊音分组 */
+        const val KEY_TRADITIONAL_OUTPUT = "traditional_output"
+        const val KEY_SHUANGPIN = "shuangpin_scheme"
+        const val KEY_RIME_FUZZY_GROUPS = "rime_fuzzy_groups"
         const val KEY_SKIP_SENSITIVE = "skip_sensitive_clipboard"
         const val KEY_VOICE_PRIVACY_ACK = "voice_privacy_acknowledged"
         const val KEY_TRANSLATION_SOURCE = "translation_source_language"
         const val KEY_TRANSLATION_TARGET = "translation_target_language"
         const val KEY_DEVELOPER = "developer_mode"
+        const val KEY_UPDATE_SOURCE = "update_download_source"
         const val KEY_TOOLBAR_TOOLS = "toolbar_tools"
         const val KEY_MORE_TOOLS = "more_tools"
+        const val KEY_RECENT_EMOJIS = "recent_emojis"
+        const val EMOJI_SEPARATOR = '\u001F'
 
         /** Cloud Library 本机隐藏（只存 hash；不存正文/路径/URL） */
         const val KEY_HIDDEN_LIBRARY = "hidden_library_hashes"

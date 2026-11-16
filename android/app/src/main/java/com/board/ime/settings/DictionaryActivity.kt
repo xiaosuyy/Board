@@ -104,7 +104,7 @@ class DictionaryActivity : AppCompatActivity() {
             background = roundedBackground(
                 ContextCompat.getColor(this@DictionaryActivity, R.color.app_surface),
                 dp(10f).toFloat(),
-                ContextCompat.getColor(this@DictionaryActivity, R.color.app_outline),
+                ContextCompat.getColor(this@DictionaryActivity, R.color.app_outline_variant),
             )
             isClickable = true
             setOnClickListener { showEditor(entry) }

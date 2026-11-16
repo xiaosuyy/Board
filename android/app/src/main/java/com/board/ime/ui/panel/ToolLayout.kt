@@ -20,6 +20,7 @@ enum class ToolId(
     THEME("theme", "主题", PanelIcon.THEME, MorePanel.Action.THEME),
     SETTINGS("settings", "设置", PanelIcon.SETTINGS, MorePanel.Action.SETTINGS),
     PHRASES("phrases", "常用语", PanelIcon.PHRASES, MorePanel.Action.PHRASES),
+    EMOJI("emoji", "表情", PanelIcon.EMOJI, MorePanel.Action.EMOJI),
     CURSOR_LEFT("cursor_left", "左移", PanelIcon.CURSOR_LEFT, MorePanel.Action.CURSOR_LEFT),
     CURSOR_RIGHT("cursor_right", "右移", PanelIcon.CURSOR_RIGHT, MorePanel.Action.CURSOR_RIGHT),
     ;
@@ -89,11 +90,11 @@ data class ToolLayout(
 
         /**
          * 默认布局 = **当前线上默认**：
-         * 工具栏只有剪贴板；「更多」依次是 主题 / 翻译 / 语音 / 设置 / 常用语 / 左移 / 右移。
+         * 工具栏：剪贴板 / 表情；「更多」依次是 主题 / 翻译 / 语音 / 设置 / 常用语 / 左移 / 右移。
          * （剪贴板不再重复出现在「更多」里 —— 它已经常驻工具栏。）
          */
         val DEFAULT = ToolLayout(
-            toolbar = listOf(ToolId.CLIPBOARD),
+            toolbar = listOf(ToolId.CLIPBOARD, ToolId.EMOJI),
             more = listOf(
                 ToolId.THEME,
                 ToolId.TRANSLATE,
@@ -112,10 +113,20 @@ data class ToolLayout(
          */
         fun parse(toolbarRaw: String?, moreRaw: String?): ToolLayout {
             if (toolbarRaw == null && moreRaw == null) return DEFAULT
-            return normalize(
+            val layout = normalize(
                 decode(toolbarRaw),
                 decode(moreRaw),
             )
+            // 老用户的自定义布局里还没有「表情」：它这次是新增的工具，
+            // 直接放进工具栏（用户明确要求 emoji 常驻工具栏）；工具栏满了就留在「更多」。
+            if (layout.toolbar.contains(ToolId.EMOJI)) return layout
+            if (layout.toolbar.size < MAX_TOOLBAR) {
+                return layout.copy(
+                    toolbar = layout.toolbar + ToolId.EMOJI,
+                    more = layout.more - ToolId.EMOJI,
+                )
+            }
+            return layout
         }
 
         private fun decode(raw: String?): List<ToolId> =

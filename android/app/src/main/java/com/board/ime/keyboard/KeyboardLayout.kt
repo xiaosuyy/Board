@@ -5,29 +5,26 @@ package com.board.ime.keyboard
  *
  * 分层：
  * - [letters]       字母层（英文 / 中文共用）
- * - [numbers]       数字层（微信「123」）
+ * - [numbers]       数字层（九宫格小键盘）
  * - [symbolsAscii] / [symbolsCjk]  符号层（微信「符号」第一页）
  * - [symbolsMore]   符号层第二页（「更多符号」）
  *
- * 五套布局全部是 4 行，切换面板时键盘高度不变；每行严格等于 10 个宽度单位，
+ * 四套布局全部是 4 行，切换面板时键盘高度不变；每行严格等于 10 个宽度单位，
  * 因此布局天然自适应屏幕宽度。布局只是“键位表”，具体显示哪一层由 `InputController` 决定。
  */
 object KeyboardLayouts {
 
     private const val ROW_UNITS = 10f
 
-    private val STRIP_UNIT = ROW_UNITS / 9f
+    /**
+     * 数字层左右两列比中间数字列略窄（参考图中 93 : 108）。
+     * 中间三列均分剩余宽度。
+     */
+    private const val PAD_SIDE_UNIT = 1.8f
+    private const val PAD_DIGIT_UNIT = (ROW_UNITS - PAD_SIDE_UNIT * 2f) / 3f
 
-    /** 顶部符号条：微信数字 / 符号层顶上那一行（`# % & + …… 《 》 ｜ ✕`）。 */
-    private fun stripRow(): KeyRow = KeyRow(
-        keys = listOf(
-            sym("#"), sym("%"), sym("&"), sym("+"), sym("……"), sym("《"), sym("》"), sym("｜"),
-            KeySpec(KeyType.NOT_IMPLEMENTED, text = "✕", label = "✕", units = STRIP_UNIT),
-        ),
-    )
-
-    private fun sym(text: String): KeySpec =
-        KeySpec(KeyType.SYMBOL, text = text, units = STRIP_UNIT)
+    /** 数字层左侧 @ % - 三键合并块编号 */
+    private const val NUM_PAD_STACK = 1
 
     /** 符号键（普通 1 单位） */
     private fun s(text: String): KeySpec = KeySpec(KeyType.SYMBOL, text = text)
@@ -49,7 +46,7 @@ object KeyboardLayouts {
                     add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
                 },
             ),
-            // 微信底行：123 · ，。 · 空格 · 中/英 · 搜索
+            // 微信底行：123 · ，。 · 空格 · 中/EN · 搜索
             KeyRow(
                 keys = listOf(
                     KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.3f),
@@ -62,73 +59,54 @@ object KeyboardLayouts {
         ),
     )
 
-    // ------------------------------------------------------------ 数字层（微信 123）
+    // ------------------------------------------------------------ 数字层（九宫格小键盘）
 
-    val numbers: KeyboardLayout = KeyboardLayout(
-        listOf(
-            stripRow(),
-            KeyRow(keys = listOf("-", "/", ":", "~", "(", ")", "…", "@", "“", "”").map { s(it) }),
-            KeyRow(
-                keys = buildList {
-                    add(KeySpec(KeyType.TO_SYMBOLS, label = "符号", units = 1.5f))
-                    listOf("。", ",", "、", "?", "!", ".").forEach {
-                        add(KeySpec(KeyType.SYMBOL, text = it, units = 7f / 6f))
-                    }
-                    add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
-                },
-            ),
-            // 微信底行：← 12/34 空格 换行 搜索（表情键按需求去掉）
-            KeyRow(
-                keys = listOf(
-                    KeySpec(KeyType.TO_LETTERS, label = "←", units = 1.4f),
-                    KeySpec(KeyType.NUMBER_PAGE, label = "12/34", units = 1.4f),
-                    KeySpec(KeyType.SPACE, units = 3.6f),
-                    KeySpec(KeyType.ENTER_NEWLINE, label = "换行", units = 1.6f),
-                    KeySpec(KeyType.ENTER, units = 2.0f),
-                ),
-            ),
-        ),
-    )
+    private fun padKey(text: String): KeySpec = KeySpec(KeyType.CHARACTER, text = text, units = PAD_DIGIT_UNIT)
 
-    // ------------------------------------------------------------ 数字层第二页（微信 34：九宫格数字小键盘）
+    /** 左侧竖条上的符号键（同一 [NUM_PAD_STACK] 合并成一块，中间只有细分隔线） */
+    private fun padSide(text: String): KeySpec =
+        KeySpec(KeyType.SYMBOL, text = text, units = PAD_SIDE_UNIT, stackId = NUM_PAD_STACK)
 
-    private fun padKey(text: String): KeySpec = KeySpec(KeyType.CHARACTER, text = text, units = 2f)
-    private fun padSym(text: String): KeySpec = KeySpec(KeyType.SYMBOL, text = text, units = 2f)
+    /** 右列等未合并的普通符号键 */
+    private fun padSym(text: String): KeySpec = KeySpec(KeyType.SYMBOL, text = text, units = PAD_SIDE_UNIT)
 
     /**
-     * 数字层第二页：对齐微信「34」的九宫格数字小键盘
-     * （左列 @ % - +、中间 1-9、右列 ⌫ / 空格，底部 ← 符号 0 . 搜索）。
-     * 微信右列还有表情键，按需求已去掉，末列用 `+` 补齐。
+     * 数字层：九宫格数字小键盘。
+     *
+     * 左列 @ % -、中间 1-9、右列 ⌫ / 空格 / +，底部 ← 符号 0 . 搜索。
+     * 参考图左列是 @ % - + 四个小格、空格下面是表情键；按需求这里左列只保留
+     * 我们的三个键（+ 仍在右列第三行，不放进左列），右列第三行也不放表情。
      */
-    val numbersPad: KeyboardLayout = KeyboardLayout(
+    val numbers: KeyboardLayout = KeyboardLayout(
         listOf(
             KeyRow(
                 keys = listOf(
-                    padSym("@"), padKey("1"), padKey("2"), padKey("3"),
-                    KeySpec(KeyType.BACKSPACE, units = 2f),
+                    padSide("@"), padKey("1"), padKey("2"), padKey("3"),
+                    KeySpec(KeyType.BACKSPACE, units = PAD_SIDE_UNIT),
                 ),
             ),
             KeyRow(
                 keys = listOf(
-                    padSym("%"), padKey("4"), padKey("5"), padKey("6"),
-                    KeySpec(KeyType.SPACE, units = 2f),
+                    padSide("%"), padKey("4"), padKey("5"), padKey("6"),
+                    KeySpec(KeyType.SPACE, units = PAD_SIDE_UNIT),
                 ),
             ),
             KeyRow(
                 keys = listOf(
-                    padSym("-"), padKey("7"), padKey("8"), padKey("9"), padSym("+"),
+                    padSide("-"), padKey("7"), padKey("8"), padKey("9"), padSym("+"),
                 ),
             ),
             KeyRow(
                 keys = listOf(
-                    KeySpec(KeyType.TO_LETTERS, label = "←", units = 2f),
-                    KeySpec(KeyType.TO_SYMBOLS, label = "符号", units = 2f),
+                    KeySpec(KeyType.TO_LETTERS, label = "←", units = PAD_SIDE_UNIT),
+                    KeySpec(KeyType.TO_SYMBOLS, label = "符号", units = PAD_DIGIT_UNIT),
                     padKey("0"),
-                    KeySpec(KeyType.SYMBOL, text = ".", units = 2f),
-                    KeySpec(KeyType.ENTER, units = 2f),
+                    KeySpec(KeyType.SYMBOL, text = ".", units = PAD_DIGIT_UNIT),
+                    KeySpec(KeyType.ENTER, units = PAD_SIDE_UNIT),
                 ),
             ),
         ),
+        ignoresFunctionKeyRatio = true,
     )
 
     // ------------------------------------------------------------ 符号层（微信 符号）
@@ -185,7 +163,7 @@ object KeyboardLayouts {
 
     init {
         // 布局是手工维护的常量表，这里在类加载时做一次断言，避免以后改错单位。
-        val all = listOf(letters, numbers, numbersPad, symbolsAscii, symbolsCjk, symbolsMore)
+        val all = listOf(letters, numbers, symbolsAscii, symbolsCjk, symbolsMore)
         all.forEach { layout ->
             layout.rows.forEachIndexed { index, row ->
                 check(kotlin.math.abs(row.totalUnits - ROW_UNITS) < 0.001f) {
@@ -197,7 +175,15 @@ object KeyboardLayouts {
 }
 
 /** 一套键盘布局：若干行按键 */
-class KeyboardLayout(val rows: List<KeyRow>) {
+class KeyboardLayout(
+    val rows: List<KeyRow>,
+    /**
+     * 功能键宽度倍率是否忽略。
+     * 数字九宫格按固定列宽排布，倍率参与会把各行的功能键各自伸缩、
+     * 导致上下列对不齐，所以数字层固定按基础单位布局。
+     */
+    val ignoresFunctionKeyRatio: Boolean = false,
+) {
 
     val rowCount: Int
         get() = rows.size

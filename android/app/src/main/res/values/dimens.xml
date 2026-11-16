@@ -90,31 +90,32 @@
     <dimen name="kb_floating_edge_margin">12dp</dimen>
 
     <!-- ==================== 设置页（App）====================
-         与键盘共用同一套设计令牌（DESIGN.md），但圆角档位是 App 自己的 8 / 12 / 16：
-         - sm 8dp：输入框、图标底、小色块
-         - md 12dp：列表行内的容器
-         - lg 16dp：卡片、分组
-         按钮 / 开关 / 分段控件用 pill（full）。 -->
-    <dimen name="app_radius_sm">8dp</dimen>
-    <dimen name="app_radius_md">12dp</dimen>
-    <dimen name="app_radius_lg">16dp</dimen>
+         参考 Lyra 的层级：大标题、20dp 页边距、28dp 无描边卡片、卡片外的分组标签：
+         - sm 10dp：小色块、按下反馈
+         - md 16dp：按钮、输入框、分段控件
+         - lg 28dp：卡片、分组
+         行高 60dp，行内文字 17sp，说明文字 12sp。 -->
+    <dimen name="app_radius_sm">10dp</dimen>
+    <dimen name="app_radius_md">16dp</dimen>
+    <dimen name="app_radius_lg">28dp</dimen>
 
     <dimen name="app_screen_padding">20dp</dimen>
     <dimen name="app_card_corner_radius">@dimen/app_radius_lg</dimen>
     <dimen name="app_card_padding">16dp</dimen>
-    <dimen name="app_section_gap">16dp</dimen>
-    <dimen name="app_row_min_height">56dp</dimen>
-    <dimen name="app_icon_tile">36dp</dimen>
-    <dimen name="app_icon_in_tile">20dp</dimen>
-    <dimen name="app_divider_inset">0dp</dimen>
+    <dimen name="app_section_gap">22dp</dimen>
+    <dimen name="app_row_min_height">60dp</dimen>
+    <!-- 入口行左侧图标：只画图标本身，不加色块底 -->
+    <dimen name="app_icon_tile">22dp</dimen>
+    <dimen name="app_icon_in_tile">22dp</dimen>
+    <dimen name="app_divider_inset">32dp</dimen>
 
-    <!-- 类型刻度（DESIGN.md §Typography）：权重承担层级，不用粗体堆叠 -->
-    <dimen name="app_text_display">28sp</dimen>
-    <dimen name="app_text_title">20sp</dimen>
-    <dimen name="app_text_headline">16sp</dimen>
-    <dimen name="app_text_body">15sp</dimen>
-    <dimen name="app_text_callout">14sp</dimen>
-    <dimen name="app_text_subhead">13sp</dimen>
+    <!-- 类型刻度：与 Lyra 一致（34 / 22 / 17 / 15 / 12） -->
+    <dimen name="app_text_display">34sp</dimen>
+    <dimen name="app_text_title">22sp</dimen>
+    <dimen name="app_text_headline">17sp</dimen>
+    <dimen name="app_text_body">17sp</dimen>
+    <dimen name="app_text_callout">15sp</dimen>
+    <dimen name="app_text_subhead">15sp</dimen>
     <dimen name="app_text_caption">12sp</dimen>
-    <dimen name="app_text_micro">11sp</dimen>
+    <dimen name="app_text_micro">12sp</dimen>
 </resources>

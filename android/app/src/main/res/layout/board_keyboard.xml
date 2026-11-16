@@ -41,6 +41,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
+            <com.board.ime.ui.panel.ToolboxView
+                android:id="@+id/toolbox_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
             <com.board.ime.ui.panel.ClipboardHeader
                 android:id="@+id/clipboard_header"
                 android:layout_width="match_parent"
@@ -58,6 +63,11 @@
 
             <com.board.ime.ui.panel.PhrasesHeader
                 android:id="@+id/phrases_header"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <com.board.ime.ui.panel.EmojiHeader
+                android:id="@+id/emoji_header"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
         </FrameLayout>
@@ -95,6 +105,13 @@
         <!-- 候选「全部展开」内容区：点候选栏右侧 ∨ 后占键盘位置（总高度不变） -->
         <com.board.ime.ui.panel.CandidateGridPanel
             android:id="@+id/candidate_grid_panel"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:visibility="gone" />
+
+        <!-- 表情内容区：普通状态占键盘位置；搜索时缩到上半部分、键盘在下方 -->
+        <com.board.ime.ui.panel.EmojiPanel
+            android:id="@+id/emoji_panel"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:visibility="gone" />

@@ -15,9 +15,9 @@ patch:
   menu/page_size: 50
   # 开启用户词典学习：选过的候选会被记录并加权，越用越靠前。
   translator/enable_user_dict: true
-  # 关闭整句候选：避免「哦哦 / 等等」这类简拼+整句拼出来的不相关结果。
-  # 逐字选词（许→鹏→程）由 RimeEngine 的兜底逻辑处理。
-  translator/enable_sentence: false
+  # 整句候选：xiangquzijieshangban → 想去字节上班。
+  # 整句权重低于精确词，通常排在常用词之后；候选栏只展示前几个。
+  translator/enable_sentence: true
   # 前缀补全：输入前缀即可给出更长的词 / 词组（对应微信的 completion 候选）。
   translator/enable_completion: true
   # 用户词优先（对齐微信：用户自定义词 / 常用语优先于基础词库）。

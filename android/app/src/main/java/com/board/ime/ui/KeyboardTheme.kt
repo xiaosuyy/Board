@@ -8,6 +8,7 @@ import androidx.annotation.ColorRes
 import androidx.annotation.DimenRes
 import com.board.ime.R
 import com.board.ime.settings.CandidateTextSize
+import com.board.ime.settings.KeyboardPalette
 import com.board.ime.settings.ThemeMode
 
 /**
@@ -121,13 +122,14 @@ data class KeyboardTheme(
                 com.board.ime.settings.KeyboardGeometry.DEFAULT,
             appearance: com.board.ime.settings.AppearanceConfig =
                 com.board.ime.settings.AppearanceConfig.DEFAULT,
+            palette: KeyboardPalette = KeyboardPalette.STANDARD,
         ): KeyboardTheme {
             val isDark = when (mode) {
                 ThemeMode.SYSTEM -> isSystemNight(context)
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
-            return create(context, isDark, candidateSize, geometry, appearance)
+            return create(context, isDark, candidateSize, geometry, appearance, palette)
         }
 
         fun isSystemNight(context: Context): Boolean {
@@ -141,11 +143,17 @@ data class KeyboardTheme(
             candidateSize: CandidateTextSize,
             geometry: com.board.ime.settings.KeyboardGeometry,
             appearance: com.board.ime.settings.AppearanceConfig,
+            palette: KeyboardPalette,
         ): KeyboardTheme {
             val res = context.resources
+            // 配色主题只覆盖「默认值」；手动改过的颜色仍由 withOverrides 优先
+            val paletteColors = palette.colors(isDark)
 
             fun color(@ColorRes light: Int, @ColorRes dark: Int): Int =
                 res.getColor(if (isDark) dark else light, null)
+
+            fun color(paletteValue: Int?, @ColorRes light: Int, @ColorRes dark: Int): Int =
+                paletteValue ?: color(light, dark)
 
             fun dimen(@DimenRes id: Int): Float = res.getDimensionPixelSize(id).toFloat()
 
@@ -160,51 +168,99 @@ data class KeyboardTheme(
             val base = KeyboardTheme(
                 isDark = isDark,
 
-                keyboardBackground = color(R.color.kb_light_background, R.color.kb_dark_background),
-                keyBackground = color(R.color.kb_light_key, R.color.kb_dark_key),
-                keyPressedBackground = color(R.color.kb_light_key_pressed, R.color.kb_dark_key_pressed),
-                functionKeyBackground = color(R.color.kb_light_key_functional, R.color.kb_dark_key_functional),
+                keyboardBackground = color(
+                    paletteColors?.keyboardBackground,
+                    R.color.kb_light_background,
+                    R.color.kb_dark_background,
+                ),
+                keyBackground = color(
+                    paletteColors?.keyBackground,
+                    R.color.kb_light_key,
+                    R.color.kb_dark_key,
+                ),
+                keyPressedBackground = color(
+                    paletteColors?.keyPressedBackground,
+                    R.color.kb_light_key_pressed,
+                    R.color.kb_dark_key_pressed,
+                ),
+                functionKeyBackground = color(
+                    paletteColors?.functionKeyBackground,
+                    R.color.kb_light_key_functional,
+                    R.color.kb_dark_key_functional,
+                ),
                 functionKeyPressedBackground = color(
+                    paletteColors?.functionKeyPressedBackground,
                     R.color.kb_light_key_functional_pressed,
                     R.color.kb_dark_key_functional_pressed,
                 ),
-                keyText = color(R.color.kb_light_key_text, R.color.kb_dark_key_text),
+                keyText = color(
+                    paletteColors?.keyText,
+                    R.color.kb_light_key_text,
+                    R.color.kb_dark_key_text,
+                ),
                 functionKeyText = color(
+                    paletteColors?.functionKeyText,
                     R.color.kb_light_key_text_functional,
                     R.color.kb_dark_key_text_functional,
                 ),
-                accent = color(R.color.kb_light_accent, R.color.kb_dark_accent),
-                accentText = color(R.color.kb_light_accent_text, R.color.kb_dark_accent_text),
-                divider = color(R.color.kb_light_divider, R.color.kb_dark_divider),
+                accent = color(paletteColors?.accent, R.color.kb_light_accent, R.color.kb_dark_accent),
+                accentText = color(
+                    paletteColors?.accentText,
+                    R.color.kb_light_accent_text,
+                    R.color.kb_dark_accent_text,
+                ),
+                divider = color(
+                    paletteColors?.divider,
+                    R.color.kb_light_divider,
+                    R.color.kb_dark_divider,
+                ),
 
                 panelBackground = color(
+                    paletteColors?.panelBackground,
                     R.color.kb_light_candidate_bar,
                     R.color.kb_dark_candidate_bar,
                 ),
                 toolbarBackground = color(
+                    paletteColors?.toolbarBackground,
                     R.color.kb_light_candidate_bar,
                     R.color.kb_dark_candidate_bar,
                 ),
-                candidateText = color(R.color.kb_light_candidate_text, R.color.kb_dark_candidate_text),
+                candidateText = color(
+                    paletteColors?.candidateText,
+                    R.color.kb_light_candidate_text,
+                    R.color.kb_dark_candidate_text,
+                ),
                 candidateMutedText = color(
+                    paletteColors?.candidateMutedText,
                     R.color.kb_light_candidate_text_muted,
                     R.color.kb_dark_candidate_text_muted,
                 ),
                 candidateSelectedBackground = color(
+                    paletteColors?.candidateSelectedBackground,
                     R.color.kb_light_candidate_selected_bg,
                     R.color.kb_dark_candidate_selected_bg,
                 ),
                 candidateSelectedText = color(
+                    paletteColors?.candidateSelectedText,
                     R.color.kb_light_candidate_selected_text,
                     R.color.kb_dark_candidate_selected_text,
                 ),
-                panelSurface = color(R.color.kb_light_panel_surface, R.color.kb_dark_panel_surface),
+                panelSurface = color(
+                    paletteColors?.panelSurface,
+                    R.color.kb_light_panel_surface,
+                    R.color.kb_dark_panel_surface,
+                ),
                 panelSurfacePressed = color(
+                    paletteColors?.panelSurfacePressed,
                     R.color.kb_light_panel_surface_pressed,
                     R.color.kb_dark_panel_surface_pressed,
                 ),
-                pinyinBackground = color(R.color.kb_light_pinyin_bg, R.color.kb_dark_pinyin_bg),
-                iconColor = color(R.color.kb_light_icon, R.color.kb_dark_icon),
+                pinyinBackground = color(
+                    paletteColors?.pinyinBackground,
+                    R.color.kb_light_pinyin_bg,
+                    R.color.kb_dark_pinyin_bg,
+                ),
+                iconColor = color(paletteColors?.iconColor, R.color.kb_light_icon, R.color.kb_dark_icon),
 
                 keyCornerRadius = dimen(R.dimen.kb_key_corner_radius),
                 keyGapHorizontal = dimen(R.dimen.kb_key_gap_horizontal),

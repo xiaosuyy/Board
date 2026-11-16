@@ -9,6 +9,8 @@ import com.board.ime.database.dao.DictionarySourceDao
 import com.board.ime.database.entity.DictionaryEntry
 import com.board.ime.engine.rime.RimeDataInstaller
 import com.board.ime.engine.rime.RimeRuntime
+import com.board.ime.engine.rime.RimeSchemaOptions
+import com.board.ime.settings.BoardPreferences
 import com.board.ime.sync.SyncWordMerge
 import com.board.ime.sync.SyncWordRecord
 import java.io.File
@@ -82,6 +84,32 @@ class DictionaryRepository(
      */
     private val installerUserDir: File? = context?.let { RimeDataInstaller(it).userDir() }
 
+    /** 设置页 / 输入法都可以通过它读取当前方案配置（模糊音 / 繁体 / 双拼） */
+    private val preferences: BoardPreferences? = context?.let { BoardPreferences(it) }
+
+    private val installerSharedDir: File? = context?.let { RimeDataInstaller(it).sharedDir() }
+
+    fun currentSchemaOptions(): RimeSchemaOptions = preferences?.let {
+        RimeSchemaOptions(
+            fuzzyGroups = it.rimeFuzzyGroups,
+            traditional = it.traditionalOutput,
+            shuangpin = it.shuangpin,
+        )
+    } ?: RimeSchemaOptions()
+
+    /**
+     * 按当前设置重写 Rime 方案文件（影子 schema / patch / 方案列表）。
+     *
+     * 只写文件，不部署 —— 部署由调用方决定（启动路径 / 设置变更路径）。
+     * @return false 表示缺少目录或文件写入失败
+     */
+    suspend fun syncRimeSchemaConfig(): Boolean = withContext(Dispatchers.IO) {
+        val userDir = userDir() ?: return@withContext false
+        val sharedDir = installerSharedDir ?: return@withContext false
+        val sources = sourceDao?.allByType(DictionarySourceType.IMPORTED).orEmpty()
+        RimeSchemaBuilder.applyAll(sharedDir, userDir, currentSchemaOptions(), sources)
+    }
+
     private fun userDir(): File? = installerUserDir ?: RimeRuntime.userDataDir()
 
     // ---------------------------------------------------------------- 查询
@@ -109,6 +137,21 @@ class DictionaryRepository(
         val types = WordType.entries.filter { it.syncedToRime }
         return buildNumericCodeMap(types.flatMap { dao.byType(it) })
     }
+
+    /**
+     * 含换行的自定义词 / 固定词（长句、多行地址）。
+     *
+     * Rime 的 `custom_phrase` 是逐行文本，词条里的换行放不进去，
+     * 这类词条由 Board 在候选层直接上屏。调用方在进入输入框时刷新并缓存索引。
+     */
+    suspend fun multilineCustomWords(): List<CustomWord> =
+        listOf(WordType.CUSTOM, WordType.PINNED)
+            .flatMap { dao.byType(it) }
+            .filter {
+                it.enabled && it.word.isNotBlank() && !it.code.isNullOrBlank() &&
+                    (it.word.contains('\n') || it.word.contains('\r'))
+            }
+            .map { CustomWord(word = it.word.trim('\n', '\r'), code = it.code.orEmpty()) }
 
     // ---------------------------------------------------------------- 增删改
 
@@ -444,7 +487,7 @@ class DictionaryRepository(
 
         // 1) schema 挂接（额外词源，不动原来的 luna_pinyin）
         val live = sources.allByType(DictionarySourceType.IMPORTED)
-        if (!RimeDictionaryBridge.applySchemaPatch(dir, live)) {
+        if (!RimeDictionaryBridge.applySchemaPatch(dir, live, currentSchemaOptions())) {
             Log.w(TAG, "schema patch 未就位，跳过部署：${source.name}")
             return false
         }
@@ -502,7 +545,7 @@ class DictionaryRepository(
             if (list.isEmpty()) return@withContext 0 to 0
 
             // 1) schema 挂接：把大型词典作为额外词源写进 luna_pinyin_simp.custom.yaml
-            if (!RimeDictionaryBridge.applySchemaPatch(dir, list)) {
+            if (!RimeDictionaryBridge.applySchemaPatch(dir, list, currentSchemaOptions())) {
                 Log.w(TAG, "schema patch 未就位（存在用户自己的 custom.yaml？），本次不部署")
                 return@withContext 0 to list.size
             }
@@ -868,14 +911,34 @@ class DictionaryRepository(
         val entries = types.flatMap { dao.byType(it) }
         // Rime 的 custom_phrase 是「按输入串前缀匹配」的：键是 `编码<空格><TAB>词条`，
         // 而用户实际敲的是连写的拼音（bode），所以写入时必须去掉编码里的空格。
-        val lines = entries
+        val lines = ArrayList<String>(entries.size * 2)
+        val seen = HashSet<String>()
+        var skippedMultiline = 0
+        entries
             .filter { it.enabled && it.word.isNotBlank() && !it.code.isNullOrBlank() }
-            .joinToString(separator = "\n", postfix = if (entries.isEmpty()) "" else "\n") { entry ->
-                "${entry.word}\t${entry.code.orEmpty().replace(" ", "")}"
+            .forEach { entry ->
+                // 换行词条写进去会把后面的词全部串行；这类词由 Board 侧直接上屏
+                if (entry.word.contains('\n') || entry.word.contains('\r')) {
+                    skippedMultiline++
+                    return@forEach
+                }
+                val word = entry.word.replace('\t', ' ')
+                val code = CustomWordCodes.normalize(entry.code.orEmpty())
+                if (code.isEmpty()) return@forEach
+                if (seen.add("$word\t$code")) lines += "$word\t$code"
+                // 简拼别名：bjdx 也能打出「北京大学」（Rime 本身不做简拼转换）
+                val initials = CustomWordCodes.initials(code)
+                if (initials.isNotEmpty() && seen.add("$word\t$initials")) {
+                    lines += "$word\t$initials"
+                }
             }
+        if (skippedMultiline > 0) {
+            Log.i(TAG, "换行词条不写入 custom_phrase：$skippedMultiline 条（改由 Board 候选层上屏）")
+        }
+        val content = if (lines.isEmpty()) "" else lines.joinToString("\n", postfix = "\n")
         return try {
             file.parentFile?.mkdirs()
-            file.writeText(lines)
+            file.writeText(content)
             // 让新的自定义短语在当前会话生效
             RimeRuntime.restartSession()
             // 同时通知当前活跃的输入法刷新 Board 侧的内存映射（数字自定义编码等）：

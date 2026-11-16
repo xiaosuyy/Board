@@ -97,6 +97,9 @@ const CURATED = [
   ["哇", "wa", 20000],
   ["耶", "ye", 8000],
   ["嗨", "hai", 12000],
+  // 科技常用词 / 品牌：整句输入里也参与竞争（xiangquzijieshangban → 想去字节上班）
+  ["字节", "zi jie", 200000],
+  ["GitHub", "github", 500000],
 ];
 for (const [w, code, weight] of CURATED) {
   if (seen.has(w + "\t" + code)) continue;

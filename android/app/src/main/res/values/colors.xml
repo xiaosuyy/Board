@@ -81,26 +81,29 @@
     <color name="kb_dark_icon">#FFD7DCE1</color>
 
     <!-- ==================== App（设置页）· 浅色（深色见 values-night） ====================
-         语义角色对齐 DESIGN.md：background / surface / surface-container / outline /
-         accent。卡片一律「表面色 + 1dp 发丝描边」，不用阴影。 -->
-    <color name="app_background">#FFF4F5F7</color>
-    <color name="app_surface">@color/board_white</color>
-    <color name="app_surface_variant">#FFEEF0F2</color>
-    <!-- 比卡片低一层的容器：状态条、图标底、输入框底 -->
-    <color name="app_surface_container">#FFF1F3F5</color>
-    <color name="app_surface_container_high">#FFE9ECEF</color>
-    <color name="app_on_surface">#FF14171A</color>
-    <color name="app_on_surface_variant">#FF6A7076</color>
-    <color name="app_outline">#FFE1E4E8</color>
-    <color name="app_outline_variant">#FFEDEFF2</color>
-    <color name="app_accent">@color/board_blue</color>
-    <color name="app_on_accent">@color/board_white</color>
-    <color name="app_accent_container">@color/board_blue_soft</color>
-    <color name="app_on_accent_container">#FF1B3A8F</color>
-    <color name="app_secondary_container">@color/board_grey_200</color>
-    <color name="app_on_secondary_container">@color/board_grey_700</color>
-    <color name="app_error">#FFB3261E</color>
-    <color name="app_on_error">@color/board_white</color>
+         视觉语言参考 Lyra：大标题 + 20dp 边距 + 28dp 无描边卡片 +
+         卡片外的 12sp 分组标签 + 蓝色图标与箭头。键盘调色板不受这里影响。 -->
+    <color name="app_background">#FFF7F7FA</color>
+    <color name="app_surface">#FFFDFDFE</color>
+    <color name="app_surface_variant">#FFEFEFF3</color>
+    <!-- 比卡片低一层的容器：输入框底、分段控件底 -->
+    <color name="app_surface_container">#FFF1F1F5</color>
+    <color name="app_surface_container_high">#FFE8E8EE</color>
+    <color name="app_on_surface">#FF17171A</color>
+    <color name="app_on_surface_variant">#FF5D5D66</color>
+    <color name="app_outline">#FF8E8E93</color>
+    <color name="app_outline_variant">#FFD5D5DA</color>
+    <color name="app_accent">#FF007AFF</color>
+    <color name="app_on_accent">#FFFFFFFF</color>
+    <color name="app_accent_container">#FFE5F0FF</color>
+    <color name="app_on_accent_container">#FF004A99</color>
+    <color name="app_secondary_container">#FFE8E8EE</color>
+    <color name="app_on_secondary_container">#FF3C3C43</color>
+    <!-- 开关打开态 / 状态点（与强调色区分：蓝=可点，绿=正常） -->
+    <color name="app_green">#FF34C759</color>
+    <color name="app_on_green">#FFFFFFFF</color>
+    <color name="app_error">#FFFF3B30</color>
+    <color name="app_on_error">#FFFFFFFF</color>
 
     <!-- 图标 -->
     <color name="ic_launcher_background">#FF101214</color>

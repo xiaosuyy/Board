@@ -36,6 +36,8 @@ import com.board.ime.database.BoardDatabase
 import com.board.ime.databinding.BoardKeyboardBinding
 import com.board.ime.dictionary.DictionaryChangeNotifier
 import com.board.ime.dictionary.DictionaryRepository
+import com.board.ime.dictionary.LearnedWordDecay
+import com.board.ime.emoji.EmojiRepository
 import com.board.ime.engine.BasicEngine
 import com.board.ime.engine.ChineseEnglishLexiconLoader
 import com.board.ime.engine.EnglishLexiconLoader
@@ -44,6 +46,7 @@ import com.board.ime.engine.InputMode
 import com.board.ime.engine.RimeEngine
 import com.board.ime.engine.withEnglishGloss
 import com.board.ime.engine.rime.RimeRuntime
+import com.board.ime.engine.rime.RimeSchemaOptions
 import com.board.ime.keyboard.KeySpec
 import com.board.ime.keyboard.KeyType
 import com.board.ime.keyboard.KeyboardLayoutCalculator
@@ -72,6 +75,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
@@ -208,7 +212,12 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val card = com.board.ime.ui.panel.VoicePrivacyCard(this)
         val cloud = voiceEngine.isConfigured()
         card.bind(
-            KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize),
+            KeyboardTheme.from(
+                this,
+                preferences.themeMode,
+                preferences.candidateTextSize,
+                palette = settingsRepository.palette,
+            ),
             resolveVoiceServiceLabel(),
             consent,
             title = if (cloud) {
@@ -249,7 +258,12 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val root = window?.window?.decorView as? android.view.ViewGroup ?: return
         val card = com.board.ime.ui.panel.VoicePrivacyCard(this)
         card.bindInfo(
-            KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize),
+            KeyboardTheme.from(
+                this,
+                preferences.themeMode,
+                preferences.candidateTextSize,
+                palette = settingsRepository.palette,
+            ),
             title,
             body,
             serviceLabel,
@@ -347,6 +361,14 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         Log.i(TAG, "phrase inserted chars=${entry.text.length}")
     }
 
+    /** 表情面板点选 / 搜索回车：先丢弃组词，再上屏表情并记入「最近使用」 */
+    private fun insertEmoji(emoji: String) {
+        if (emoji.isEmpty()) return
+        controller.discardComposition()
+        controller.commitText(emoji)
+        emojiRepository?.recordRecent(emoji)
+    }
+
     private fun editPhrase(entry: com.board.ime.database.entity.PhraseEntry) {
         runCatching {
             startActivity(
@@ -401,15 +423,49 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         com.board.ime.translation.TranslationCredentialStore(this)
     }
 
-    private val translationProvider: com.board.ime.translation.TranslationProvider by lazy {
-        com.board.ime.translation.BaiduTranslationProvider(
-            credentialsProvider = { translationCredentials.load() },
-        )
+    private var cachedProvider: com.board.ime.translation.TranslationProvider? = null
+    private var cachedProviderKey: com.board.ime.translation.TranslationSettings? = null
+
+    /** 按当前配置构造服务商；配置变化时自动换新（同配置复用，避免每次停顿都新建 HTTP 客户端） */
+    private fun translationProvider(): com.board.ime.translation.TranslationProvider {
+        val settings = translationCredentials.load()
+        cachedProvider?.let { if (cachedProviderKey == settings) return it }
+        val provider: com.board.ime.translation.TranslationProvider =
+            when (settings.kind) {
+                com.board.ime.translation.TranslationProviderKind.BAIDU ->
+                    com.board.ime.translation.BaiduTranslationProvider(
+                        settingsProvider = { translationCredentials.load() },
+                    )
+
+                com.board.ime.translation.TranslationProviderKind.OPENAI ->
+                    com.board.ime.translation.OpenAiCompatibleProvider(
+                        settingsProvider = { translationCredentials.load() },
+                    )
+            }
+        cachedProvider = provider
+        cachedProviderKey = settings
+        return provider
     }
+
+    // ---- 译模式：照常打中文，停顿后自动翻译；回车 / 点译文替换原文 ----
+
+    private var translateMode = false
+    private var liveTranslateJob: Job? = null
+    private var lastLiveSource: String? = null
+    private var liveHintShownFor: String? = null
+
+    /** 刚上屏的译文：下一次输入变化若是它，就跳过翻译（避免回车后连环调接口） */
+    private var skipLiveSource: String? = null
+
+    /** 本次译文覆盖的原文：已上屏部分是替换时要删掉的字符数 */
+    private data class LiveSource(val text: String, val committedChars: Int)
+
+    /** 注入译文候选时不触发「重新排一次翻译」，否则会自己调度自己 */
+    private var injectingLiveTranslation = false
 
     private val translationHost = object : com.board.ime.translation.TranslationSession.Host {
         override fun showTranslationPanel() {
-            panelController?.setTranslationServiceName(translationProvider.displayName)
+            panelController?.setTranslationServiceName(translationProvider().displayName)
             panelController?.showTranslation()
         }
 
@@ -450,7 +506,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private fun translationSession(): com.board.ime.translation.TranslationSession =
         translation ?: com.board.ime.translation.TranslationSession(
             host = translationHost,
-            provider = { translationProvider },
+            provider = { translationProvider() },
             scope = translationScope,
             loadSourceLanguage = {
                 com.board.ime.translation.TranslationLanguage.fromCode(
@@ -479,7 +535,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 append("Board 不在本地保存原文或译文，也不建立翻译历史与缓存。")
                 append("服务商的数据处理与留存以其服务协议和隐私政策为准。")
             },
-            serviceLabel = translationProvider.displayName,
+            serviceLabel = translationProvider().displayName,
         )
     }
 
@@ -527,6 +583,160 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         if (before > 0 || after > 0) connection.deleteSurroundingText(before, after)
         connection.commitText(text, 1)
     }
+
+    // ---------------------------------------------------------------- 译模式
+
+    /**
+     * 长按 Shift：开 / 关译模式。
+     *
+     * 与面板互译的区别：译模式**不挡键盘**，照常打中文；
+     * 停顿约 0.45 秒后把当前行自动翻译，译文作为候选显示，回车 / 点它替换原文。
+     */
+    private fun toggleTranslateMode() {
+        translateMode = !translateMode
+        lastLiveSource = null
+        liveHintShownFor = null
+        liveTranslateJob?.cancel()
+        injectLiveTranslation(null)
+        if (!translateMode) {
+            Toast.makeText(this, "译模式已关闭", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val ready = translationProvider().isConfigured()
+        Toast.makeText(
+            this,
+            if (ready) {
+                "译模式：停顿后自动翻译，回车换用译文（长按 Shift 关闭）"
+            } else {
+                "译模式：请先在设置里配置翻译服务（长按 Shift 关闭）"
+            },
+            Toast.LENGTH_LONG,
+        ).show()
+        scheduleLiveTranslation()
+    }
+
+    /** 组词 / 已上屏内容变化后调用：计算原文，停顿一下再自动翻译 */
+    private fun scheduleLiveTranslation() {
+        if (!translateMode) return
+        val snapshot = liveTranslationSource()
+        if (snapshot == null) {
+            liveTranslateJob?.cancel()
+            lastLiveSource = null
+            injectLiveTranslation(null)
+            return
+        }
+        if (snapshot.text == lastLiveSource) return
+        if (snapshot.text == skipLiveSource) {
+            skipLiveSource = null
+            liveTranslateJob?.cancel()
+            lastLiveSource = snapshot.text
+            injectLiveTranslation(null)
+            return
+        }
+        // 原文已经变了：旧译文立即作废，避免回车把过期译文上屏
+        injectLiveTranslation(null)
+        liveTranslateJob?.cancel()
+        val provider = translationProvider()
+        if (!provider.isConfigured()) return
+        val source = com.board.ime.translation.TranslationLanguage.fromCode(
+            preferences.translationSourceLanguage,
+        ) ?: com.board.ime.translation.TranslationLanguage.AUTO
+        val target = com.board.ime.translation.TranslationLanguage.fromCode(
+            preferences.translationTargetLanguage,
+        ) ?: com.board.ime.translation.TranslationLanguage.ENGLISH
+        liveTranslateJob = translationScope.launch {
+            delay(LIVE_TRANSLATE_DELAY_MS)
+            val outcome = provider.translate(
+                com.board.ime.translation.TranslationRequest(snapshot.text, source, target),
+            )
+            when (outcome) {
+                is com.board.ime.translation.TranslationOutcome.Success -> {
+                    // 等待期间原文又变了：这个结果已经过期，不显示
+                    if (liveTranslationSource()?.text != snapshot.text) return@launch
+                    lastLiveSource = snapshot.text
+                    injectLiveTranslation(
+                        InputController.LiveTranslation(
+                            source = snapshot.text,
+                            display = liveDisplay(outcome.result.translatedText),
+                            commit = outcome.result.translatedText,
+                            committedChars = snapshot.committedChars,
+                        ),
+                    )
+                }
+
+                is com.board.ime.translation.TranslationOutcome.Failure -> {
+                    if (outcome.failure is com.board.ime.translation.TranslationFailure.Cancelled) {
+                        return@launch
+                    }
+                    Log.w(
+                        TAG,
+                        "live translate failed reason=${outcome.failure.javaClass.simpleName}",
+                    )
+                    if (liveHintShownFor != snapshot.text) {
+                        liveHintShownFor = snapshot.text
+                        showHint("翻译失败：${outcome.failure.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 译模式要翻译的原文：**当前行**已上屏文字 +（有组词时的）首选中文。
+     *
+     * 只读光标前有限字符并截到最近一个换行，避免每次停顿都去翻译整篇文档。
+     */
+    private fun liveTranslationSource(): LiveSource? {
+        val connection = currentInputConnection ?: return null
+        val before = runCatching { connection.getTextBeforeCursor(LIVE_TRANSLATE_READ_CHARS, 0) }
+            .getOrNull()?.toString().orEmpty()
+        var head = before
+        val composing = controller.composing
+        if (composing.isNotEmpty() && head.endsWith(composing)) {
+            head = head.dropLast(composing.length)
+        }
+        val committedLine = head.substring(head.lastIndexOf('\n') + 1)
+        val composingText = if (controller.hasComposition) {
+            controller.candidates.firstOrNull()?.text.orEmpty()
+        } else {
+            ""
+        }
+        val text = (committedLine + composingText).trim()
+        if (text.isEmpty()) return null
+        return LiveSource(text = text, committedChars = committedLine.length)
+    }
+
+    /** 回车 / 点译文：原文没变才允许上屏，防止把过期译文替换掉刚改的内容 */
+    private fun commitLiveTranslationIfFresh(): Boolean {
+        val translation = controller.liveTranslation ?: return false
+        if (liveTranslationSource()?.text != translation.source) {
+            injectLiveTranslation(null)
+            scheduleLiveTranslation()
+            return false
+        }
+        // 刚上屏的译文就是当前原文：通知状态变化时跳过这一轮，不必再翻一遍
+        skipLiveSource = translation.commit.substringAfterLast('\n').trim()
+        val committed = controller.commitLiveTranslation()
+        return committed
+    }
+
+    private fun injectLiveTranslation(value: InputController.LiveTranslation?) {
+        if (controller.liveTranslation == value) return
+        injectingLiveTranslation = true
+        controller.setLiveTranslation(value)
+        injectingLiveTranslation = false
+    }
+
+    /** 候选栏里只显示一行、限长，完整译文由「替换 / 回车」上屏 */
+    private fun liveDisplay(translated: String): String {
+        val flat = translated.replace('\n', ' ').trim()
+        val shown = if (flat.length > LIVE_DISPLAY_MAX_CHARS) {
+            flat.take(LIVE_DISPLAY_MAX_CHARS) + "…"
+        } else {
+            flat
+        }
+        return "译 $shown"
+    }
     private var rimeEngine: RimeEngine? = null
     private var controller = InputController(engine).apply {
         onHint = { message -> showHint(message) }
@@ -542,7 +752,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
      * 固定成字段是为了 [DictionaryChangeNotifier.unregister] 能拿到同一实例；
      * 服务在 `onCreate` 注册、`onDestroy` 注销，随服务生命周期存在，不持有 Activity，不泄漏。
      */
-    private val dictionaryChangeListener: () -> Unit = { refreshNumericCustomPhrases() }
+    private val dictionaryChangeListener: () -> Unit = {
+        refreshNumericCustomPhrases()
+        refreshMultilineCustomWords()
+    }
 
     private var binding: BoardKeyboardBinding? = null
     private var panelController: TopPanelController? = null
@@ -551,6 +764,17 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var rimePrepareStarted = false
+
+    /** 换行自定义词的匹配表：Rime 的 custom_phrase 放不下，由 Board 候选层直接上屏 */
+    @Volatile
+    private var multilineCustomWords: com.board.ime.dictionary.CustomWordIndex? = null
+
+    /** 学习词的最后使用时间与 30 天淡出（纯本地，见 LearnedWordDecay） */
+    private val learnedDecay by lazy { LearnedWordDecay(this) }
+
+    /** 最近一次应用到 Rime 的方案配置（模糊音 / 繁体 / 双拼），用于识别设置变更 */
+    @Volatile
+    private var appliedRimeOptions: RimeSchemaOptions? = null
     private var metrics: KeyboardLayoutMetrics? = null
 
     /** 本次 onFinishInputView 是否由「收起键盘」触发（触发时保留组词状态） */
@@ -560,6 +784,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     private var clipboardManager: ClipboardManager? = null
     private var clipboardObserver: Job? = null
     private var syncEngine: SyncEngine? = null
+
+    /** 表情 / 符号检索（纯本地 assets，后台预热） */
+    private var emojiRepository: EmojiRepository? = null
 
     /** 网络恢复回调：Push 失败后自动补一次剪贴板同步（不必用户进设置页） */
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
@@ -615,6 +842,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // 英文词频表（纯本地 assets 小文件，同步读一次；loadOnce 幂等，
         // 失败时保留内置兜底词表，不影响输入、不联网）。
         EnglishLexiconLoader.loadOnce(this)
+        emojiRepository = EmojiRepository(this, preferences)
+        // 表情数据只在第一次真正用到时解析；先在后台预热，点开面板不卡
+        serviceScope.launch { runCatching { emojiRepository?.preload() } }
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
         buildController(preferences.engineKind, preferences.mode)
 
@@ -655,6 +885,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             toolbar = binding.toolbarView,
             candidateBar = binding.candidateBar,
             morePanel = binding.morePanel,
+            toolboxView = binding.toolboxView,
             clipboardHeader = binding.clipboardHeader,
             clipboardPanel = binding.clipboardPanel,
             voiceHeader = binding.voiceHeader,
@@ -662,11 +893,14 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             translationPanel = binding.translationPanel,
             phrasesHeader = binding.phrasesHeader,
             phrasesPanel = binding.phrasesPanel,
+            emojiHeader = binding.emojiHeader,
+            emojiPanel = binding.emojiPanel,
             candidateGridPanel = binding.candidateGridPanel,
         )
         panel.onCandidateSelected = { index -> controller.pickCandidate(index) }
         panel.onComposingClicked = { controller.commitCompositionAsIs() }
         panel.onMoreAction = { action -> onMoreAction(action) }
+        panel.onToolboxSymbols = { controller.showSymbols() }
         panel.onClipboardInsert = { item -> insertClipboardItem(item) }
         panel.onClipboardTogglePin = { item -> setClipboardPinned(item, !item.isPinned) }
         panel.onClipboardToggleFavorite = { item -> setClipboardFavorite(item, !item.isFavorite) }
@@ -717,6 +951,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onPhrasesEdit = { entry -> editPhrase(entry) }
         panel.onPhrasesDelete = { entry -> deletePhrase(entry) }
         panel.onPhrasesReorder = { order -> reorderPhrases(order) }
+        panel.onEmojiInsert = { emoji -> insertEmoji(emoji) }
+        panel.onEmojiSearch = { query -> emojiRepository?.search(query).orEmpty() }
+        panel.onEmojiAll = { emojiRepository?.all().orEmpty() }
+        panel.onEmojiRecent = { emojiRepository?.recent().orEmpty() }
         panel.onToolLayoutChanged = { layout ->
             // 复用现有 SharedPreferences（不新增数据库 / 表）
             preferences.toolbarTools = layout.encodeToolbar()
@@ -751,6 +989,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         stopClipboardObservation()
         refreshBlockedWords()
         refreshNumericCustomPhrases()
+        refreshMultilineCustomWords()
+        sweepLearnedDecay()
         applyTheme()
     }
 
@@ -833,6 +1073,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             return
         }
         playKeyFeedback()
+        // 译模式：回车换用译文（没有新鲜译文时仍按普通回车处理）
+        if (key.type == KeyType.ENTER && translateMode && commitLiveTranslationIfFresh()) {
+            return
+        }
         controller.onKey(key)
         if (key.type == KeyType.LANGUAGE) {
             persistLetterMode()
@@ -843,9 +1087,12 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         if (key.type == KeyType.LANGUAGE) {
             getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
         } else if (key.type == KeyType.PUNCTUATION) {
-            controller.onPunctuationLongPress()
+            controller.onPunctuationPeriod()
         } else if (key.type == KeyType.ENTER) {
             controller.onEnterNewline()
+        } else if (key.type == KeyType.SHIFT) {
+            // 长按 Shift：开 / 关「译」模式
+            toggleTranslateMode()
         }
     }
 
@@ -862,6 +1109,13 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     override fun onKeySwipeDown(key: KeySpec) {
         playKeyFeedback()
         controller.onLetterSwipeDown(key.text.orEmpty())
+    }
+
+    /** 逗号键按住上滑：句号（中文「。」/ 英文「.」） */
+    override fun onKeySwipeUp(key: KeySpec) {
+        if (key.type != KeyType.PUNCTUATION) return
+        playKeyFeedback()
+        controller.onPunctuationPeriod()
     }
 
     /**
@@ -885,6 +1139,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             MorePanel.Action.TRANSLATE -> openTranslation()
             MorePanel.Action.VOICE -> onVoiceTool()
             MorePanel.Action.PHRASES -> openPhrases()
+            MorePanel.Action.EMOJI -> panelController?.showEmoji()
             // CLOSE / CLIPBOARD 由 TopPanelController 内部处理
             MorePanel.Action.CLOSE, MorePanel.Action.CLIPBOARD -> Unit
         }
@@ -1312,7 +1567,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
      * TopPanel 下面的区域怎么摆。TopPanel 自己永远是 56dp，不参与这里的变化：
      * - 只有键盘：工具栏 / 候选 / 更多
      * - 只有内容区：普通剪贴板（内容区高度 = 键盘高度，所以总高度不变）
-     * - 内容区 + 键盘：剪贴板搜索（内容区有高度上限，键盘照常在下面，可以打字）
+     * - 内容区 + 键盘：剪贴板 / 表情搜索（内容区有高度上限，键盘照常在下面，可以打字）
      */
     private fun applyPanelLayout(mode: PanelLayoutMode) {
         val binding = binding ?: return
@@ -1323,6 +1578,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             preferences.candidateTextSize,
             settingsRepository.geometry(currentKeyboardScope()),
             settingsRepository.appearance(),
+            settingsRepository.palette,
         )
 
         // 分隔线始终保留：面板与下方内容（键盘 / 剪贴板）的分界在四种状态下一致
@@ -1334,6 +1590,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.clipboardPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.emojiPanel.visibility = View.GONE
                 binding.candidateGridPanel.visibility = View.GONE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
                     height = keyboardHeight
@@ -1344,6 +1601,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.emojiPanel.visibility = View.GONE
                 binding.candidateGridPanel.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.VISIBLE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
@@ -1355,6 +1613,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.VISIBLE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.emojiPanel.visibility = View.GONE
                 binding.candidateGridPanel.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.VISIBLE
                 binding.clipboardPanel.layoutParams = binding.clipboardPanel.layoutParams.apply {
@@ -1367,6 +1626,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.emojiPanel.visibility = View.GONE
                 binding.candidateGridPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.VISIBLE
                 binding.translationPanel.layoutParams = binding.translationPanel.layoutParams.apply {
@@ -1378,10 +1638,37 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.keyboardView.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
+                binding.emojiPanel.visibility = View.GONE
                 binding.candidateGridPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.VISIBLE
                 binding.phrasesPanel.layoutParams = binding.phrasesPanel.layoutParams.apply {
                     height = keyboardHeight
+                }
+            }
+
+            PanelLayoutMode.EMOJI_ONLY -> {
+                // 表情面板占键盘位置：与剪贴板 / 常用语一样，总高度不变
+                binding.keyboardView.visibility = View.GONE
+                binding.clipboardPanel.visibility = View.GONE
+                binding.translationPanel.visibility = View.GONE
+                binding.phrasesPanel.visibility = View.GONE
+                binding.candidateGridPanel.visibility = View.GONE
+                binding.emojiPanel.visibility = View.VISIBLE
+                binding.emojiPanel.layoutParams = binding.emojiPanel.layoutParams.apply {
+                    height = keyboardHeight
+                }
+            }
+
+            PanelLayoutMode.EMOJI_WITH_KEYBOARD -> {
+                // 表情搜索：结果区在上（有高度上限），键盘留在下面可以打拼音 / 英文
+                binding.keyboardView.visibility = View.VISIBLE
+                binding.clipboardPanel.visibility = View.GONE
+                binding.translationPanel.visibility = View.GONE
+                binding.phrasesPanel.visibility = View.GONE
+                binding.candidateGridPanel.visibility = View.GONE
+                binding.emojiPanel.visibility = View.VISIBLE
+                binding.emojiPanel.layoutParams = binding.emojiPanel.layoutParams.apply {
+                    height = theme.clipboardSearchMaxHeight
                 }
             }
 
@@ -1391,6 +1678,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 binding.clipboardPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
+                binding.emojiPanel.visibility = View.GONE
                 binding.candidateGridPanel.visibility = View.VISIBLE
                 binding.candidateGridPanel.layoutParams = binding.candidateGridPanel.layoutParams.apply {
                     height = keyboardHeight
@@ -1412,6 +1700,29 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 panel.collapseCandidates()
                 return true
             }
+            // 表情面板：搜索中先退出搜索，再关闭面板
+            if (panel != null && panel.currentState == TopPanelState.EMOJI) {
+                panel.handleEmojiBack()
+                return true
+            }
+            // v + 空格 快捷面板：返回键只收起面板
+            if (panel != null && panel.currentState == TopPanelState.TOOLBOX) {
+                panel.closeToolbox()
+                return true
+            }
+        }
+        // 回车 = 上屏译文：翻译面板打开时替换输入框；译模式下替换当前行
+        if (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER) {
+            val panel = panelController
+            if (panel != null && panel.currentState == TopPanelState.TRANSLATION) {
+                val session = translationSession()
+                if (session.hasResult()) {
+                    session.replaceInput()
+                    return true
+                }
+            } else if (translateMode && commitLiveTranslationIfFresh()) {
+                return true
+            }
         }
         return super.onKeyDown(keyCode, event)
     }
@@ -1427,9 +1738,50 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         controller.onStateChanged = null
         engine = newEngine
         controller = InputController(newEngine, letterMode).also {
-            it.onStateChanged = { refreshInputView() }
+            it.onStateChanged = {
+                refreshInputView()
+                // 注入译文本身也会触发状态变化：不在注入过程中再排一次翻译
+                if (!injectingLiveTranslation) scheduleLiveTranslation()
+            }
             it.onHint = { message -> showHint(message) }
             it.clipboardText = { readClipboardText() }
+            it.emojiSuggest = { text ->
+                emojiRepository?.recommend(text, 1)?.firstOrNull()?.let { suggestion ->
+                    InputController.EmojiCandidate(
+                        emoji = suggestion.emoji,
+                        display = suggestion.display,
+                        commit = suggestion.commit,
+                    )
+                }
+            }
+            it.onEmojiCommitted = { emoji -> emojiRepository?.recordRecent(emoji) }
+            // 只打一个 v 再按空格：打开快捷面板
+            it.onVSpaceToolbox = { panelController?.showToolbox() }
+            // 中英文自动空格（默认关闭，字母 / 数字分别开关）
+            it.autoSpace = {
+                AutoSpaceConfig(
+                    letters = preferences.autoSpaceLetters,
+                    digits = preferences.autoSpaceDigits,
+                )
+            }
+            // 日期 / 时间 / 星期 + v 表达式（计算器 / 大写金额），纯本地计算
+            it.smartSuggest = { raw ->
+                (SmartInput.suggestions(raw) + SmartInput.expression(raw)).map { suggestion ->
+                    InputController.SmartCandidate(suggestion.display, suggestion.commit)
+                }
+            }
+            // 含换行的自定义词（长句 / 多行地址）：Rime 词表放不下，这里直接给候选
+            it.customSuggest = { raw ->
+                multilineCustomWords?.match(raw).orEmpty().map { word ->
+                    InputController.SmartCandidate(
+                        display = customWordDisplay(word.word),
+                        commit = word.word,
+                    )
+                }
+            }
+            // 学习词淡出：30 天没选的候选靠后；每次上屏记一次使用时间
+            it.staleWord = { word -> learnedDecay.isDemoted(word) }
+            it.onWordCommitted = { text -> if (isLearnedWordText(text)) learnedDecay.record(text) }
         }
         appliedEngineKind = kind
     }
@@ -1451,8 +1803,11 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 this@BoardInputMethodService,
                 BuildConfig.VERSION_NAME,
             )
+            // 先按设置生成方案文件（影子 schema / 模糊音 / 双拼 / 繁体），再部署
+            runCatching { dictionaryRepository.syncRimeSchemaConfig() }
+            appliedRimeOptions = dictionaryRepository.currentSchemaOptions()
             val deployed = installed && RimeRuntime.deploy(fullCheck = RimeRuntime.dataWasReinstalled)
-            val opened = deployed && RimeRuntime.openSession()
+            val opened = deployed && RimeRuntime.openSession(preferences.shuangpin.schemaId)
             mainHandler.post {
                 if (opened) {
                     Log.i(
@@ -1479,6 +1834,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val binding = binding ?: return
         binding.keyboardView.keyboardLayout = controller.currentLayout
         binding.keyboardView.keyboardMode = controller.mode
+        binding.keyboardView.languageIsChinese = controller.letterMode == InputMode.CHINESE
         binding.keyboardView.setShiftState(active = controller.shiftActive, locked = controller.capsLock)
 
         // P3 Stage 1：候选进入 UI 前按开关附加本地英文释义。
@@ -1523,6 +1879,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 preferences.candidateTextSize,
                 geometry,
                 appearance,
+                settingsRepository.palette,
             )
         }.getOrElse { throwable ->
             Log.e(TAG, "外观/尺寸参数有问题，已回退到默认外观：${throwable.message}", throwable)
@@ -1569,8 +1926,23 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             density = display.density,
             rowCount = binding.keyboardView.keyboardLayout.rowCount,
         )
-        metrics = resolved
-        binding.keyboardView.applyMetrics(resolved)
+        // 外观页的「按键圆角」是全局覆盖；没设置时沿用键盘页按作用域算出的值
+        val appearanceRadii = settingsRepository.appearance().radii
+        val keyRadiusOverride = appearanceRadii[
+            com.board.ime.settings.AppearanceRadius.KEY
+        ]?.let { raw ->
+            raw.coerceIn(
+                com.board.ime.settings.AppearanceRadius.KEY.minDp,
+                com.board.ime.settings.AppearanceRadius.KEY.maxDp,
+            ) * display.density
+        }
+        val themedMetrics = if (keyRadiusOverride != null) {
+            resolved.copy(cornerRadiusPx = keyRadiusOverride)
+        } else {
+            resolved
+        }
+        metrics = themedMetrics
+        binding.keyboardView.applyMetrics(themedMetrics)
 
         val floatParams = binding.keyboardFloat.layoutParams as FrameLayout.LayoutParams
         if (resolved.floating) {
@@ -1580,7 +1952,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 if (resolved.alignEnd) Gravity.END else Gravity.CENTER_HORIZONTAL
             val margin = resolved.edgeMarginPx
             floatParams.setMargins(margin, margin, margin, margin)
-            binding.keyboardFloat.background = floatingCard(theme, resolved.cornerRadiusPx)
+            binding.keyboardFloat.background = floatingCard(theme, theme.radiusLarge)
             binding.keyboardRoot.setBackgroundColor(Color.TRANSPARENT)
             window?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         } else {
@@ -1588,18 +1960,57 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             floatParams.height = FrameLayout.LayoutParams.WRAP_CONTENT
             floatParams.gravity = Gravity.NO_GRAVITY
             floatParams.setMargins(0, 0, 0, 0)
-            binding.keyboardFloat.background = null
-            binding.keyboardRoot.setBackgroundColor(theme.keyboardBackground)
+            // 铺满屏底：只圆上面两个角（「键盘圆角」），下面贴边保持直角
+            applyDockedCard(binding.keyboardFloat, theme)
+            binding.keyboardRoot.setBackgroundColor(Color.TRANSPARENT)
         }
         binding.keyboardFloat.layoutParams = floatParams
         // 重新算尺寸后，按当前面板状态重排「键盘 / 剪贴板内容区」
         panelController?.let { applyPanelLayout(currentPanelLayoutMode(it)) }
     }
 
+    /**
+     * 停靠键盘的圆角外框。
+     *
+     * 子 View（工具栏 / 候选栏 / 键盘）都是不透明矩形，必须用裁剪
+     * 才能让外圈圆角露出来；[GradientDrawable] 的 outline 只支持四角相同，
+     * 所以这里用凸路径 outline 只圆上面两角。
+     */
+    private fun applyDockedCard(view: View, theme: KeyboardTheme) {
+        val radius = theme.radiusLarge
+        view.background = GradientDrawable().apply {
+            setColor(theme.keyboardBackground)
+            cornerRadii = floatArrayOf(
+                radius, radius, radius, radius,
+                0f, 0f, 0f, 0f,
+            )
+        }
+        view.clipToOutline = true
+        view.outlineProvider = object : android.view.ViewOutlineProvider() {
+            private val path = android.graphics.Path()
+            override fun getOutline(v: View, outline: android.graphics.Outline) {
+                val r = radius.coerceAtMost(minOf(v.width, v.height) / 2f)
+                path.reset()
+                path.addRoundRect(
+                    0f,
+                    0f,
+                    v.width.toFloat(),
+                    v.height.toFloat(),
+                    floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f),
+                    android.graphics.Path.Direction.CW,
+                )
+                outline.setConvexPath(path)
+            }
+        }
+        view.invalidateOutline()
+    }
+
     /** 当前面板状态对应的「键盘 / 内容区」布局（[applyPanelLayout] 与尺寸重算共用同一处判断） */
     private fun currentPanelLayoutMode(panel: TopPanelController): PanelLayoutMode = when {
         panel.currentState == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
         panel.currentState == TopPanelState.PHRASES -> PanelLayoutMode.PHRASES_ONLY
+        panel.currentState == TopPanelState.EMOJI ->
+            if (panel.isEmojiSearching) PanelLayoutMode.EMOJI_WITH_KEYBOARD else PanelLayoutMode.EMOJI_ONLY
         panel.currentState == TopPanelState.CANDIDATES_EXPANDED -> PanelLayoutMode.CANDIDATES_ONLY
         panel.currentState != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
         panel.isSearching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
@@ -1615,6 +2026,31 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         ensureEngineKind()
         controller.setLetterMode(preferences.mode)
         applyTheme()
+        syncRimeOptionsIfChanged()
+    }
+
+    /**
+     * 模糊音 / 繁体 / 双拼变更：重写方案文件 → 重新部署 → 切换方案。
+     *
+     * 只在 Rime 已经启动过、且配置真的变化时才做；部署在后台线程，不阻塞按键。
+     */
+    private fun syncRimeOptionsIfChanged() {
+        if (!rimePrepareStarted) return
+        val desired = dictionaryRepository.currentSchemaOptions()
+        if (desired == appliedRimeOptions) return
+        appliedRimeOptions = desired
+        serviceScope.launch {
+            Log.i(
+                TAG,
+                "Rime 设置变化：双拼=${desired.shuangpin.label} 繁体=${desired.traditional} " +
+                    "分组=${desired.fuzzyGroups.size}",
+            )
+            runCatching { dictionaryRepository.syncRimeSchemaConfig() }
+            if (!RimeRuntime.isReady) return@launch
+            val switched = RimeRuntime.applySchemaChange(desired.schemaId)
+            Log.i(TAG, "Rime 方案切换 ${desired.schemaId} = $switched")
+            mainHandler.post { refreshInputView() }
+        }
     }
 
     private fun playKeyFeedback() {
@@ -1683,6 +2119,87 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }
     }
 
+    /** 换行自定义词：进入输入框 / 词库变化时重建匹配表（不查库、不联网） */
+    private fun refreshMultilineCustomWords() {
+        serviceScope.launch {
+            val words = runCatching { dictionaryRepository.multilineCustomWords() }
+                .getOrDefault(emptyList())
+            val index = com.board.ime.dictionary.CustomWordIndex(words)
+            mainHandler.post { multilineCustomWords = index }
+        }
+    }
+
+    /** 候选栏只放一行：换行词条显示首行，完整内容由上屏提交 */
+    private fun customWordDisplay(word: String): String {
+        val first = word.lineSequence().first().trim()
+        return if (first.length > CUSTOM_WORD_DISPLAY_MAX) {
+            first.take(CUSTOM_WORD_DISPLAY_MAX) + "…"
+        } else {
+            first
+        }
+    }
+
+    /** 学习词只记汉字词；整句、标点、英文不进入使用时间表 */
+    private fun isLearnedWordText(text: String): Boolean =
+        text.length in 1..LEARNED_WORD_MAX_LENGTH && text.all { it in '\u4e00'..'\u9fff' }
+
+    /**
+     * 学习词淡出：每天最多扫一次。
+     *
+     * 30 天没用的词已经在候选栏里排到后面（[InputController.staleWord]）；
+     * 60 天没用的词在这里从 librime 用户词典删除（负数 = 墓碑），学习加成随之消失。
+     * 词库本身的词还在，重新选一次会重新学习。Rime 没就绪时这次不扫，下次输入框再试。
+     */
+    private fun sweepLearnedDecay() {
+        if (!rimePrepareStarted || preferences.engineKind != EngineKind.RIME) return
+        serviceScope.launch {
+            val now = System.currentTimeMillis()
+            if (!learnedDecay.isSweepDue(now)) return@launch
+            val expired = learnedDecay.expiredWords(now)
+            if (expired.isEmpty()) {
+                learnedDecay.markSwept(now)
+                return@launch
+            }
+            val dir = com.board.ime.engine.rime.RimeRuntime.userDataDir() ?: return@launch
+            val export = java.io.File(dir, DECAY_EXPORT_FILE)
+            val exported = runCatching {
+                com.board.ime.engine.rime.RimeRuntime.exportUserDict(export)
+            }.getOrDefault(-1)
+            if (exported < 0) {
+                export.delete()
+                return@launch
+            }
+            val text = runCatching { export.readText() }.getOrDefault("")
+            export.delete()
+            val lines = text.lineSequence()
+                .map { it.split('\t') }
+                .filter { it.size >= 2 && it[0].trim().isNotEmpty() }
+                .toList()
+            val removable = lines.filter { it[0].trim() in expired }
+            if (removable.isEmpty()) {
+                // 用户词典里已经没有这些词：只丢掉过期的使用时间
+                learnedDecay.forget(expired)
+                learnedDecay.markSwept(now)
+                return@launch
+            }
+            val tombstone = java.io.File(dir, DECAY_TOMBSTONE_FILE)
+            tombstone.writeText(
+                removable.joinToString(separator = "\n", postfix = "\n") { columns ->
+                    "${columns[0].trim()}\t${columns[1].trim()}\t-1"
+                },
+            )
+            val imported = runCatching {
+                com.board.ime.engine.rime.RimeRuntime.importUserDict(tombstone)
+            }.getOrDefault(-1)
+            tombstone.delete()
+            if (imported < 0) return@launch
+            learnedDecay.forget(removable.map { it[0].trim() })
+            learnedDecay.markSwept(now)
+            Log.i(TAG, "学习词淡出：${removable.size} 个词 ${LearnedWordDecay.FORGET_AFTER_DAYS} 天未用，已移除学习加成")
+            dictionaryRepository.refreshLearnedFromRime()
+        }
+    }
+
     /**
      * 调试 / 自测入口（只给开发者模式用）。
      *
@@ -1702,6 +2219,25 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
         /** 外观 / 尺寸变更的合并窗口：60ms 内多次拖动只重绘一次 */
         private const val THEME_REFRESH_DELAY_MS = 60L
+
+        /** 译模式「停一下」的判定：最后一次输入后 450ms 没有新输入才发请求 */
+        private const val LIVE_TRANSLATE_DELAY_MS = 450L
+
+        /** 换行自定义词在候选栏的显示长度（完整内容仍会完整上屏） */
+        private const val CUSTOM_WORD_DISPLAY_MAX = 10
+
+        /** 计入「学习词使用时间」的汉字词最大长度（更长的整句不算） */
+        private const val LEARNED_WORD_MAX_LENGTH = 12
+
+        /** 学习词淡出的临时文件（导出 / 墓碑导入），放在 Rime 用户目录，用完即删 */
+        private const val DECAY_EXPORT_FILE = "board_decay_export.txt"
+        private const val DECAY_TOMBSTONE_FILE = "board_decay_tombstone.txt"
+
+        /** 译模式只翻译当前行：最多回看这么多字符，并在最近一个换行处截断 */
+        private const val LIVE_TRANSLATE_READ_CHARS = 240
+
+        /** 候选栏里的译文最多显示多少字（完整译文在替换 / 回车时上屏） */
+        private const val LIVE_DISPLAY_MAX_CHARS = 18
 
         /**
          * 当前活着的输入法服务。

@@ -216,8 +216,8 @@ components:
 
 # Design System: Board
 
-**What this file is.** Board's visual identity in the open `DESIGN.md` format (Google Stitch /
-`google-labs-code/design.md`). The YAML front matter holds exact tokens; the prose explains *why*.
+**What this file is.** Board's visual identity as a design token sheet. The YAML front matter holds
+exact tokens; the prose explains *why*.
 `source_of_truth` lists the files that actually carry these values — **keep them and this file in
 sync**. Tokens are normative; prose is guidance.
 
@@ -227,7 +227,7 @@ and `Theme.Board`). Light and dark are two sides of the same semantic roles and 
 
 ## 1. Overview
 
-Board is **quiet, flat and high-contrast**. It borrows Gboard's *usage logic* (layered keyboard, a
+Board is **quiet, flat and high-contrast**. It follows the common conventions of mainstream keyboards (layered keyboard, a
 one-line candidate strip, language on the spacebar, long-press Backspace to delete) but removes the
 visual noise: no gradients, no glows, no large fields of color, no drop shadows anywhere.
 

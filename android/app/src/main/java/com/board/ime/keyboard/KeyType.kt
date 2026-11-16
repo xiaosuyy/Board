@@ -18,15 +18,12 @@ enum class KeyType {
 
     /**
      * 标点键：微信字母层底行那颗「，。」。
-     * 点按 = 逗号（中文「，」/ 英文「,」），长按 = 句号（中文「。」/ 英文「.」）。
+     * 点按 = 逗号（中文「，」/ 英文「,」），上滑 / 长按 = 句号（中文「。」/ 英文「.」）。
      */
     PUNCTUATION,
 
     /** 固定文本：直接上屏，不经过引擎（符号层用） */
     SYMBOL,
-
-    /** 数字层第二页（小键盘）切换：微信数字层底部的「12/34」 */
-    NUMBER_PAGE,
 
     /** 未实现的功能键（如符号层的分类、符号条收起的 ✕），点击提示尚未开发 */
     NOT_IMPLEMENTED,
@@ -46,7 +43,7 @@ enum class KeyType {
     /** 换行（只插入换行，不触发编辑器动作；微信数字/符号层底部的「换行」） */
     ENTER_NEWLINE,
 
-    /** 中英文切换（微信显示为「中/英」） */
+    /** 中英文切换（显示为「中/EN」） */
     LANGUAGE,
 
     /** 切到数字层（?123） */
@@ -71,7 +68,7 @@ enum class KeyType {
      */
     val isFunctional: Boolean
         get() = when (this) {
-            SHIFT, BACKSPACE, ENTER, ENTER_NEWLINE, LANGUAGE, NUMBER_PAGE, NOT_IMPLEMENTED,
+            SHIFT, BACKSPACE, ENTER, ENTER_NEWLINE, LANGUAGE, NOT_IMPLEMENTED,
             TO_NUMBERS, TO_LETTERS, TO_SYMBOLS, TO_MORE_SYMBOLS, TO_MAIN_SYMBOLS,
             -> true
 

@@ -1,5 +1,6 @@
 package com.board.ime.settings
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -26,8 +27,11 @@ import com.board.ime.dictionary.DictionaryRepository
 import com.board.ime.dictionary.ExportScope
 import com.board.ime.dictionary.WordType
 import com.board.ime.engine.InputMode
+import com.board.ime.engine.rime.RimeFuzzyGroup
 import com.board.ime.engine.rime.RimeRuntime
+import com.board.ime.engine.rime.ShuangpinScheme
 import com.board.ime.ime.BoardInputMethodService
+import com.board.ime.keyboard.KeyboardLayoutCalculator
 import com.board.ime.ui.KeyboardTheme
 import com.board.ime.sync.LearnedWordBridge
 import com.board.ime.sync.SyncContent
@@ -40,10 +44,14 @@ import com.board.ime.sync.SyncScheduler
 import com.board.ime.sync.SyncStatusKind
 import com.board.ime.sync.SyncTrigger
 import com.board.ime.sync.webdav.WebDavConfig
+import com.board.ime.update.UpdateChecker
+import com.board.ime.update.UpdateDownloadSource
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -79,6 +87,31 @@ class SettingsSectionActivity : AppCompatActivity() {
 
     /** 同步状态实时订阅（每次重建内容视图时先取消旧的，避免越积越多） */
     private var statusJob: Job? = null
+
+    /** 检查更新的协程：重复点击时取消上一次 */
+    private var updateCheckJob: Job? = null
+
+    /** 当前页面的滚动容器：重建视图后恢复位置，避免改一项设置就跳回顶部 */
+    private var currentScroll: android.widget.ScrollView? = null
+
+    /** 外观页底部的键盘实时预览 */
+    private var appearancePreview: KeyboardPreviewView? = null
+
+    /** 预览对应的作用域 / 屏幕尺寸：刷新时按同一套参数重算，不能只改颜色 */
+    private var previewFloating = false
+    private var previewKeyboardLift = true
+    private var previewScreenWidthPx = 0
+    private var previewScreenHeightPx = 0
+
+    /** 「剪贴板卡片圆角」的示例卡片（不在键盘预览里，单独展示） */
+    private var clipboardCardSample: TextView? = null
+
+    /** 配色主题横条的横向滚动位置：换主题会重建页面，位置要接着上次的 */
+    private var paletteStripScrollX = 0
+    private var paletteStripView: android.widget.HorizontalScrollView? = null
+
+    /** 拖动「整体高度」时把档位同步到「自定义」，避免分段控件选中项与实际值对不上 */
+    private var syncingHeightLevel = false
 
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.US)
 
@@ -132,27 +165,28 @@ class SettingsSectionActivity : AppCompatActivity() {
     }
 
     private fun render() {
+        val restoreScroll = currentScroll?.scrollY ?: 0
         setContentView(buildScreen())
+        if (restoreScroll > 0) {
+            currentScroll?.post { currentScroll?.scrollTo(0, restoreScroll) }
+        }
     }
 
     private fun buildScreen(): LinearLayout {
+        appearancePreview = null
+        clipboardCardSample = null
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(background())
         }
 
-        // 标题栏：圆形返回键 + 分类名（键盘区域完全不受影响）
+        // 标题栏：裸返回箭头 + 下方大标题（Lyra 二级页的排版）
         root.addView(
             LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(16f), dp(8f), dp(16f), dp(8f))
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20f), dp(8f), dp(20f), 0)
                 addView(
                     android.widget.FrameLayout(this@SettingsSectionActivity).apply {
-                        background = android.graphics.drawable.GradientDrawable().apply {
-                            shape = android.graphics.drawable.GradientDrawable.OVAL
-                            setColor(themeColor(com.google.android.material.R.attr.colorSurfaceContainer))
-                        }
                         isClickable = true
                         isFocusable = true
                         setOnClickListener { finish() }
@@ -160,7 +194,11 @@ class SettingsSectionActivity : AppCompatActivity() {
                             android.widget.ImageView(this@SettingsSectionActivity).apply {
                                 setImageResource(R.drawable.ic_board_back)
                                 setColorFilter(themeColor(com.google.android.material.R.attr.colorOnSurface))
-                                layoutParams = android.widget.FrameLayout.LayoutParams(dp(20f), dp(20f), Gravity.CENTER)
+                                layoutParams = android.widget.FrameLayout.LayoutParams(
+                                    dp(24f),
+                                    dp(24f),
+                                    Gravity.CENTER_VERTICAL or Gravity.START,
+                                )
                             },
                         )
                         layoutParams = LinearLayout.LayoutParams(dp(40f), dp(40f))
@@ -171,11 +209,11 @@ class SettingsSectionActivity : AppCompatActivity() {
                         text = if (showLogs) "日志详情" else section.title
                         setTextSize(
                             android.util.TypedValue.COMPLEX_UNIT_PX,
-                            resources.getDimensionPixelSize(R.dimen.app_text_title).toFloat(),
+                            resources.getDimensionPixelSize(R.dimen.app_text_display).toFloat(),
                         )
                         setTypeface(typeface, android.graphics.Typeface.BOLD)
                         setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface))
-                        setPadding(dp(14f), 0, 0, 0)
+                        setPadding(0, dp(12f), 0, dp(4f))
                     },
                 )
             },
@@ -185,7 +223,97 @@ class SettingsSectionActivity : AppCompatActivity() {
             isVerticalScrollBarEnabled = false
             addView(SettingsUi.screen(this@SettingsSectionActivity))
         }
+        currentScroll = scroll
         root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        // 外观页：底部常驻键盘预览，竖屏按真实键盘 1:1 渲染，贴底铺满宽度。
+        // 横屏 / 悬浮键盘的真实宽度超过竖屏，才等比缩小塞进来。
+        if (!showLogs && section == SettingsSection.APPEARANCE) {
+            val tools = com.board.ime.ui.panel.ToolLayout.parse(
+                preferences.toolbarTools,
+                preferences.moreTools,
+            ).toolbar
+            val display = resources.displayMetrics
+            val scope = geometryScope
+            val landscape = scope == KeyboardScope.LANDSCAPE
+            // 与输入法服务相同的判定：悬浮作用域，或横屏且「键盘布局 = 自动」
+            val floating = scope == KeyboardScope.FLOATING ||
+                (landscape && preferences.layoutMode == LayoutMode.AUTO)
+            // 竖屏 1:1；横屏按「竖屏宽 / 横屏宽」缩小，保证整块横屏键盘能放进设置页
+            val scale = if (landscape) display.widthPixels.toFloat() / display.heightPixels else 1f
+            val previewContext =
+                if (scale >= 0.999f) this else KeyboardPreviewView.scaledContext(this, scale)
+            // 目标方向的屏幕尺寸，同样按预览比例换算
+            val screenWidthPx = ((if (landscape) display.heightPixels else display.widthPixels) * scale).roundToInt()
+            val screenHeightPx = ((if (landscape) display.widthPixels else display.heightPixels) * scale).roundToInt()
+            previewFloating = floating
+            previewKeyboardLift = preferences.keyboardLiftEnabled
+            previewScreenWidthPx = screenWidthPx
+            previewScreenHeightPx = screenHeightPx
+
+            val geometry = settingsRepository.geometry(scope)
+            val appearance = settingsRepository.appearance()
+            val preview = KeyboardPreviewView(previewContext).apply {
+                setTools(tools)
+                applyTheme(
+                    appearanceTheme(previewContext),
+                    geometry,
+                    appearance,
+                    floating = floating,
+                    keyboardLift = previewKeyboardLift,
+                    screenWidthPx = screenWidthPx,
+                    screenHeightPx = screenHeightPx,
+                )
+                setSampleEnglishGloss(preferences.candidateEnglishGlossEnabled)
+            }
+            appearancePreview = preview
+
+            // 宽度与输入法服务用同一套计算：铺满 = 屏宽；悬浮 = 按比例夹取后的宽度
+            val previewMetrics = KeyboardLayoutCalculator.metrics(
+                config = KeyboardLayoutCalculator.configFor(
+                    previewContext,
+                    floating,
+                    geometry,
+                    previewKeyboardLift,
+                ),
+                screenWidthPx = screenWidthPx,
+                screenHeightPx = screenHeightPx,
+                density = previewContext.resources.displayMetrics.density,
+                rowCount = com.board.ime.keyboard.KeyboardLayouts.letters.rowCount,
+            )
+            val previewWidth = if (floating) previewMetrics.widthPx else screenWidthPx
+
+            val dock = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                // 竖屏贴底铺满，和真键盘一样没有左右留白；悬浮卡片保留系统边距
+                setPadding(0, 0, 0, 0)
+            }
+            dock.addView(
+                TextView(this@SettingsSectionActivity).apply {
+                    text = "键盘预览（${scope.label}）· 点按顶部切换工具栏 / 候选栏"
+                    setTextSize(
+                        android.util.TypedValue.COMPLEX_UNIT_PX,
+                        resources.getDimensionPixelSize(R.dimen.app_text_caption).toFloat(),
+                    )
+                    setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
+                    setPadding(dp(20f), dp(8f), dp(20f), dp(6f))
+                },
+            )
+            dock.addView(
+                preview,
+                LinearLayout.LayoutParams(
+                    previewWidth,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    gravity = if (floating) Gravity.END else Gravity.CENTER_HORIZONTAL
+                    if (floating) {
+                        marginEnd = previewMetrics.edgeMarginPx
+                        bottomMargin = previewMetrics.edgeMarginPx
+                    }
+                },
+            )
+            root.addView(dock)
+        }
 
         val content = scroll.getChildAt(0) as LinearLayout
         if (showLogs) {
@@ -202,6 +330,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                 SettingsSection.VOICE -> buildVoice(content)
                 SettingsSection.ADVANCED -> buildAdvanced(content)
                 SettingsSection.LIBRARY -> buildLibrary(content)
+                SettingsSection.ABOUT -> buildAboutPage(content)
             }
         }
         SettingsUi.applySystemBarInset(root)
@@ -222,7 +351,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                 preferences.mode = if (index == 1) InputMode.CHINESE else InputMode.ENGLISH
             },
         )
-        card.addView(SettingsUi.hint(this, "切换后立即生效，键盘上的空格键也会跟着变。"))
+        card.addView(SettingsUi.hint(this, "切换后立即生效，空格键随之变化。"))
         content.addView(SettingsUi.cardView(this, card))
 
         val engine = SettingsUi.card(this)
@@ -236,15 +365,123 @@ class SettingsSectionActivity : AppCompatActivity() {
                 preferences.engineKind = if (index == 0) EngineKind.RIME else EngineKind.BASIC
             },
         )
-        engine.addView(SettingsUi.hint(this, "Rime 提供真正的拼音与用户学习；占位引擎只用于排查问题。"))
+        engine.addView(SettingsUi.hint(this, "Rime 提供完整拼音与学习；占位引擎仅用于排查问题。"))
         content.addView(SettingsUi.cardView(this, engine))
+
+        // ---- 字形：简体 / 繁体 ----
+        val script = SettingsUi.card(this)
+        script.addView(SettingsUi.heading(this, "字形"))
+        script.addView(
+            SettingsUi.toggleGroup(
+                this,
+                listOf("简体字", "繁体字"),
+                if (preferences.traditionalOutput) 1 else 0,
+            ) { index ->
+                preferences.traditionalOutput = index == 1
+            },
+        )
+        script.addView(
+            SettingsUi.hint(
+                this,
+                "只改基础词库字形，用户词保持不变。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, script))
+
+        // ---- 双拼方案 ----
+        val shuangpin = SettingsUi.card(this)
+        shuangpin.addView(SettingsUi.heading(this, "双拼"))
+        val schemeButton = SettingsUi.button(
+            this,
+            "当前：" + preferences.shuangpin.label,
+        ) {
+            val options = ShuangpinScheme.entries.map { it.label }
+            MaterialAlertDialogBuilder(this)
+                .setTitle("选择双拼方案")
+                .setSingleChoiceItems(
+                    options.toTypedArray(),
+                    preferences.shuangpin.ordinal,
+                ) { dialog, which ->
+                    preferences.shuangpin = ShuangpinScheme.entries[which]
+                    dialog.dismiss()
+                    render()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+        shuangpin.addView(schemeButton)
+        shuangpin.addView(
+            SettingsUi.hint(
+                this,
+                "微软 / 搜狗 / 紫光方案中，ing 可用 y 输入（键盘没有分号键）。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, shuangpin))
+
+        // ---- 模糊音 / 简拼 / 纠错：12 组单独开关 ----
+        val fuzzy = SettingsUi.card(this)
+        fuzzy.addView(SettingsUi.heading(this, "模糊音与容错（12 组）"))
+        RimeFuzzyGroup.entries.forEach { group ->
+            fuzzy.addView(
+                SettingsUi.switchRow(
+                    this,
+                    group.label,
+                    group.key in preferences.rimeFuzzyGroups,
+                ) { checked ->
+                    val current = preferences.rimeFuzzyGroups.toMutableSet()
+                    if (checked) current += group.key else current -= group.key
+                    preferences.rimeFuzzyGroups = current
+                },
+            )
+        }
+        fuzzy.addView(
+            SettingsUi.hint(
+                this,
+                "模糊音默认开启，精确输入不受影响。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, fuzzy))
     }
 
     // ---------------------------------------------------------------- 外观
 
+    /** 预览与设置页共用同一套主题解析（含颜色 / 圆角 / 候选字号 / 当前作用域尺寸） */
+    private fun appearanceTheme(context: Context = this): KeyboardTheme = KeyboardTheme.from(
+        context,
+        preferences.themeMode,
+        preferences.candidateTextSize,
+        geometry = settingsRepository.geometry(geometryScope),
+        appearance = settingsRepository.appearance(),
+        palette = settingsRepository.palette,
+    )
+
+    private fun refreshAppearancePreview() {
+        // 横屏 / 悬浮预览用的是缩小密度的 Context，主题也必须用它解析，尺寸才是同一比例
+        val theme = appearanceTheme(appearancePreview?.context ?: this)
+        appearancePreview?.applyTheme(
+            theme,
+            settingsRepository.geometry(geometryScope),
+            settingsRepository.appearance(),
+            floating = previewFloating,
+            keyboardLift = previewKeyboardLift,
+            screenWidthPx = previewScreenWidthPx,
+            screenHeightPx = previewScreenHeightPx,
+        )
+        clipboardCardSample?.apply {
+            (background as? android.graphics.drawable.GradientDrawable)?.cornerRadius =
+                theme.clipboardCardRadius
+            setTextColor(theme.candidateText)
+        }
+    }
+
     private fun buildAppearance(content: LinearLayout) {
         val appearance = settingsRepository.appearance()
-        val resolvedTheme = KeyboardTheme.from(this, preferences.themeMode, preferences.candidateTextSize)
+        val resolvedTheme = KeyboardTheme.from(
+            this,
+            preferences.themeMode,
+            preferences.candidateTextSize,
+            palette = settingsRepository.palette,
+        )
 
         val theme = SettingsUi.card(this)
         theme.addView(SettingsUi.heading(this, "主题"))
@@ -262,40 +499,56 @@ class SettingsSectionActivity : AppCompatActivity() {
         )
         content.addView(SettingsUi.cardView(this, theme))
 
-        val size = SettingsUi.card(this)
-        size.addView(SettingsUi.heading(this, "候选词字号"))
-        size.addView(
+        // ---- 配色主题：六套配色，每套自带浅 / 深两版，跟随上面的「主题」切换 ----
+        val palettes = SettingsUi.card(this)
+        palettes.addView(SettingsUi.heading(this, "配色主题"))
+        palettes.addView(paletteStrip(resolvedTheme.isDark))
+        palettes.addView(
+            SettingsUi.hint(
+                this,
+                "每套含浅色 / 深色两版，跟随上方「主题」切换。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, palettes))
+
+        // ---- 候选词：字号 + 英文释义（调哪项，预览就切到候选栏展示哪项） ----
+        val candidates = SettingsUi.card(this)
+        candidates.addView(SettingsUi.heading(this, "候选词"))
+        candidates.addView(
             SettingsUi.toggleGroup(
                 this,
                 CandidateTextSize.entries.map { it.label },
                 preferences.candidateTextSize.ordinal,
             ) { index ->
                 preferences.candidateTextSize = CandidateTextSize.entries[index]
-                render()
+                appearancePreview?.showCandidates(true)
+                refreshAppearancePreview()
             },
         )
-        content.addView(SettingsUi.cardView(this, size))
-
-        val gloss = SettingsUi.card(this)
-        gloss.addView(SettingsUi.heading(this, "候选英文释义"))
-        gloss.addView(
+        candidates.addView(
             SettingsUi.switchRow(
                 this,
                 "在候选下方显示英文释义",
                 preferences.candidateEnglishGlossEnabled,
-            ) { enabled -> preferences.candidateEnglishGlossEnabled = enabled },
+            ) { enabled ->
+                preferences.candidateEnglishGlossEnabled = enabled
+                appearancePreview?.showCandidates(true)
+                appearancePreview?.setSampleEnglishGloss(enabled)
+            },
         )
-        gloss.addView(
+        candidates.addView(
             SettingsUi.hint(
                 this,
-                "默认关闭。只使用 Board 内置的本地词表，不联网、不读取或保存你输入的内容。",
+                "只使用内置本地词表，不联网、不保存输入内容。",
             ),
         )
-        content.addView(SettingsUi.cardView(this, gloss))
+        content.addView(SettingsUi.cardView(this, candidates))
+
+        // ---- 键盘尺寸与精细调整：和颜色 / 圆角一样属于「外观」 ----
+        buildAppearanceGeometryCard(content)
 
         val colors = SettingsUi.card(this)
         colors.addView(SettingsUi.heading(this, "颜色"))
-        colors.addView(SettingsUi.hint(this, "点一行改一项；不设置就沿用默认（白 / 黑 / 灰 + 少量蓝）。"))
         AppearanceColor.entries.forEach { target ->
             colors.addView(colorRow(target, appearance.color(target), resolvedTheme))
         }
@@ -310,20 +563,333 @@ class SettingsSectionActivity : AppCompatActivity() {
 
         val radii = SettingsUi.card(this)
         radii.addView(SettingsUi.heading(this, "圆角"))
-        radii.addView(SettingsUi.hint(this, "每项都有上下限，拖到头也不会出现畸形 UI。"))
         AppearanceRadius.entries.forEach { target ->
-            radii.addView(
-                SettingsUi.sliderRow(
-                    this,
-                    target.label,
-                    appearance.radiusDp(target, target.defaultDp),
-                    target.minDp,
-                    target.maxDp,
-                    "dp",
-                ) { value -> settingsRepository.setRadius(target, value) },
-            )
+            val row = SettingsUi.sliderRow(
+                this,
+                target.label,
+                appearance.radiusDp(target, target.defaultDp),
+                target.minDp,
+                target.maxDp,
+                "dp",
+            ) { value ->
+                settingsRepository.setRadius(target, value)
+                refreshAppearancePreview()
+            }
+            if (target == AppearanceRadius.CLIPBOARD_CARD) {
+                // 剪贴板卡片不在键盘预览里，单独放一张示例卡片，否则这一项拖了没任何反馈
+                val sampleTheme = appearanceTheme()
+                val sample = TextView(this).apply {
+                    text = "剪贴板卡片"
+                    setTextSize(
+                        android.util.TypedValue.COMPLEX_UNIT_PX,
+                        resources.getDimensionPixelSize(R.dimen.app_text_body).toFloat(),
+                    )
+                    setTextColor(sampleTheme.candidateText)
+                    setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(sampleTheme.panelSurface)
+                        cornerRadius = sampleTheme.clipboardCardRadius
+                    }
+                }
+                clipboardCardSample = sample
+                row.addView(
+                    sample,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = dp(8f) },
+                )
+            }
+            radii.addView(row)
         }
         content.addView(SettingsUi.cardView(this, radii))
+    }
+
+    /**
+     * 配色主题横条：每张卡就是一套配色的迷你示意（候选栏 + 键帽 + 强调色）。
+     *
+     * 预览用的颜色就是当前深浅模式下真正会上键盘的颜色；点一下立即生效并重建页面。
+     */
+    private fun paletteStrip(isDark: Boolean): View {
+        // 「标准」的预览取资源默认色（不含用户手改项），与其它主题一样展示主题本身
+        val standard = KeyboardTheme.from(
+            this,
+            preferences.themeMode,
+            preferences.candidateTextSize,
+            palette = KeyboardPalette.STANDARD,
+        )
+        val selected = settingsRepository.palette
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(2f), 0, dp(2f))
+        }
+        KeyboardPalette.entries.forEach { palette ->
+            val colors = palette.colors(isDark)
+            val preview = if (colors == null) {
+                PalettePreview(
+                    background = standard.keyboardBackground,
+                    key = standard.keyBackground,
+                    functionKey = standard.functionKeyBackground,
+                    panel = standard.panelBackground,
+                    accent = standard.accent,
+                    text = standard.keyText,
+                )
+            } else {
+                PalettePreview(
+                    background = colors.keyboardBackground,
+                    key = colors.keyBackground,
+                    functionKey = colors.functionKeyBackground,
+                    panel = colors.panelBackground,
+                    accent = colors.accent,
+                    text = colors.keyText,
+                )
+            }
+            row.addView(paletteCard(palette, preview, palette == selected))
+        }
+        return android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            addView(row)
+            paletteStripView = this
+            post { scrollTo(paletteStripScrollX, 0) }
+        }
+    }
+
+    private fun paletteCard(
+        palette: KeyboardPalette,
+        preview: PalettePreview,
+        selected: Boolean,
+    ): View {
+        val card = com.google.android.material.card.MaterialCardView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(132f), LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { marginEnd = dp(10f) }
+            radius = dp(18f).toFloat()
+            cardElevation = 0f
+            setCardBackgroundColor(preview.background)
+            strokeWidth = dp(if (selected) 2f else 1f)
+            strokeColor = if (selected) {
+                preview.accent
+            } else {
+                androidx.core.graphics.ColorUtils.setAlphaComponent(preview.text, 40)
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                paletteStripScrollX = paletteStripView?.scrollX ?: 0
+                settingsRepository.palette = palette
+                render()
+            }
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10f), dp(10f), dp(10f), dp(9f))
+        }
+        // 候选栏示意条
+        content.addView(
+            View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(4f).toFloat()
+                    setColor(preview.panel)
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(10f),
+                )
+            },
+        )
+        // 三个迷你键帽（普通键 + 功能键）
+        val keys = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(30f),
+            ).apply { topMargin = dp(8f) }
+        }
+        repeat(3) { index ->
+            keys.addView(
+                TextView(this).apply {
+                    text = "Aa"
+                    gravity = Gravity.CENTER
+                    setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 10f)
+                    setTextColor(preview.text)
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = dp(7f).toFloat()
+                        setColor(if (index == 0) preview.key else preview.functionKey)
+                    }
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        1f,
+                    ).apply { if (index > 0) marginStart = dp(6f) }
+                },
+            )
+        }
+        content.addView(keys)
+        // 名称 + 一句说明 + 强调色圆点
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(9f) }
+        }
+        val textColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        textColumn.addView(
+            TextView(this).apply {
+                text = palette.label
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextColor(preview.text)
+                if (selected) typeface = android.graphics.Typeface.DEFAULT_BOLD
+            },
+        )
+        textColumn.addView(
+            TextView(this).apply {
+                text = palette.caption
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 9f)
+                setTextColor(
+                    androidx.core.graphics.ColorUtils.setAlphaComponent(
+                        preview.text,
+                        (0.62f * 255).toInt(),
+                    ),
+                )
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            },
+        )
+        labels.addView(textColumn)
+        labels.addView(
+            View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(preview.accent)
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(12f), dp(12f)).apply { marginStart = dp(6f) }
+            },
+        )
+        content.addView(labels)
+        card.addView(content)
+        return card
+    }
+
+    /** 配色主题卡片上需要的最小颜色集合 */
+    private data class PalettePreview(
+        val background: Int,
+        val key: Int,
+        val functionKey: Int,
+        val panel: Int,
+        val accent: Int,
+        val text: Int,
+    )
+
+    /**
+     * 键盘尺寸与精细调整（高度档位 / 整体高度 / 按键间距 / 功能键宽度）。
+     *
+     * 全部是**拖动即生效**：写进 [SettingsRepository] 后立刻刷新下方预览；
+     * 输入法服务订阅同一个 SharedPreferences，收到变更后只重算尺寸 / 重绘键盘。
+     */
+    private fun buildAppearanceGeometryCard(content: LinearLayout) {
+        val scope = geometryScope
+        val geometry = settingsRepository.geometry(scope)
+
+        val card = SettingsUi.card(this)
+        card.addView(SettingsUi.heading(this, "键盘尺寸与间距"))
+        card.addView(
+            SettingsUi.hint(
+                this,
+                "拖动即生效，预览同步变化；竖屏 / 横屏 / 悬浮分别保存。",
+            ),
+        )
+        card.addView(
+            SettingsUi.toggleGroup(
+                this,
+                KeyboardScope.entries.map { it.label },
+                scope.ordinal,
+            ) { index ->
+                geometryScope = KeyboardScope.entries[index]
+                render()
+            },
+        )
+
+        val levelGroup = SettingsUi.toggleGroup(
+            this,
+            KeyboardHeightLevel.entries.map { it.label },
+            geometry.level.ordinal,
+        ) { index ->
+            if (syncingHeightLevel) return@toggleGroup
+            settingsRepository.updateGeometry(scope) {
+                it.copy(level = KeyboardHeightLevel.entries[index])
+            }
+            render()
+        }
+        card.addView(levelGroup)
+
+        val customId = levelGroup.getChildAt(KeyboardHeightLevel.CUSTOM.ordinal)?.id
+        fun syncCustomLevel() {
+            if (customId == null || levelGroup.checkedButtonId == customId) return
+            syncingHeightLevel = true
+            levelGroup.check(customId)
+            syncingHeightLevel = false
+        }
+
+        card.addView(
+            SettingsUi.sliderRow(
+                this,
+                "整体高度",
+                // 显示「当前实际高度」：大 / 特大 档位也各有倍率，显示自定义值会让人以为档位没生效
+                value = geometry.heightFactor,
+                min = KeyboardGeometry.MIN_CUSTOM_FACTOR,
+                max = KeyboardGeometry.MAX_CUSTOM_FACTOR,
+                unit = "x",
+            ) { value ->
+                // 拖「整体高度」自动切到自定义档，避免出现「档位是大、却拖了标准值」的困惑
+                settingsRepository.updateGeometry(scope) {
+                    it.copy(level = KeyboardHeightLevel.CUSTOM, customHeightFactor = value)
+                }
+                syncCustomLevel()
+                refreshAppearancePreview()
+            },
+        )
+
+        card.addView(
+            SettingsUi.sliderRow(
+                this,
+                "按键间距",
+                value = if (geometry.hasCustomGap) geometry.keyGapDp else 6f,
+                min = KeyboardGeometry.MIN_GAP_DP,
+                max = KeyboardGeometry.MAX_GAP_DP,
+                unit = "dp",
+            ) { value ->
+                settingsRepository.updateGeometry(scope) { it.copy(keyGapDp = value) }
+                refreshAppearancePreview()
+            },
+        )
+
+        card.addView(
+            SettingsUi.sliderRow(
+                this,
+                "功能键宽度",
+                value = geometry.functionKeyWidthRatio,
+                min = KeyboardGeometry.MIN_FN_RATIO,
+                max = KeyboardGeometry.MAX_FN_RATIO,
+                unit = "x",
+            ) { value ->
+                settingsRepository.updateGeometry(scope) { it.copy(functionKeyWidthRatio = value) }
+                refreshAppearancePreview()
+            },
+        )
+
+        card.addView(
+            SettingsUi.button(this, "恢复${scope.label}默认尺寸") {
+                settingsRepository.resetGeometry(scope)
+                render()
+            },
+        )
+        content.addView(SettingsUi.cardView(this, card))
     }
 
     /** 一行颜色项：名称 + 当前值 + 色块；点击选色 */
@@ -505,8 +1071,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         card.addView(
             SettingsUi.hint(
                 this,
-                "清理只作用于缓存、无引用的旧词库文件、已删除剪贴板的正文；\n" +
-                    "学习数据、用户词库、收藏与仍在使用的剪贴板一律不动。",
+                "只清理缓存、无引用词库文件与已删除剪贴板；学习数据、用户词库、收藏不动。",
             ),
         )
         content.addView(SettingsUi.cardView(this, card))
@@ -629,22 +1194,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         layout.addView(SettingsUi.hint(this, "自动：竖屏铺满、横屏 / 大屏悬浮。"))
         content.addView(SettingsUi.cardView(this, layout))
 
-        // ---- 键盘尺寸：竖屏 / 横屏 / 悬浮键盘各自一套参数 ----
-        val sizeCard = SettingsUi.card(this)
-        sizeCard.addView(SettingsUi.heading(this, "键盘尺寸"))
-        val scopeGroup = SettingsUi.toggleGroup(
-            this,
-            KeyboardScope.entries.map { it.label },
-            geometryScope.ordinal,
-        ) { index ->
-            geometryScope = KeyboardScope.entries[index]
-            render()
-        }
-        sizeCard.addView(scopeGroup)
-        sizeCard.addView(SettingsUi.hint(this, "竖屏 / 横屏 / 悬浮键盘分别保存，横屏默认更紧凑。"))
-        content.addView(SettingsUi.cardView(this, sizeCard))
-
-        renderGeometryControls(content, geometryScope)
+        // 高度 / 间距 / 功能键宽度都在「外观」里实时调整，这一页只保留布局与行为
 
         // ---- 键盘位置：键盘抬升（只影响底部留白） ----
         val positionCard = SettingsUi.card(this)
@@ -657,8 +1207,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         positionCard.addView(
             SettingsUi.hint(
                 this,
-                "开启后键盘整体上抬：最底一行与屏幕底部留 92px（与微信输入法一致）；" +
-                    "关闭为 24px。只改底部留白，不动键高与顶部留白。",
+                "只调整底部留白：开启 92px，关闭 24px；不动键高。",
             ),
         )
         content.addView(SettingsUi.cardView(this, positionCard))
@@ -675,6 +1224,22 @@ class SettingsSectionActivity : AppCompatActivity() {
                 preferences.vibrateEnabled = it
             },
         )
+        behaviour.addView(
+            SettingsUi.switchRow(this, "字母与汉字之间自动加空格", preferences.autoSpaceLetters) {
+                preferences.autoSpaceLetters = it
+            },
+        )
+        behaviour.addView(
+            SettingsUi.switchRow(this, "数字与汉字之间自动加空格", preferences.autoSpaceDigits) {
+                preferences.autoSpaceDigits = it
+            },
+        )
+        behaviour.addView(
+            SettingsUi.hint(
+                this,
+                "开启后自动在中英文、数字与汉字之间补空格。",
+            ),
+        )
         content.addView(SettingsUi.cardView(this, behaviour))
 
         val tryCard = SettingsUi.card(this)
@@ -684,114 +1249,31 @@ class SettingsSectionActivity : AppCompatActivity() {
             setSingleLine(false)
             minLines = 2
             gravity = Gravity.TOP
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = resources.getDimension(R.dimen.app_radius_md)
+                setColor(themeColor(com.google.android.material.R.attr.colorSurfaceContainer))
+            }
+            setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
+            setTextSize(
+                android.util.TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen.app_text_body),
+            )
+            setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface))
+            setHintTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
         }
         // 上屏测试按钮放在输入框**上面**：点输入框后键盘弹起也不会挡住它
         val imeOut = SettingsUi.value(this, "上屏测试：点一下下面的输入框，再点这个按钮")
         if (preferences.developerMode) {
             tryCard.addView(imeOut)
             tryCard.addView(
-                SettingsUi.button(this, "测试上屏（10KB~2MB，走 Board 自己的 IME）") {
+                SettingsUi.button(this, "测试上屏") {
                     runImeCommitTest(field, imeOut)
                 },
             )
         }
         tryCard.addView(field)
         content.addView(SettingsUi.cardView(this, tryCard))
-    }
-
-    /**
-     * 当前作用域的键盘尺寸控件。
-     *
-     * **拖动即生效**：每次都写进 [SettingsRepository]，输入法服务订阅的是同一个
-     * SharedPreferences 文件，收到变更后只重算尺寸 / 重绘键盘，
-     * 不重启输入法、不重新部署 Rime、不动数据库。
-     */
-    private fun renderGeometryControls(content: LinearLayout, scope: KeyboardScope) {
-        val geometry = settingsRepository.geometry(scope)
-
-        val heightCard = SettingsUi.card(this)
-        heightCard.addView(SettingsUi.heading(this, "键盘高度（${scope.label}）"))
-        heightCard.addView(
-            SettingsUi.toggleGroup(
-                this,
-                KeyboardHeightLevel.entries.map { it.label },
-                geometry.level.ordinal,
-            ) { index ->
-                val level = KeyboardHeightLevel.entries[index]
-                settingsRepository.updateGeometry(scope) { it.copy(level = level) }
-                render()
-            },
-        )
-        content.addView(SettingsUi.cardView(this, heightCard))
-
-        val fine = SettingsUi.card(this)
-        fine.addView(SettingsUi.heading(this, "精细调整（${scope.label}）"))
-
-        fine.addView(
-            SettingsUi.sliderRow(
-                this,
-                "整体高度",
-                value = geometry.customHeightFactor,
-                min = KeyboardGeometry.MIN_CUSTOM_FACTOR,
-                max = KeyboardGeometry.MAX_CUSTOM_FACTOR,
-                unit = "x",
-            ) { value ->
-                // 拖「整体高度」自动切到自定义档，避免出现「档位是大、却拖了标准值」的困惑
-                settingsRepository.updateGeometry(scope) {
-                    it.copy(level = KeyboardHeightLevel.CUSTOM, customHeightFactor = value)
-                }
-            },
-        )
-
-        val gapDefault = 6f
-        fine.addView(
-            SettingsUi.sliderRow(
-                this,
-                "按键间距",
-                value = if (geometry.hasCustomGap) geometry.keyGapDp else gapDefault,
-                min = KeyboardGeometry.MIN_GAP_DP,
-                max = KeyboardGeometry.MAX_GAP_DP,
-                unit = "dp",
-            ) { value ->
-                settingsRepository.updateGeometry(scope) { it.copy(keyGapDp = value) }
-            },
-        )
-
-        val radiusDefault = 10f
-        fine.addView(
-            SettingsUi.sliderRow(
-                this,
-                "按键圆角",
-                value = if (geometry.hasCustomRadius) geometry.keyCornerRadiusDp else radiusDefault,
-                min = 0f,
-                max = 24f,
-                unit = "dp",
-            ) { value ->
-                settingsRepository.updateGeometry(scope) { it.copy(keyCornerRadiusDp = value) }
-            },
-        )
-
-        fine.addView(
-            SettingsUi.sliderRow(
-                this,
-                "功能键宽度",
-                value = geometry.functionKeyWidthRatio,
-                min = KeyboardGeometry.MIN_FN_RATIO,
-                max = KeyboardGeometry.MAX_FN_RATIO,
-                unit = "x",
-            ) { value ->
-                settingsRepository.updateGeometry(scope) { it.copy(functionKeyWidthRatio = value) }
-            },
-        )
-
-        fine.addView(
-            SettingsUi.button(this, "恢复本作用域默认") {
-                settingsRepository.resetGeometry(scope)
-                Toast.makeText(this, "${scope.label}已恢复默认", Toast.LENGTH_SHORT).show()
-                render()
-            },
-        )
-        content.addView(SettingsUi.cardView(this, fine))
     }
 
     /**
@@ -911,8 +1393,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         card.addView(
             SettingsUi.hint(
                 this,
-                "超过阈值的文本会存成文件（不占数据库行），列表与搜索不会因此变慢；\n" +
-                    "其它 App 也可直接「分享给 Board」。",
+                "大文本存成文件，不影响列表与搜索速度。",
             ),
         )
         content.addView(SettingsUi.cardView(this, card))
@@ -945,8 +1426,7 @@ class SettingsSectionActivity : AppCompatActivity() {
             stress.addView(
                 SettingsUi.hint(
                     this,
-                    "超过阈值的文本会存到 Board 私有目录的文件里；列表查询永远不读完整内容。\n" +
-                        "系统剪贴板写入被拒是 Android 的 Binder 限制，不是 Board 的限制。",
+                    "超过阈值的文本存到私有文件；系统剪贴板写入可能被 Android 拒绝。",
                 ),
             )
             content.addView(SettingsUi.cardView(this, stress))
@@ -1095,6 +1575,12 @@ class SettingsSectionActivity : AppCompatActivity() {
             SettingsUi.button(this, "清空学习记录") { confirmClearLearned() },
         )
         learned.addView(SettingsUi.hint(this, "会删除 librime 用户词典与本地镜像；自定义词不受影响。"))
+        learned.addView(
+            SettingsUi.hint(
+                this,
+                "30 天未用的学习词会靠后，60 天后不再加成；使用时间只存本机。",
+            ),
+        )
         content.addView(SettingsUi.cardView(this, learned))
 
         // 导入词库（大型文件）：条目 / 大小 / 是否已接入 Rime
@@ -1103,30 +1589,32 @@ class SettingsSectionActivity : AppCompatActivity() {
         val sourcesValue = SettingsUi.value(this, "读取中…")
         sourcesCard.addView(sourcesValue)
         sourcesCard.addView(
-            SettingsUi.button(this, "合并重复词库（含云端清理）") {
+            SettingsUi.button(this, "合并重复词库") {
                 mergeDuplicateSources(sourcesValue)
             },
         )
         sourcesCard.addView(
             SettingsUi.hint(
                 this,
-                "按内容 SHA-256 合并：同一份内容只保留一条数据源，并删除云端多余的 source 目录。\n" +
-                    "本地合并一定生效；云端清理失败不影响本地结果。",
+                "按内容去重，只保留一条数据源；云端清理失败不影响本地结果。",
             ),
-        )
-        sourcesCard.addView(
-            SettingsUi.button(this, "清理云端孤儿目录") {
-                sweepRemoteOrphans(sourcesValue)
-            },
         )
         val deployButton = SettingsUi.button(this, "部署到 Rime") {
             deployImportedSources(sourcesValue)
         }
-        sourcesCard.addView(deployButton)
+        sourcesCard.addView(
+            SettingsUi.buttonRow(
+                this,
+                listOf(
+                    SettingsUi.button(this, "清理云端孤儿目录") { sweepRemoteOrphans(sourcesValue) },
+                    deployButton,
+                ),
+            ),
+        )
         sourcesCard.addView(
             SettingsUi.hint(
                 this,
-                "大型词库以文件形式保存，不占用户词表；「已接入 Rime」表示已生成词典配置并部署成功。",
+                "大型词库以文件保存，不占用户词表。",
             ),
         )
         content.addView(SettingsUi.cardView(this, sourcesCard))
@@ -1365,9 +1853,6 @@ class SettingsSectionActivity : AppCompatActivity() {
         val (passLayout, passEdit) = SettingsUi.textField(this, "密码", config.password, password = true)
         val (dirLayout, dirEdit) = SettingsUi.textField(this, "同步目录", config.syncDir)
         listOf(urlLayout, userLayout, passLayout, dirLayout).forEach { configCard.addView(it) }
-        if (configured) {
-            configCard.addView(SettingsUi.hint(this, "账号信息只在配置时展开；密码永远不回显明文以外的内容。"))
-        }
         configCard.addView(
             SettingsUi.buttonRow(
                 this,
@@ -1409,8 +1894,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         configCard.addView(
             SettingsUi.hint(
                 this,
-                "HTTP 未加密，仅建议用于可信的局域网环境（例如自建 NAS）。" +
-                    "默认只允许 https://；公网 HTTP 地址会被直接拒绝。",
+                "HTTP 未加密，仅建议用于可信局域网；公网 HTTP 地址会被直接拒绝。",
             ),
         )
         content.addView(SettingsUi.cardView(this, configCard))
@@ -1427,7 +1911,7 @@ class SettingsSectionActivity : AppCompatActivity() {
             )
         }
         contentCard.addView(
-            SettingsUi.hint(this, "只有勾选的内容进入同步；账号密码、日志、调试信息永远不同步。"),
+            SettingsUi.hint(this, "只同步勾选的内容；账号密码、日志、调试信息永不同步。"),
         )
         content.addView(SettingsUi.cardView(this, contentCard))
     }
@@ -1448,9 +1932,8 @@ class SettingsSectionActivity : AppCompatActivity() {
         card.addView(
             SettingsUi.hint(
                 this,
-                "在百度智能云控制台「语音技术」应用里查看 AppID 与 API Key。" +
-                    "注意：这是**语音服务的凭据**，与翻译的 APPID / 密钥不是同一套，请勿混填。" +
-                    "凭据保存在 Android 加密存储中；Board 不保存录音，也不保存识别结果。",
+                "在百度智能云「语音技术」应用查看 AppID 与 API Key；与翻译凭据不是同一套。" +
+                    "凭据保存在 Android 加密存储中。",
             ),
         )
         card.addView(
@@ -1481,7 +1964,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         card.addView(
             SettingsUi.hint(
                 this,
-                "额度：百度实时语音识别 · 按百度账户计费/免费额度（以百度控制台实际额度为准）。",
+                "额度以百度控制台为准。",
             ),
         )
         if (!store.secureStorageAvailable) {
@@ -1513,42 +1996,119 @@ class SettingsSectionActivity : AppCompatActivity() {
 
         val card = SettingsUi.card(this)
         card.addView(SettingsUi.heading(this, "翻译服务"))
-        card.addView(SettingsUi.value(this, "服务：百度翻译（通用文本翻译 API）"))
-        val (appIdLayout, appIdEdit) = SettingsUi.textField(this, "APPID（数字）", current.appId)
-        val (secretLayout, secretEdit) = SettingsUi.textField(this, "密钥", current.secret, password = true)
-        card.addView(appIdLayout)
-        card.addView(secretLayout)
         card.addView(
-            SettingsUi.hint(
+            SettingsUi.value(
                 this,
-                "APPID 与密钥在「百度翻译开放平台 → 管理控制台 → 开发者信息」查看：" +
-                    "APPID 是一串数字，不是密钥的名称、也不是 API Key。" +
-                    "填完后还需要在平台「开通通用文本翻译服务」，否则会报 52003 未授权用户。" +
-                    "凭据保存在 Android 加密存储中；Board 不内置任何 Key，也不保存翻译原文或译文。",
+                "13 种目标语言：中文、English、日本語、한국어、Français、Deutsch、" +
+                    "Español、Русский、Português、Italiano、العربية、ไทย、Tiếng Việt",
             ),
         )
         card.addView(
-            SettingsUi.button(this, "保存") {
-                val appId = appIdEdit.text?.toString().orEmpty().trim()
-                store.save(
-                    com.board.ime.translation.TranslationCredentials(
-                        appId = appId,
-                        secret = secretEdit.text?.toString().orEmpty(),
-                    ),
-                )
-                // APPID 在百度翻译开放平台是一串数字；填成名称/密钥时几乎必然是填错了
-                if (appId.isNotEmpty() && appId.any { !it.isDigit() }) {
-                    Toast.makeText(
-                        this,
-                        "已保存。但 APPID 通常是一串数字 —— 请确认这里填的是 APPID，不是密钥名称或 API Key",
-                        Toast.LENGTH_LONG,
-                    ).show()
+            SettingsUi.toggleGroup(
+                this,
+                listOf("百度翻译", "OpenAI 格式接口"),
+                if (current.kind == com.board.ime.translation.TranslationProviderKind.BAIDU) 0 else 1,
+            ) { index ->
+                val kind = if (index == 0) {
+                    com.board.ime.translation.TranslationProviderKind.BAIDU
                 } else {
-                    Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+                    com.board.ime.translation.TranslationProviderKind.OPENAI
                 }
-                render()
+                if (kind != store.load().kind) {
+                    store.saveProviderKind(kind)
+                    render()
+                }
             },
         )
+
+        if (current.kind == com.board.ime.translation.TranslationProviderKind.BAIDU) {
+            val (appIdLayout, appIdEdit) = SettingsUi.textField(this, "APPID（数字）", current.appId)
+            val (secretLayout, secretEdit) = SettingsUi.textField(this, "密钥", current.secret, password = true)
+            card.addView(appIdLayout)
+            card.addView(secretLayout)
+            card.addView(
+                SettingsUi.hint(
+                    this,
+                    "在「百度翻译开放平台 → 开发者信息」查看 APPID（数字）与密钥；" +
+                        "还需开通通用文本翻译服务，否则报 52003。",
+                ),
+            )
+            card.addView(
+                SettingsUi.button(this, "保存百度凭据") {
+                    val appId = appIdEdit.text?.toString().orEmpty().trim()
+                    store.save(
+                        store.load().copy(
+                            appId = appId,
+                            secret = secretEdit.text?.toString().orEmpty(),
+                        ),
+                    )
+                    // APPID 在百度翻译开放平台是一串数字；填成名称/密钥时几乎必然是填错了
+                    if (appId.isNotEmpty() && appId.any { !it.isDigit() }) {
+                        Toast.makeText(
+                            this,
+                            "已保存。但 APPID 通常是一串数字 —— 请确认这里填的是 APPID，不是密钥名称或 API Key",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } else {
+                        Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+                    }
+                    render()
+                },
+            )
+        } else {
+            val (baseLayout, baseEdit) = SettingsUi.textField(
+                this,
+                "接口地址（…/v1）",
+                current.baseUrl,
+            )
+            val (keyLayout, keyEdit) = SettingsUi.textField(
+                this,
+                "API Key（本地 Ollama 可留空）",
+                current.apiKey,
+                password = true,
+            )
+            val (modelLayout, modelEdit) = SettingsUi.textField(this, "模型名", current.model)
+            card.addView(baseLayout)
+            card.addView(keyLayout)
+            card.addView(modelLayout)
+            card.addView(
+                SettingsUi.hint(
+                    this,
+                    "兼容 OpenAI /chat/completions；远程地址须 HTTPS，本机 / 内网可用 HTTP。",
+                ),
+            )
+            card.addView(
+                SettingsUi.button(this, "保存接口配置") {
+                    val baseUrl = baseEdit.text?.toString().orEmpty().trim()
+                    val model = modelEdit.text?.toString().orEmpty().trim()
+                    if (baseUrl.isNotEmpty() &&
+                        com.board.ime.translation.OpenAiCompatibleProvider
+                            .chatCompletionsUrl(baseUrl) == null
+                    ) {
+                        Toast.makeText(
+                            this,
+                            "接口地址需以 https:// 开头（本机 / 内网可用 http://）",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        return@button
+                    }
+                    if (baseUrl.isNotEmpty() && model.isEmpty()) {
+                        Toast.makeText(this, "请填写模型名", Toast.LENGTH_SHORT).show()
+                        return@button
+                    }
+                    store.save(
+                        store.load().copy(
+                            baseUrl = baseUrl,
+                            apiKey = keyEdit.text?.toString().orEmpty(),
+                            model = model,
+                        ),
+                    )
+                    Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
+                    render()
+                },
+            )
+        }
+
         card.addView(
             SettingsUi.button(this, "清空凭据") {
                 store.clear()
@@ -1559,7 +2119,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         card.addView(
             SettingsUi.value(
                 this,
-                if (current.isComplete) "当前状态：已配置" else "当前状态：未配置",
+                if (current.isConfigured) "当前状态：已配置" else "当前状态：未配置",
             ),
         )
         if (!store.secureStorageAvailable) {
@@ -1569,14 +2129,34 @@ class SettingsSectionActivity : AppCompatActivity() {
         }
         content.addView(SettingsUi.cardView(this, card))
 
+        val modeCard = SettingsUi.card(this)
+        modeCard.addView(SettingsUi.heading(this, "译模式（边打边译）"))
+        modeCard.addView(
+            SettingsUi.hint(
+                this,
+                "长按 Shift 开关「译」；停顿约 0.45 秒自动翻译当前行，译文出现在候选栏。" +
+                    "工具栏「翻译」可打开整块翻译面板。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, modeCard))
+
+        val offline = SettingsUi.card(this)
+        offline.addView(SettingsUi.heading(this, "离线翻译（混元 HY-MT）"))
+        offline.addView(
+            SettingsUi.hint(
+                this,
+                "暂不提供离线翻译模型，译文均来自上面配置的在线服务。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, offline))
+
         val privacy = SettingsUi.card(this)
         privacy.addView(SettingsUi.heading(this, "隐私说明"))
         privacy.addView(
             SettingsUi.hint(
                 this,
-                "· 翻译需要联网\n" +
-                    "· 原文会发送给当前的翻译服务商（百度翻译）\n" +
-                    "· Board 不在本地保存原文、译文、历史或缓存\n" +
+                "· 翻译需要联网，原文会发送给你配置的服务商（译模式停顿后自动发送当前行）\n" +
+                    "· Board 不在本地保存原文、译文或历史；关闭译模式即停止自动发送\n" +
                     "· 服务商的数据处理与留存以其服务协议和隐私政策为准",
             ),
         )
@@ -1693,8 +2273,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         scope.addView(
             SettingsUi.hint(
                 this,
-                "只有「同步 → 同步内容」里勾选的数据会被上传：" +
-                    "不会同步输入法日志、调试信息、账号密码，也不会同步无关设备信息。",
+                "只上传「同步内容」中勾选的数据，不同步日志、密码与设备信息。",
             ),
         )
         SyncContent.entries.filter { preferences.isEnabled(it) }.forEach {
@@ -1735,7 +2314,7 @@ class SettingsSectionActivity : AppCompatActivity() {
         about.addView(
             SettingsUi.hint(
                 this,
-                "Android 端核心 + librime 中文输入（朙月拼音 · 简体）+ 剪贴板 + SyncClipboard / WebDAV 文本同步。",
+                "librime 中文输入（朙月拼音 · 简体）· 剪贴板 · SyncClipboard / WebDAV 同步。",
             ),
         )
         if (preferences.developerMode) {
@@ -1747,6 +2326,98 @@ class SettingsSectionActivity : AppCompatActivity() {
             )
         }
         content.addView(SettingsUi.cardView(this, about))
+    }
+
+    // ---------------------------------------------------------------- 关于（介绍 / 更新）
+
+    private fun buildAboutPage(content: LinearLayout) {
+        val intro = SettingsUi.card(this)
+        intro.addView(SettingsUi.heading(this, "项目介绍"))
+        intro.addView(
+            SettingsUi.value(
+                this,
+                "Board 是一款轻量的 Android 输入法：布局简洁、按键跟手，" +
+                    "支持拼音、双拼与模糊音，提供多套可跟随系统深浅色的配色主题。\n" +
+                    "输入内容与词库数据只保存在本机。",
+            ),
+        )
+        intro.addView(SettingsUi.value(this, "版本 ${BuildConfig.VERSION_NAME}"))
+        content.addView(SettingsUi.cardView(this, intro))
+
+        val update = SettingsUi.card(this)
+        update.addView(SettingsUi.heading(this, "更新"))
+        update.addView(
+            SettingsUi.toggleGroup(
+                this,
+                listOf("GitHub", "gh-proxy"),
+                if (preferences.updateDownloadSource == UpdateDownloadSource.GH_PROXY) 1 else 0,
+            ) { index ->
+                preferences.updateDownloadSource =
+                    if (index == 1) UpdateDownloadSource.GH_PROXY else UpdateDownloadSource.GITHUB
+            },
+        )
+        update.addView(
+            SettingsUi.hint(this, "gh-proxy 经 Cloudflare 加速下载更新包；检查更新始终直连。"),
+        )
+        val status = SettingsUi.value(this, "").apply { visibility = View.GONE }
+        val download = SettingsUi.primaryButton(this, "立即下载") { }.apply {
+            visibility = View.GONE
+        }
+        update.addView(
+            SettingsUi.button(this, "检查更新") { checkForUpdate(status, download) },
+        )
+        update.addView(status)
+        update.addView(download)
+        content.addView(SettingsUi.cardView(this, update))
+    }
+
+    /** 检查更新；确认有新版才露出「立即下载」 */
+    private fun checkForUpdate(status: TextView, download: MaterialButton) {
+        updateCheckJob?.cancel()
+        status.visibility = View.VISIBLE
+        status.text = "正在检查…"
+        download.visibility = View.GONE
+        updateCheckJob = lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { UpdateChecker.check() }
+            result.fold(
+                onSuccess = { info ->
+                    if (info == null) {
+                        status.text = "已是最新版本（${BuildConfig.VERSION_NAME}）"
+                    } else {
+                        status.text = buildString {
+                            append("发现新版本 ${info.versionLabel}")
+                            if (info.sizeBytes > 0L) append(" · ${formatUpdateSize(info.sizeBytes)}")
+                            if (info.notes.isNotBlank()) append("\n").append(info.notes.take(600))
+                        }
+                        download.visibility = View.VISIBLE
+                        download.setOnClickListener {
+                            val opened = UpdateChecker.openDownload(
+                                this@SettingsSectionActivity,
+                                info,
+                                preferences.updateDownloadSource,
+                            )
+                            if (!opened) {
+                                Toast.makeText(
+                                    this@SettingsSectionActivity,
+                                    "没有可用的浏览器",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    status.text = "检查失败：${error.message ?: error.javaClass.simpleName}"
+                },
+            )
+        }
+    }
+
+    private fun formatUpdateSize(bytes: Long): String = when {
+        bytes >= 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f GB", bytes / 1073741824.0)
+        bytes >= 1024L * 1024L -> String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
+        bytes >= 1024L -> String.format(Locale.US, "%.0f KB", bytes / 1024.0)
+        else -> "$bytes B"
     }
 
     // ---------------------------------------------------------------- 日志（开发者模式）
@@ -1767,7 +2438,7 @@ class SettingsSectionActivity : AppCompatActivity() {
             setTextColor(secondaryColor())
         }
         card.addView(body)
-        card.addView(SettingsUi.hint(this, "日志只记录类型、哈希前 8 位、字节数与错误分类，不含剪贴板正文。"))
+        card.addView(SettingsUi.hint(this, "日志只记录类型、哈希前缀与错误分类，不含正文。"))
         content.addView(SettingsUi.cardView(this, card))
 
         val learned = SettingsUi.card(this)

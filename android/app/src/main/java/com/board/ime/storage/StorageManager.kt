@@ -5,6 +5,11 @@ import android.util.Log
 import com.board.ime.database.dao.ClipboardDao
 import com.board.ime.database.dao.DictionarySourceDao
 import java.io.File
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -99,9 +104,9 @@ class StorageManager(
         val shared = sizeOf(File(filesDir, "rime/shared"))
         val build = sizeOf(File(filesDir, "rime/user/build"))
         val learned = userDbDirs().sumOf { sizeOf(it) } +
-            (File(filesDir, "rime/user").listFiles()
-                ?.filter { it.isFile && it.extension == "yaml" }
-                ?.sumOf { it.length() } ?: 0L)
+            (listSafely(File(filesDir, "rime/user"))
+                .filter { it.isFile && it.extension == "yaml" }
+                .sumOf { it.length() })
         val dictionaries = sizeOf(importedDir)
         val clipboard = sizeOf(clipboardDir)
         val sync = sizeOf(File(dataDir, "no_backup"))
@@ -128,9 +133,24 @@ class StorageManager(
     }
 
     private fun userDbDirs(): List<File> =
-        File(filesDir, "rime/user").listFiles()
-            ?.filter { it.isDirectory && it.name.endsWith(".userdb") }
-            .orEmpty()
+        listSafely(File(filesDir, "rime/user"))
+            .filter { it.isDirectory && it.name.endsWith(".userdb") }
+
+    /**
+     * 安全列目录。librime 会在 `cache/rime/log/` 写非 UTF-8 的文件名，
+     * 而 `File.listFiles()` 走 `UnixFileSystem.list0` + `NewStringUTF`，在 CheckJNI 下会
+     * 直接 abort 整个进程（点「高级」秒退的根因）。NIO 的 DirectoryStream 按字节读目录项，不会崩。
+     */
+    private fun listSafely(dir: File): List<File> =
+        if (!dir.isDirectory) {
+            emptyList()
+        } else {
+            runCatching {
+                Files.newDirectoryStream(dir.toPath()).use { stream ->
+                    stream.map { it.toFile() }
+                }
+            }.getOrDefault(emptyList())
+        }
 
     private fun crashLogBytes(): Long =
         File(filesDir, "crash.log").takeIf { it.isFile }?.length() ?: 0L
@@ -139,7 +159,7 @@ class StorageManager(
         if (dir == null || !dir.exists()) return 0L
         if (dir.isFile) return dir.length()
         var total = 0L
-        dir.listFiles()?.forEach { child ->
+        listSafely(dir).forEach { child ->
             total += if (child.isDirectory) sizeOf(child) else child.length()
         }
         return total
@@ -160,10 +180,10 @@ class StorageManager(
             .map { com.board.ime.dictionary.RimeDictionaryBridge.rimeDictName(it) }
             .toSet()
 
-        importedDir.listFiles()?.forEach { entry ->
+        listSafely(importedDir).forEach { entry ->
             if (entry.isDirectory) {
                 // 数据源目录：里面没有 GB 级文件是正常的（未下载过只是空目录）
-                entry.listFiles()?.forEach { file ->
+                listSafely(entry).forEach { file ->
                     if (File(file.absolutePath).absolutePath !in referenced) {
                         reclaimable += ReclaimableFile(
                             path = file.absolutePath,
@@ -198,8 +218,8 @@ class StorageManager(
             .map { File(it).absolutePath }.toSet()
         val deletedClipboard = runCatching { clipboardDao?.deletedFilePaths() }.getOrNull().orEmpty()
             .map { File(it).absolutePath }.toSet()
-        clipboardDir.listFiles()?.forEach { bucket ->
-            bucket.listFiles()?.forEach { file ->
+        listSafely(clipboardDir).forEach { bucket ->
+            listSafely(bucket).forEach { file ->
                 val path = file.absolutePath
                 when {
                     path in deletedClipboard -> reclaimable += ReclaimableFile(
@@ -228,7 +248,7 @@ class StorageManager(
                 ReclaimableFile.Kind.CACHE,
             )
         }
-        File(dataDir, "cache").listFiles()?.forEach { entry ->
+        listSafely(File(dataDir, "cache")).forEach { entry ->
             if (entry.name == "board.db.lck") return@forEach
             val bytes = if (entry.isDirectory) sizeOf(entry) else entry.length()
             if (bytes > 0) {
@@ -251,8 +271,8 @@ class StorageManager(
 
         // 词库目录：按内容哈希分组（同内容不同文件名 = 重复）
         val byHash = HashMap<String, MutableList<Pair<String, Long>>>()
-        importedDir.listFiles()?.forEach { entry ->
-            val files = if (entry.isDirectory) entry.listFiles().orEmpty() else arrayOf(entry)
+        listSafely(importedDir).forEach { entry ->
+            val files = if (entry.isDirectory) listSafely(entry) else listOf(entry)
             files.filter { it.isFile && it.length() > 64 * 1024 }.forEach { file ->
                 val hash = com.board.ime.clipboard.ClipboardHasher.hashFile(file)
                 if (hash.isNotEmpty()) {
@@ -312,9 +332,7 @@ class StorageManager(
             }
             val file = File(target.path)
             val bytes = if (file.isDirectory) sizeOf(file) else file.length()
-            val ok = runCatching {
-                if (file.isDirectory) file.deleteRecursively() else file.delete()
-            }.getOrDefault(false)
+            val ok = runCatching { deleteTree(file) }.getOrDefault(false)
             if (ok) {
                 removed++
                 freed += bytes
@@ -322,6 +340,26 @@ class StorageManager(
         }
         Log.i(TAG, "清理 $kind：删除 $removed 项，释放 $freed 字节")
         CleanResult(removed, freed)
+    }
+
+    /** 删除目录树；同样避开 File.listFiles()（非 UTF-8 文件名会让进程 abort） */
+    private fun deleteTree(file: File): Boolean {
+        if (!file.isDirectory) return file.delete() || !file.exists()
+        Files.walkFileTree(
+            file.toPath(),
+            object : SimpleFileVisitor<Path>() {
+                override fun visitFile(path: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    Files.deleteIfExists(path)
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun postVisitDirectory(dir: Path, exc: java.io.IOException?): FileVisitResult {
+                    Files.deleteIfExists(dir)
+                    return FileVisitResult.CONTINUE
+                }
+            },
+        )
+        return !file.exists()
     }
 
     /**

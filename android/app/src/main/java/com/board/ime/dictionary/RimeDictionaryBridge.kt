@@ -2,6 +2,8 @@ package com.board.ime.dictionary
 
 import android.util.Log
 import com.board.ime.engine.rime.RimeRuntime
+import com.board.ime.engine.rime.RimeSchemaOptions
+import com.board.ime.engine.rime.ShuangpinScheme
 import java.io.BufferedWriter
 import java.io.File
 import java.util.zip.GZIPInputStream
@@ -277,9 +279,17 @@ object RimeDictionaryBridge {
      * `__patch: - luna_pinyin_simp.custom:/patch?`，所以我们只写这个 custom 文件，
      * **不动原始 schema**，升级 Rime / 重新释放资源后修改依然有效。
      *
+     * 模糊音分组与简体 / 繁体由 [options] 决定（12 组单独开关）。
+     * 注意：模糊音规则本身由用户目录的 `luna_pinyin.schema.yaml` 影子文件注入
+     * （见 [RimeSchemaBuilder]），这里不再写 `speller/algebra`。
+     *
      * @return true = patch 已就位（或本来就是我们写的）；false = 存在用户自己的同文件，未覆盖
      */
-    fun applySchemaPatch(userDir: File, sources: List<DictionarySource>): Boolean {
+    fun applySchemaPatch(
+        userDir: File,
+        sources: List<DictionarySource>,
+        options: RimeSchemaOptions = RimeSchemaOptions(),
+    ): Boolean {
         val file = File(userDir, "$DEFAULT_SCHEMA.custom.yaml")
         if (file.isFile) {
             val existing = runCatching { file.readText() }.getOrDefault("")
@@ -297,105 +307,16 @@ object RimeDictionaryBridge {
             // 这里必须显式重复这个设置，否则会掉回 default.yaml 的默认值 5。
             // UI 可横向滑动查看整页候选；这里与 CandidateBar.MAX_CANDIDATES 保持一致。
             append("  menu/page_size: 50\n")
-            // 显式开启用户词典学习：选过的候选会被记录并加权，越用越靠前。
-            // 之前未显式设置，依赖 librime 默认值；实测学习未生效，这里写死为 true。
-            append("  \"translator/enable_user_dict\": true\n")
-            // 关闭整句候选：避免出现「哦哦 / 等等」这类由简拼+整句拼出来的不相关结果，
-            // 只保留词库里的真实词语。
-            append("  \"translator/enable_sentence\": false\n")
-            // 前缀补全：输入前缀即可给出更长的词 / 词组（对应微信的 completion 候选）。
-            // 注意：这会让每次按键的候选更多，但补全候选的权重低于精确匹配，
-            // 最常用的词仍排在前面。
-            append("  \"translator/enable_completion\": true\n")
-            // 用户词优先（对齐微信：用户自定义词 / 常用语优先于基础词库）。
-            // 基础词库权重来自 essay.txt 预置词频（最大约 4.8e6），custom_phrase 默认
-            // initial_quality 只有 1，比基础词低得多 → 自己加的词排不到前面。
-            // 这里给一个明显更大的值，用户自己的词匹配到编码时强制排最前。
-            append("  \"custom_phrase/initial_quality\": 10000000\n")
-            // ------------------------------------------------------------------
-            // 模糊音 + 纠错（对应微信的 fuzzy augmenters：zh/z、ch/c、sh/s、n/l、h/f、前后鼻音）。
-            // pinyin.yaml 已随包发布，这里只把定义挂进 speller/algebra，不改原始 schema。
-            // 顺序必须是「模糊音 → 简拼 → 纠错」：模糊音排在简拼之前，简拼才会带上模糊音；
-            // 全部用 derive（权重低于精确匹配），只扩大覆盖面，不会把生僻词顶到常用词前面。
-            append("  \"speller/algebra\":\n")
-            append("    __patch:\n")
-            append("      - pinyin:/zh_z_bufen\n")
-            append("      - pinyin:/n_l_bufen\n")
-            append("      - pinyin:/hu_f_buhun\n")
-            append("      - pinyin:/eng_ong_bufen\n")
-            append("      - pinyin:/en_eng_bufen\n")
-            append("      - pinyin:/abbreviation\n")
-            append("      - pinyin:/spelling_correction\n")
-            append("      - pinyin:/key_correction\n")
-            // ------------------------------------------------------------------
-            // 特殊自定义编码（`@` 等 custom_phrase 的 code）需要**能进入 composing**，
-            // 否则 custom_phrase 的 translator 永远收不到查询串。
-            //
-            // 只补两处最小配置，不动原始 luna_pinyin.schema.yaml：
-            // 1) 把 `@` 与 `0-9`（以及 `.` `_` `-`，示例 `@qq.com` 需要 `.`）并入 speller 字母表；
-            // 2) 一条**窄** recognizer pattern：只把「以数字或 @ 开头」的串标为 custom_code，
-            //    不放进空格/回车/标点/Shift 等，避免扩大 composing 范围。
-            //
-            // 注意：数字层 / 符号层的按键能否进入 Rime 由 Board 侧 RimeEngine 的模式路由决定
-            //（NUMBER / SYMBOL 下的 `@` 会走 Rime）；这里只负责让 librime 能接受 `@`。
+            // 简体 / 繁体：luna_pinyin.schema 的开关 2 是字形选择（0=傳統漢字，1=简化字）。
+            append("  switches/@2/reset: ").append(if (options.traditional) 0 else 1).append('\n')
+            appendTranslatorSettings()
+            // 模糊音 + 简拼 + 纠错：由影子 base schema 注入，这里只保留说明
+            // （见 RimeSchemaBuilder.replaceAlgebra）。
+            // 特殊自定义编码（`@` 等）需要能进入 composing，见下方 alphabet / recognizer。
             // ------------------------------------------------------------------
             append("  \"speller/alphabet\": \"zyxwvutsrqponmlkjihgfedcba@0123456789._-\"\n")
             append("  \"recognizer/patterns/custom_code\": \"^[0-9@][0-9A-Za-z@._-]*$\"\n")
-            // ------------------------------------------------------------------
-            // 现代常用词补充词源：essay.txt 高频 2–4 字词（脚本自动注音；essay/luna 都是繁体，
-            // 运行期由 OpenCC 转简体显示，匹配仍按拼音）。
-            // 基础词库 luna_pinyin 是繁体 / 文言词典，缺很多现代常用词；这里补一份高频常用词，
-            // 不加偏移，纯按词频竞争：谁常用谁靠前。
-            //
-            // 额外词源（用户导入的大型词库）与 board_common 挂在**同一个** `engine/translators/+`
-            // 列表里，避免 YAML 出现两个同名键互相覆盖。
-            append("  \"engine/translators/+\":\n")
-            append("    - script_translator@board_common\n")
-            sources.forEach { source ->
-                append("    - script_translator@").append(translatorName(source)).append('\n')
-            }
-            append("  board_common:\n")
-            append("    dictionary: board_common\n")
-            append("    enable_completion: false\n")
-            append("    enable_sentence: false\n")
-            append("    enable_user_dict: false\n")
-            append("    enable_encoder: false\n")
-            append("    initial_quality: 1\n")
-            append("    comment_format:\n")
-            append("      - xform/.+//\n")
-            // **关键**：把 board_common 与导入词典列进 `schema/dependencies`。
-            //
-            // 真机 + librime INFO 日志实测（deployment_tasks.cc）：
-            //   dependencies 的语义是「**方案**」，deployer 会找 `<名字>.schema.yaml`，
-            //   找到就把它当依赖方案、预编译它的 `translator.dictionary`（官方 stroke 即如此），
-            //   找不到只打印 `missing input schema; skipped unsatisfied dependency`。
-            //   所以每个词典都要配套 `<名字>.schema.yaml` 占位方案，
-            //   两边配套才能真正生成 `build/<名>.table.bin`。
-            append("  \"schema/dependencies/+\":\n")
-            append("    - board_common\n")
-            if (sources.isEmpty()) {
-                append("  # 没有需要挂接的大型词库\n")
-            } else {
-                append("  # 追加「额外词源」：不动原来的 script_translator / luna_pinyin\n")
-                sources.forEach { source ->
-                    append("    - ").append(logicalDictionaryName(source)).append('\n')
-                }
-                sources.forEach { source ->
-                    append("  ").append(translatorName(source)).append(":\n")
-                    append("    dictionary: ").append(logicalDictionaryName(source)).append('\n')
-                    // 关闭逐键补全：导入词库是静态词源，开启补全会让每个前缀都去大表里扫，
-                    // 直接影响候选延迟（输入热路径）。
-                    append("    enable_completion: false\n")
-                    append("    enable_sentence: false\n")
-                    // 不建 userdb、不参与编码学习：它是静态词源，避免污染学习数据
-                    append("    enable_user_dict: false\n")
-                    append("    enable_encoder: false\n")
-                    // 质量给负值：默认词库的候选仍然排在前面
-                    append("    initial_quality: ").append(EXTRA_QUALITY).append('\n')
-                    append("    comment_format:\n")
-                    append("      - xform/.+//\n")
-                }
-            }
+            appendBoardTranslators(sources)
         }
         return try {
             file.writeText(body)
@@ -404,6 +325,117 @@ object RimeDictionaryBridge {
         } catch (throwable: Throwable) {
             Log.e(TAG, "写 schema patch 失败：${throwable.message}", throwable)
             false
+        }
+    }
+
+    /**
+     * 双拼方案的 patch：与全拚共用 board_common / 导入词库 / 用户词，
+     * 并切换简体开关。拼写运算（键位 + 模糊音）由影子 schema 提供。
+     */
+    fun applyDoublePinyinPatch(
+        userDir: File,
+        scheme: ShuangpinScheme,
+        sources: List<DictionarySource>,
+        options: RimeSchemaOptions,
+    ): Boolean {
+        if (!scheme.isDoublePinyin) return true
+        val file = File(userDir, "${scheme.schemaId}.custom.yaml")
+        if (file.isFile) {
+            val existing = runCatching { file.readText() }.getOrDefault("")
+            if (!existing.contains(PATCH_MARKER)) {
+                Log.w(TAG, "已存在用户自己的 ${file.name}，不覆盖")
+                return false
+            }
+        }
+        val body = buildString {
+            append(PATCH_MARKER).append('\n')
+            append("patch:\n")
+            append("  menu/page_size: 50\n")
+            // 双拼方案的开关 2 是 simplification（0=漢字，1=汉字）
+            append("  switches/@2/reset: ").append(if (options.traditional) 0 else 1).append('\n')
+            appendTranslatorSettings()
+            // 字母表保留方案自己的分号（微软 / 搜狗 / 紫光用 ; 表示 ing），再并入自定义编码字符
+            append("  \"speller/alphabet\": \"zyxwvutsrqponmlkjihgfedcba;@0123456789._-\"\n")
+            append("  \"recognizer/patterns/custom_code\": \"^[0-9@][0-9A-Za-z@._-]*$\"\n")
+            append("  custom_phrase:\n")
+            append("    dictionary: \"\"\n")
+            append("    user_dict: custom_phrase\n")
+            append("    db_class: stabledb\n")
+            append("    enable_completion: false\n")
+            append("    enable_sentence: false\n")
+            append("    initial_quality: 1\n")
+            // 只写一个 `engine/translators/+` 列表：custom_phrase + board_common + 导入词库
+            // （YAML 里重复的同一个 key 会互相覆盖）
+            append("  \"engine/translators/+\":\n")
+            append("    - table_translator@custom_phrase\n")
+            append("    - script_translator@board_common\n")
+            sources.forEach { source ->
+                append("    - script_translator@").append(translatorName(source)).append('\n')
+            }
+            appendBoardTranslators(sources, includeTranslatorList = false)
+        }
+        return try {
+            file.writeText(body)
+            Log.i(TAG, "已写入双拼 patch：${file.name}")
+            true
+        } catch (throwable: Throwable) {
+            Log.e(TAG, "写双拼 patch 失败：${throwable.message}", throwable)
+            false
+        }
+    }
+
+    /** 用户词优先 / 学习 / 整句 / 前缀补全 —— 两种方案共用。 */
+    private fun StringBuilder.appendTranslatorSettings() {
+        // 显式开启用户词典学习：选过的候选会被记录并加权，越用越靠前。
+        append("  \"translator/enable_user_dict\": true\n")
+        // 整句候选：xiangquzijieshangban → 想去字节上班。
+        append("  \"translator/enable_sentence\": true\n")
+        // 前缀补全：输入前缀即可给出更长的词 / 词组。
+        append("  \"translator/enable_completion\": true\n")
+        // 用户词优先：custom_phrase 的权重明显高于基础词频（约 4.8e6）。
+        append("  \"custom_phrase/initial_quality\": 10000000\n")
+    }
+
+    /** board_common 现代常用词 + 用户导入的大型词库。 */
+    private fun StringBuilder.appendBoardTranslators(
+        sources: List<DictionarySource>,
+        includeTranslatorList: Boolean = true,
+    ) {
+        // 现代常用词补充词源（essay.txt 高频 2–4 字词）
+        if (includeTranslatorList) {
+            append("  \"engine/translators/+\":\n")
+            append("    - script_translator@board_common\n")
+            sources.forEach { source ->
+                append("    - script_translator@").append(translatorName(source)).append('\n')
+            }
+        }
+        append("  board_common:\n")
+        append("    dictionary: board_common\n")
+        append("    enable_completion: false\n")
+        append("    enable_sentence: false\n")
+        append("    enable_user_dict: false\n")
+        append("    enable_encoder: false\n")
+        append("    initial_quality: 1\n")
+        append("    comment_format:\n")
+        append("      - xform/.+//\n")
+        // 词典必须列入 schema/dependencies，deployer 才会预编译成 table.bin
+        append("  \"schema/dependencies/+\":\n")
+        append("    - board_common\n")
+        if (sources.isNotEmpty()) {
+            sources.forEach { source ->
+                append("    - ").append(logicalDictionaryName(source)).append('\n')
+            }
+            sources.forEach { source ->
+                append("  ").append(translatorName(source)).append(":\n")
+                append("    dictionary: ").append(logicalDictionaryName(source)).append('\n')
+                append("    enable_completion: false\n")
+                append("    enable_sentence: false\n")
+                append("    enable_user_dict: false\n")
+                append("    enable_encoder: false\n")
+                append("    initial_quality: ").append(EXTRA_QUALITY).append('\n')
+                append("    comment_format:\n")
+                append("      - xform/.+//\n")
+            }
         }
     }
 

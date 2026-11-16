@@ -1,21 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 深色模式下 App（设置页）的颜色覆盖；键盘颜色由 KeyboardTheme 自行选择 -->
 <resources>
-    <color name="app_background">@color/board_grey_950</color>
-    <color name="app_surface">#FF17191C</color>
-    <color name="app_surface_variant">@color/board_grey_850</color>
-    <color name="app_surface_container">#FF1F2226</color>
-    <color name="app_surface_container_high">#FF262A2E</color>
-    <color name="app_on_surface">#FFF2F4F6</color>
-    <color name="app_on_surface_variant">#FFA2A8AE</color>
-    <color name="app_outline">#FF2A2E33</color>
-    <color name="app_outline_variant">#FF23262A</color>
-    <color name="app_accent">@color/board_blue_dark</color>
-    <color name="app_on_accent">@color/board_grey_950</color>
-    <color name="app_accent_container">@color/board_blue_soft_dark</color>
-    <color name="app_on_accent_container">#FFB7CBFF</color>
-    <color name="app_secondary_container">@color/board_grey_800</color>
-    <color name="app_on_secondary_container">#FFC3C9CF</color>
-    <color name="app_error">#FFF2B8B5</color>
-    <color name="app_on_error">#FF601410</color>
+    <color name="app_background">#FF0B0B0D</color>
+    <color name="app_surface">#FF151518</color>
+    <color name="app_surface_variant">#FF1A1A1E</color>
+    <color name="app_surface_container">#FF1A1A1E</color>
+    <color name="app_surface_container_high">#FF232327</color>
+    <color name="app_on_surface">#FFF5F5F7</color>
+    <color name="app_on_surface_variant">#FFB8B8C0</color>
+    <color name="app_outline">#FF636366</color>
+    <color name="app_outline_variant">#FF3A3A3C</color>
+    <color name="app_accent">#FF0A84FF</color>
+    <color name="app_on_accent">#FFFFFFFF</color>
+    <color name="app_accent_container">#FF10263D</color>
+    <color name="app_on_accent_container">#FF9CC7FF</color>
+    <color name="app_secondary_container">#FF232327</color>
+    <color name="app_on_secondary_container">#FFE5E5EA</color>
+    <color name="app_green">#FF30D158</color>
+    <color name="app_on_green">#FF0B0B0D</color>
+    <color name="app_error">#FFFF453A</color>
+    <color name="app_on_error">#FF1A0000</color>
 </resources>

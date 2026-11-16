@@ -83,7 +83,9 @@
     <string name="dictionary_add_title">新增词条</string>
     <string name="dictionary_edit_title">编辑词条</string>
     <string name="dictionary_word">词条</string>
+    <string name="dictionary_word_hint">人名 / 公司 / 长句 / 邮箱都可以；换行会原样上屏</string>
     <string name="dictionary_code">编码（拼音，音节用空格分隔）</string>
+    <string name="dictionary_code_hint">例：beijingdaxue 也可打简拼 bjdx；mail 这类字母编码按原样打</string>
     <string name="dictionary_frequency">词频</string>
     <string name="dictionary_type">类型</string>
     <string name="dictionary_type_learned">学习词</string>

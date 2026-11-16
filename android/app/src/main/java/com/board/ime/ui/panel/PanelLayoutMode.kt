@@ -10,6 +10,8 @@ package com.board.ime.ui.panel
  *   结果区高度有上限，避免把输入法顶得过高
  * - [TRANSLATION_ONLY]：翻译 —— 内容区占用键盘的位置（与剪贴板同理，总高度不变）
  * - [CANDIDATES_ONLY]：候选全部展开 —— 网格占用键盘的位置（与剪贴板同理，总高度不变）
+ * - [EMOJI_ONLY]：表情网格 —— 内容区占用键盘的位置（总高度不变）
+ * - [EMOJI_WITH_KEYBOARD]：表情搜索 —— 结果区在上、键盘在下（与剪贴板搜索同理）
  */
 enum class PanelLayoutMode {
     KEYBOARD_ONLY,
@@ -18,4 +20,6 @@ enum class PanelLayoutMode {
     TRANSLATION_ONLY,
     PHRASES_ONLY,
     CANDIDATES_ONLY,
+    EMOJI_ONLY,
+    EMOJI_WITH_KEYBOARD,
 }

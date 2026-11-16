@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 圆角：与 DESIGN.md 一致（sm 8 / md 12 / lg 16）。Material 组件按 small/medium/large
-         取用，卡片另外显式用 app_card_corner_radius。 -->
+    <!-- 圆角：sm 10 / md 16 / lg 28（Lyra 式：小组件 16、卡片 28）。Material 组件按
+         small/medium/large 取用，卡片另外显式用 app_card_corner_radius。 -->
     <style name="ShapeAppearance.Board.Small" parent="ShapeAppearance.Material3.Corner.Small">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">@dimen/app_radius_sm</item>

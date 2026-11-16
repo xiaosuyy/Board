@@ -75,6 +75,10 @@ object RimeRuntime {
     @Volatile
     private var lastActivityAt: Long = 0L
 
+    /** 当前期望使用的方案（全拼 / 双拼由设置决定）；开会话时按它选择 */
+    @Volatile
+    private var preferredSchema: String = DEFAULT_SCHEMA
+
     val isNativeAvailable: Boolean
         get() = RimeNative.isAvailable
 
@@ -200,13 +204,16 @@ object RimeRuntime {
         }
     }
 
-    /** 部署完成后创建会话并选中默认方案 */
-    fun openSession(): Boolean {
+    /** 部署完成后创建会话并选中默认方案（或设置里选的双拼方案） */
+    fun openSession(schemaId: String = preferredSchema): Boolean {
         if (!initialized) {
             lastError = "尚未初始化"
             return false
         }
-        lock.withLock { return openSessionLocked() }
+        lock.withLock {
+            preferredSchema = schemaId
+            return openSessionLocked()
+        }
     }
 
     private fun openSessionLocked(): Boolean {
@@ -221,10 +228,36 @@ object RimeRuntime {
             lastError = "创建 Rime 会话失败"
             return false
         }
-        val selected = RimeNative.nativeSelectSchema(id, DEFAULT_SCHEMA)
-        Log.i(TAG, "创建 Rime 会话 $id，选中方案 $DEFAULT_SCHEMA = $selected")
+        var schema = preferredSchema
+        var selected = RimeNative.nativeSelectSchema(id, schema)
+        if (!selected && schema != DEFAULT_SCHEMA) {
+            // 双拼方案没部署成功时退回全拼，保证键盘可用
+            Log.w(TAG, "选中方案 $schema 失败，回退 $DEFAULT_SCHEMA")
+            schema = DEFAULT_SCHEMA
+            selected = RimeNative.nativeSelectSchema(id, schema)
+        }
+        Log.i(TAG, "创建 Rime 会话 $id，选中方案 $schema = $selected")
         sessionId = id
         return true
+    }
+
+    /**
+     * 设置变更后重新部署并切到指定方案。
+     *
+     * 方案变更会改动 schema（拼写运算 / 开关），必须 fullCheck 重建；
+     * 部署前先关会话，避免在维护期间继续用旧会话。
+     */
+    fun applySchemaChange(schemaId: String): Boolean {
+        if (!initialized) {
+            if (!initialize(storedContext ?: return false, storedVersion)) return false
+        }
+        lock.withLock { closeSessionLocked() }
+        val deployed = deploy(fullCheck = true)
+        if (!deployed) Log.w(TAG, "方案变更部署失败：${lastError.orEmpty()}")
+        return lock.withLock {
+            preferredSchema = schemaId
+            if (initialized) openSessionLocked() else false
+        }
     }
 
     /** 关闭会话：leveldb 的用户词典只允许一个句柄，操作 userdb 前必须先释放 */

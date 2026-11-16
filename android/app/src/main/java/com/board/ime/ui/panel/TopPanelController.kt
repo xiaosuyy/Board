@@ -40,6 +40,7 @@ class TopPanelController(
     private val toolbar: ToolbarView,
     private val candidateBar: CandidateBar,
     private val morePanel: MorePanel,
+    private val toolboxView: ToolboxView,
     private val clipboardHeader: ClipboardHeader,
     private val clipboardPanel: ClipboardPanel,
     private val voiceHeader: VoiceHeader,
@@ -47,6 +48,8 @@ class TopPanelController(
     private val translationPanel: TranslationPanel,
     private val phrasesHeader: PhrasesHeader,
     private val phrasesPanel: PhrasesPanel,
+    private val emojiHeader: EmojiHeader,
+    private val emojiPanel: EmojiPanel,
     private val candidateGridPanel: CandidateGridPanel,
 ) {
 
@@ -154,6 +157,163 @@ class TopPanelController(
     /** 列表数据变化（由宿主持有 Flow 后推过来；不在按键时调用） */
     fun updatePhrases(items: List<com.board.ime.database.entity.PhraseEntry>) {
         phrasesPanel.render(items)
+    }
+
+    // ---------------------------------------------------------------- 表情
+
+    /** 点选一个 emoji / 符号（宿主负责上屏并记住最近使用） */
+    var onEmojiInsert: ((String) -> Unit)? = null
+
+    /** 按关键字搜表情（拼音 / 首字母 / 英文 / 中文 / 符号名） */
+    var onEmojiSearch: ((String) -> List<String>)? = null
+
+    /** 全部 emoji（按 Unicode 顺序） */
+    var onEmojiAll: (() -> List<String>)? = null
+
+    /** 最近使用过的 emoji */
+    var onEmojiRecent: (() -> List<String>)? = null
+
+    private var emojiSearching = false
+    private var emojiQuery = ""
+    private var emojiResults: List<String> = emptyList()
+
+    val isEmojiSearching: Boolean
+        get() = state == TopPanelState.EMOJI && emojiSearching
+
+    // ---------------------------------------------------------------- v + 空格 快捷面板
+
+    /** 快捷面板里的「符号」：宿主切换键盘到符号层 */
+    var onToolboxSymbols: (() -> Unit)? = null
+
+    /** 打开快捷面板（剪贴板 / 常用语 / 符号 / 表情），键盘仍留在下方可继续输入 */
+    fun showToolbox() {
+        setClipboardEditing(false)
+        stopSearch(notify = false)
+        state = TopPanelState.TOOLBOX
+        applyState()
+    }
+
+    fun closeToolbox() {
+        if (state != TopPanelState.TOOLBOX) return
+        state = derivedState()
+        applyState()
+    }
+
+    /** 打开表情面板（固定高度不变；先显示最近 + 全部） */
+    fun showEmoji() {
+        emojiSearching = false
+        emojiQuery = ""
+        emojiHeader.setSearching(false)
+        emojiHeader.setQuery("")
+        renderEmoji()
+        state = TopPanelState.EMOJI
+        applyState()
+    }
+
+    fun closeEmoji() {
+        if (state != TopPanelState.EMOJI) return
+        resetEmojiState()
+        state = derivedState()
+        applyState()
+    }
+
+    /** 表情面板里的返回：搜索中先退出搜索，再关闭面板 */
+    fun handleEmojiBack() {
+        if (state != TopPanelState.EMOJI) return
+        if (emojiSearching) {
+            stopEmojiSearch()
+        } else {
+            closeEmoji()
+        }
+    }
+
+    private fun toggleEmojiSearch() {
+        if (emojiSearching) stopEmojiSearch() else startEmojiSearch()
+    }
+
+    private fun startEmojiSearch() {
+        emojiSearching = true
+        emojiQuery = ""
+        emojiHeader.setSearching(true)
+        emojiHeader.setQuery("")
+        renderEmoji()
+        applyState()
+    }
+
+    private fun stopEmojiSearch() {
+        if (!emojiSearching) return
+        emojiSearching = false
+        emojiQuery = ""
+        emojiHeader.setSearching(false)
+        emojiHeader.setQuery("")
+        renderEmoji()
+        applyState()
+    }
+
+    private fun resetEmojiState() {
+        emojiSearching = false
+        emojiQuery = ""
+        emojiResults = emptyList()
+        emojiHeader.setSearching(false)
+        emojiHeader.setQuery("")
+    }
+
+    private fun renderEmoji() {
+        val items = if (emojiQuery.isEmpty()) {
+            val recent = onEmojiRecent?.invoke().orEmpty()
+            val all = onEmojiAll?.invoke().orEmpty()
+            (recent + all).distinct()
+        } else {
+            onEmojiSearch?.invoke(emojiQuery).orEmpty()
+        }
+        emojiResults = items
+        emojiPanel.render(
+            items,
+            emptyText = if (emojiQuery.isEmpty()) "暂无表情" else "没有找到相关表情",
+        )
+    }
+
+    private fun handleEmojiSearchKey(key: KeySpec): Boolean {
+        if (state != TopPanelState.EMOJI || !emojiSearching) return false
+        return when (key.type) {
+            KeyType.CHARACTER, KeyType.SYMBOL -> {
+                appendEmojiQuery(key.text ?: key.displayText)
+                true
+            }
+
+            KeyType.SPACE -> {
+                appendEmojiQuery(" ")
+                true
+            }
+
+            // 逗号 / 句号对搜索没有意义，但也不能漏给编辑器（会往输入框里打字）
+            KeyType.COMMA, KeyType.PERIOD -> true
+
+            KeyType.BACKSPACE -> {
+                if (emojiQuery.isEmpty()) {
+                    stopEmojiSearch()
+                } else {
+                    emojiQuery = emojiQuery.dropLast(1)
+                    emojiHeader.setQuery(emojiQuery)
+                    renderEmoji()
+                }
+                true
+            }
+
+            KeyType.ENTER -> {
+                emojiResults.firstOrNull()?.let { onEmojiInsert?.invoke(it) }
+                true
+            }
+
+            else -> false
+        }
+    }
+
+    private fun appendEmojiQuery(text: String) {
+        if (text.isEmpty() || emojiQuery.length >= MAX_EMOJI_QUERY_LENGTH) return
+        emojiQuery += text
+        emojiHeader.setQuery(emojiQuery)
+        renderEmoji()
     }
 
     // ---------------------------------------------------------------- 翻译
@@ -273,6 +433,18 @@ class TopPanelController(
                 else -> onMoreAction?.invoke(action)
             }
         }
+        toolboxView.onAction = { action ->
+            when (action) {
+                ToolboxView.Action.CLOSE -> closeToolbox()
+                ToolboxView.Action.CLIPBOARD -> showClipboard()
+                ToolboxView.Action.PHRASES -> onMoreAction?.invoke(MorePanel.Action.PHRASES)
+                ToolboxView.Action.EMOJI -> onMoreAction?.invoke(MorePanel.Action.EMOJI)
+                ToolboxView.Action.SYMBOLS -> {
+                    closeToolbox()
+                    onToolboxSymbols?.invoke()
+                }
+            }
+        }
         candidateBar.onCandidateSelected = { index -> onCandidateSelected?.invoke(index) }
         candidateBar.onComposingClicked = { onComposingClicked?.invoke() }
         candidateBar.onExpandToggled = { toggleCandidatesExpanded() }
@@ -299,6 +471,10 @@ class TopPanelController(
         phrasesPanel.onEdit = { entry -> onPhrasesEdit?.invoke(entry) }
         phrasesPanel.onDelete = { entry -> onPhrasesDelete?.invoke(entry) }
         phrasesPanel.onReorder = { order -> onPhrasesReorder?.invoke(order) }
+
+        emojiHeader.onBack = { handleEmojiBack() }
+        emojiHeader.onToggleSearch = { toggleEmojiSearch() }
+        emojiPanel.onPick = { emoji -> onEmojiInsert?.invoke(emoji) }
         clipboardHeader.onToggleEdit = { toggleClipboardEdit() }
         clipboardHeader.onToggleSearch = { toggleSearch() }
         clipboardHeader.onClearSearch = { stopSearch() }
@@ -332,13 +508,14 @@ class TopPanelController(
         candidateGridPanel.render(candidates)
 
         when {
-            // 剪贴板是用户显式打开的，不被输入状态打断
-            // 剪贴板 / 语音都是用户显式打开的，不被输入状态打断
-            state == TopPanelState.CLIPBOARD || state == TopPanelState.VOICE -> Unit
+            // 剪贴板 / 语音 / 表情 都是用户显式打开的，不被输入状态打断
+            state == TopPanelState.CLIPBOARD || state == TopPanelState.VOICE ||
+                state == TopPanelState.EMOJI -> Unit
             // 展开态：还有拼音就继续留在展开态（选完「许」后接着选「鹏 / 程」）
-            state == TopPanelState.CANDIDATES_EXPANDED && composing.isNotEmpty() -> Unit
-            // 一开始输入就切到候选栏
-            composing.isNotEmpty() -> state = TopPanelState.CANDIDATES
+            state == TopPanelState.CANDIDATES_EXPANDED &&
+                (composing.isNotEmpty() || candidates.isNotEmpty()) -> Unit
+            // 一开始输入就切到候选栏；没有拼音但有候选（译模式整行译文）也要显示
+            composing.isNotEmpty() || candidates.isNotEmpty() -> state = TopPanelState.CANDIDATES
             // 输入结束（composing 清空）后从候选栏 / 展开态退回工具栏
             state == TopPanelState.CANDIDATES ||
                 state == TopPanelState.CANDIDATES_EXPANDED -> state = TopPanelState.TOOLBAR
@@ -433,6 +610,7 @@ class TopPanelController(
         stopSearch(notify = false)
         remoteOnly = false
         clipboardHeader.setRemoteFilter(false)
+        resetEmojiState()
         // 语音不可用的提示必须留到用户明确退出为止，不能被输入视图刷新冲掉
         state = if (voiceSticky) TopPanelState.VOICE else TopPanelState.TOOLBAR
         applyState()
@@ -447,6 +625,7 @@ class TopPanelController(
         toolbar.applyTheme(theme)
         candidateBar.applyTheme(theme)
         morePanel.applyTheme(theme)
+        toolboxView.applyTheme(theme)
         clipboardHeader.applyTheme(theme)
         clipboardPanel.applyTheme(theme)
         voiceHeader.applyTheme(theme)
@@ -454,6 +633,8 @@ class TopPanelController(
         translationPanel.applyTheme(theme)
         phrasesHeader.applyTheme(theme)
         phrasesPanel.applyTheme(theme)
+        emojiHeader.applyTheme(theme)
+        emojiPanel.applyTheme(theme)
         candidateGridPanel.applyTheme(theme)
     }
 
@@ -509,6 +690,7 @@ class TopPanelController(
      * 这样键盘仍然摆在原位，TopPanel 也完全不变。
      */
     fun handleSearchKey(key: KeySpec): Boolean {
+        if (state == TopPanelState.EMOJI) return handleEmojiSearchKey(key)
         if (!searching || state != TopPanelState.CLIPBOARD) return false
         return when (key.type) {
             KeyType.CHARACTER, KeyType.SYMBOL -> {
@@ -577,6 +759,8 @@ class TopPanelController(
             state == TopPanelState.TRANSLATION -> PanelLayoutMode.TRANSLATION_ONLY
             state == TopPanelState.PHRASES -> PanelLayoutMode.PHRASES_ONLY
             state == TopPanelState.CANDIDATES_EXPANDED -> PanelLayoutMode.CANDIDATES_ONLY
+            state == TopPanelState.EMOJI ->
+                if (emojiSearching) PanelLayoutMode.EMOJI_WITH_KEYBOARD else PanelLayoutMode.EMOJI_ONLY
             state != TopPanelState.CLIPBOARD -> PanelLayoutMode.KEYBOARD_ONLY
             searching -> PanelLayoutMode.CLIPBOARD_WITH_KEYBOARD
             else -> PanelLayoutMode.CLIPBOARD_ONLY
@@ -591,9 +775,11 @@ class TopPanelController(
             candidateBar.visibility = visibleIf(candidateVisible)
             candidateBar.setExpanded(state == TopPanelState.CANDIDATES_EXPANDED)
             morePanel.visibility = visibleIf(state == TopPanelState.MORE)
+            toolboxView.visibility = visibleIf(state == TopPanelState.TOOLBOX)
             clipboardHeader.visibility = visibleIf(state == TopPanelState.CLIPBOARD)
             translationHeader.visibility = visibleIf(state == TopPanelState.TRANSLATION)
             phrasesHeader.visibility = visibleIf(state == TopPanelState.PHRASES)
+            emojiHeader.visibility = visibleIf(state == TopPanelState.EMOJI)
             animateIn(visiblePanelChild())
         }
 
@@ -608,10 +794,12 @@ class TopPanelController(
         TopPanelState.CANDIDATES -> candidateBar
         TopPanelState.CANDIDATES_EXPANDED -> candidateBar
         TopPanelState.MORE -> morePanel
+        TopPanelState.TOOLBOX -> toolboxView
         TopPanelState.CLIPBOARD -> clipboardHeader
         TopPanelState.VOICE -> voiceHeader
         TopPanelState.TRANSLATION -> translationHeader
         TopPanelState.PHRASES -> phrasesHeader
+        TopPanelState.EMOJI -> emojiHeader
     }
 
     /**
@@ -641,6 +829,7 @@ class TopPanelController(
 
     private companion object {
         const val MAX_QUERY_LENGTH = 64
+        const val MAX_EMOJI_QUERY_LENGTH = 32
         const val ENTER_DURATION_MS = 150L
     }
 }

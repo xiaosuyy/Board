@@ -44,6 +44,7 @@ class MorePanel @JvmOverloads constructor(
         CURSOR_LEFT,
         CURSOR_RIGHT,
         CLIPBOARD,
+        EMOJI,
     }
 
     var onAction: ((Action) -> Unit)? = null
@@ -62,7 +63,7 @@ class MorePanel @JvmOverloads constructor(
     private val closeSlot = PanelIconSlot(context, PanelIcon.CHEVRON_UP)
     private val row = LinearLayout(context)
     private val scroll = HorizontalScrollView(context)
-    private val itemViews = ArrayList<MoreItemView>()
+    private val itemViews = ArrayList<ToolItemView>()
 
     /** 当前布局里的「更多」条目 */
     private var tools: List<ToolId> = emptyList()
@@ -102,7 +103,7 @@ class MorePanel @JvmOverloads constructor(
         row.removeAllViews()
         itemViews.clear()
         tools.forEachIndexed { index, tool ->
-            val view = MoreItemView(context, tool)
+            val view = ToolItemView(context, tool.icon, tool.label)
             view.onItemClick = { onAction?.invoke(tool.action) }
             view.onDragStart = { startDrag(index) }
             view.onDragMove = { _, rawX, rawY -> updateDropTarget(index, rawX, rawY) }
@@ -209,178 +210,3 @@ class MorePanel @JvmOverloads constructor(
         if (target != index) onReorder?.invoke(index, target)
     }
 }
-
-/** 「更多」里的单个功能入口：小图标 + 简短文字，整块垂直居中 */
-internal class MoreItemView @JvmOverloads constructor(
-    context: Context,
-    private val tool: ToolId,
-    attrs: AttributeSet? = null,
-) : View(context, attrs) {
-
-    var onItemClick: (() -> Unit)? = null
-    var onDragStart: ((Int) -> Unit)? = null
-    var onDragMove: ((Int, Float, Float) -> Unit)? = null
-    var onDragEnd: ((Int, Float, Float) -> Unit)? = null
-
-    private val painter = PanelIconPainter(resources)
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        textAlign = Paint.Align.CENTER
-    }
-    private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-
-    private var theme: KeyboardTheme = KeyboardTheme.from(
-        context,
-        com.board.ime.settings.ThemeMode.SYSTEM,
-    )
-    private var pressed = false
-    private var dragging = false
-    private var downX = 0f
-    private var downY = 0f
-    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val longPress = Runnable {
-        if (!dragging) {
-            dragging = true
-            parent?.requestDisallowInterceptTouchEvent(true)
-            onDragStart?.invoke(0)
-            invalidate()
-        }
-    }
-
-    fun applyTheme(theme: KeyboardTheme) {
-        this.theme = theme
-        textPaint.textSize = theme.moreLabelSize
-        invalidate()
-    }
-
-    fun setDragging(value: Boolean) {
-        if (dragging == value) return
-        dragging = value
-        invalidate()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        if (pressed && !dragging) {
-            pressedPaint.color = theme.panelSurfacePressed
-            canvas.drawRoundRect(
-                0f,
-                0f,
-                width.toFloat(),
-                height.toFloat(),
-                theme.panelPillCornerRadius * 2f,
-                theme.panelPillCornerRadius * 2f,
-                pressedPaint,
-            )
-        }
-
-        val available = isToolAvailable(tool)
-        val color = if (available) theme.iconColor else theme.candidateMutedText
-        textPaint.color = color
-        val alpha = if (dragging) 120 else 255
-
-        val metrics = textPaint.fontMetrics
-        val labelHeight = metrics.descent - metrics.ascent
-        val gap = 2f * resources.displayMetrics.density
-        val blockHeight = theme.moreIconSize + gap + labelHeight
-        val blockTop = height / 2f - blockHeight / 2f
-
-        painter.draw(
-            canvas,
-            width / 2f,
-            blockTop + theme.moreIconSize / 2f,
-            theme.moreIconSize,
-            tool.icon,
-            withAlpha(color, alpha),
-        )
-        textPaint.alpha = alpha
-        canvas.drawText(
-            tool.label,
-            width / 2f,
-            blockTop + theme.moreIconSize + gap - metrics.ascent,
-            textPaint,
-        )
-        textPaint.alpha = 255
-    }
-
-    private fun withAlpha(color: Int, alpha: Int): Int =
-        (color and 0x00FFFFFF) or (alpha shl 24)
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                downX = event.x
-                downY = event.y
-                pressed = true
-                invalidate()
-                handler.postDelayed(longPress, LONG_PRESS_MS)
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                if (dragging) {
-                    onDragMove?.invoke(0, event.rawX, event.rawY)
-                    return true
-                }
-                val moved = (event.x - downX) * (event.x - downX) + (event.y - downY) * (event.y - downY)
-                if (moved > touchSlop * touchSlop) {
-                    handler.removeCallbacks(longPress)
-                    pressed = false
-                    invalidate()
-                    return true
-                }
-                val inside = event.x >= 0 && event.y >= 0 && event.x <= width && event.y <= height
-                if (pressed != inside) {
-                    pressed = inside
-                    invalidate()
-                }
-            }
-
-            MotionEvent.ACTION_UP -> {
-                handler.removeCallbacks(longPress)
-                if (dragging) {
-                    onDragEnd?.invoke(0, event.rawX, event.rawY)
-                    return true
-                }
-                val inside = event.x >= 0 && event.y >= 0 && event.x <= width && event.y <= height
-                pressed = false
-                invalidate()
-                if (inside) {
-                    performClick()
-                    onItemClick?.invoke()
-                }
-            }
-
-            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE -> {
-                handler.removeCallbacks(longPress)
-                if (dragging) {
-                    onDragEnd?.invoke(0, event.rawX, event.rawY)
-                    return true
-                }
-                pressed = false
-                invalidate()
-            }
-        }
-        return true
-    }
-
-    override fun onVisibilityChanged(changedView: View, visibility: Int) {
-        super.onVisibilityChanged(changedView, visibility)
-        if (visibility != VISIBLE && pressed) {
-            pressed = false
-            invalidate()
-        }
-    }
-
-    override fun performClick(): Boolean {
-        super.performClick()
-        return true
-    }
-
-    private companion object {
-        const val LONG_PRESS_MS = 350L
-    }
-}
-
-/** 工具可用性：目前没有"未实现"的工具了（常用语已在 Phase 4 实现） */
-internal fun isToolAvailable(@Suppress("UNUSED_PARAMETER") tool: ToolId): Boolean = true

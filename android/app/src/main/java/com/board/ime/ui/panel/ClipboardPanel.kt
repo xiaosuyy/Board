@@ -927,7 +927,7 @@ class ClipboardPanel @JvmOverloads constructor(
     private fun cardBackground(highlight: Boolean): StateListDrawable {
         fun shape(color: Int) = GradientDrawable().apply {
             setColor(color)
-            cornerRadius = theme.radiusMedium
+            cornerRadius = theme.clipboardCardRadius
             if (highlight) setStroke(theme.dividerHeight * 2, theme.accent)
         }
         return StateListDrawable().apply {

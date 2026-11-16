@@ -1,0 +1,147 @@
+# Rime schema — Board bundled double pinyin (智能ABC)
+# encoding: utf-8
+#
+# 朙月拼音词典 + 智能ABC 键位。随 Board 发布，供「双拼」设置项切换。
+# 运行期 Board 会在用户目录生成同名方案（插入所选模糊音规则）并写 .custom.yaml，
+# 因此本文件只提供稳定的基准键位与 preedit_format（编辑区显示全拼）。
+
+schema:
+  schema_id: double_pinyin_abc
+  name: 朙月拼音＋智能ABC雙拼
+  version: "0.15"
+  author:
+    - Board
+  description: |
+    智能ABC双拼，按双拼键位输入拼音。
+  dependencies:
+    - stroke
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [ 中文, 西文 ]
+  - name: full_shape
+    states: [ 半角, 全角 ]
+  - name: simplification
+    states: [ 漢字, 汉字 ]
+  - name: ascii_punct
+    states: [ 。，, ．， ]
+
+engine:
+  processors:
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - reverse_lookup_translator
+    - script_translator
+  filters:
+    - simplifier
+    - uniquifier
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+  algebra:
+    - erase/^xx$/
+    - derive/^([jqxy])u$/$1v/
+    - xform/^zh/A/
+    - xform/^ch/E/
+    - xform/^sh/V/
+    - xform/^([aoe].*)$/O$1/
+    - xform/ei$/Q/
+    - xform/ian$/W/
+    - xform/er$|iu$/R/
+    - xform/[iu]ang$/T/
+    - xform/ing$/Y/
+    - xform/uo$/O/
+    - xform/uan$/P/
+    - xform/i?ong$/S/
+    - xform/[iu]a$/D/
+    - xform/en$/F/
+    - xform/eng$/G/
+    - xform/ang$/H/
+    - xform/an$/J/
+    - xform/iao$/Z/
+    - xform/ao$/K/
+    - xform/in$|uai$/C/
+    - xform/ai$/L/
+    - xform/ie$/X/
+    - xform/ou$/B/
+    - xform/un$/N/
+    - xform/[uv]e$|ui$/M/
+    - xlit/QWERTYOPASDFGHJKLZXCVBNM/qwertyopasdfghjklzxcvbnm/
+
+translator:
+  dictionary: luna_pinyin
+  prism: double_pinyin_abc
+  preedit_format:
+    - xform/o(\w)/0$1/
+    - xform/(\w)q/$1ei/
+    - xform/(\w)n/$1un/
+    - xform/(\w)g/$1eng/
+    - xform/(\w)w/$1ian/
+    - xform/([dtnljqx])r/$1iu/
+    - xform/0r/0er/
+    - xform/([nljqx])t/$1iang/
+    - xform/(\w)t/$1uang/
+    - xform/(\w)y/$1ing/
+    - xform/([dtnlgkhaevrzcs])o/$1uo/
+    - xform/(\w)p/$1uan/
+    - xform/([jqx])s/$1iong/
+    - xform/(\w)s/$1ong/
+    - xform/([gkhaevrzcs])d/$1ua/
+    - xform/(\w)d/$1ia/
+    - xform/(\w)f/$1en/
+    - xform/(\w)h/$1ang/
+    - xform/(\w)j/$1an/
+    - xform/(\w)k/$1ao/
+    - xform/(\w)l/$1ai/
+    - xform/(\w)z/$1iao/
+    - xform/(\w)x/$1ie/
+    - xform/([gkhaev])c/$1uai/
+    - xform/(\w)c/$1in/
+    - xform/(\w)b/$1ou/
+    - xform/([nl])m/$1ve/
+    - xform/([jqxy])m/$1ue/
+    - xform/(\w)m/$1ui/
+    - "xform/(^|[ '])a/$1zh/"
+    - "xform/(^|[ '])e/$1ch/"
+    - "xform/(^|[ '])v/$1sh/"
+    - xform/0(\w)/$1/
+    - xform/([nl])v/$1眉/
+    - xform/([jqxy])v/$1u/
+
+reverse_lookup:
+  dictionary: stroke
+  enable_completion: true
+  prefix: "`"
+  suffix: "'"
+  tips: 〔筆畫〕
+  preedit_format:
+    - xlit/hspnz/一丨丿丶乙/
+  comment_format:
+    - xform/([nl])v/$1ü/
+
+punctuator:
+  import_preset: default
+
+key_binder:
+  import_preset: default
+
+recognizer:
+  import_preset: default
+  patterns:
+    reverse_lookup: "`[a-z]*'?$"
