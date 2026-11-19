@@ -7,9 +7,12 @@ package com.board.ime.keyboard
  * - [letters]       字母层（英文 / 中文共用）
  * - [numbers]       数字层（九宫格小键盘）
  * - [symbolsAscii] / [symbolsCjk]  符号层（微信「符号」第一页）
- * - [symbolsMore]   符号层第二页（「更多符号」）
+ * - [symbolsMore]   符号层第二页（中文标点 / 箭头 / 常用图形）
+ * - [symbolsExtra]  符号层第三页（货币 / 数学 / 其它）
  *
- * 四套布局全部是 4 行，切换面板时键盘高度不变；每行严格等于 10 个宽度单位，
+ * 符号页的翻页键都显示「符号」：第一页 → 第二页 → 第三页 → 第一页。
+ *
+ * 所有布局都是 4 行，切换面板时键盘高度不变；每行严格等于 10 个宽度单位，
  * 因此布局天然自适应屏幕宽度。布局只是“键位表”，具体显示哪一层由 `InputController` 决定。
  */
 object KeyboardLayouts {
@@ -141,16 +144,38 @@ object KeyboardLayouts {
         ),
     )
 
-    // ------------------------------------------------------------ 更多符号（第二页）
+    // ------------------------------------------------------------ 符号第二页（中文标点）
 
+    /**
+     * 第二页：中文标点 + 箭头 / 常用图形。
+     * 原先这一页的 % & < > × ÷ ^ 与第一页重复，按需求换成日常中文标点。
+     */
     val symbolsMore: KeyboardLayout = KeyboardLayout(
         listOf(
-            KeyRow(keys = listOf("%", "&", "<", ">", "°", "±", "×", "÷", "§", "•").map { s(it) }),
-            KeyRow(keys = listOf("€", "£", "¥", "¢", "©", "®", "™", "¶", "¿", "¡").map { s(it) }),
+            KeyRow(keys = listOf("！", "：", "、", "（", "）", "“", "”", "‘", "’", "……").map { s(it) }),
+            KeyRow(keys = listOf("～", "￥", "℃", "→", "←", "↑", "↓", "★", "☆", "✓").map { s(it) }),
             KeyRow(
                 keys = buildList {
-                    add(KeySpec(KeyType.TO_MAIN_SYMBOLS, units = 1.5f))
-                    listOf("^", "`", "|", "\\", "/", "~", "\"").forEach { add(s(it)) }
+                    add(KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.5f))
+                    listOf("〔", "〕", "『", "』", "〈", "〉", "〇").forEach { add(s(it)) }
+                    add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
+                },
+            ),
+            symbolBottomRow(KeyType.TO_EXTRA_SYMBOLS),
+        ),
+    )
+
+    // ------------------------------------------------------------ 符号第三页（更多符号）
+
+    /** 第三页：货币 / 数学 / 西文杂项。 */
+    val symbolsExtra: KeyboardLayout = KeyboardLayout(
+        listOf(
+            KeyRow(keys = listOf("°", "±", "§", "•", "€", "£", "¥", "¢", "©", "®").map { s(it) }),
+            KeyRow(keys = listOf("™", "¶", "¿", "¡", "`", "|", "\\", "/", "~", "\"").map { s(it) }),
+            KeyRow(
+                keys = buildList {
+                    add(KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.5f))
+                    listOf("※", "‰", "∞", "≈", "≠", "≤", "≥").forEach { add(s(it)) }
                     add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
                 },
             ),
@@ -171,7 +196,7 @@ object KeyboardLayouts {
 
     init {
         // 布局是手工维护的常量表，这里在类加载时做一次断言，避免以后改错单位。
-        val all = listOf(letters, numbers, symbolsAscii, symbolsCjk, symbolsMore)
+        val all = listOf(letters, numbers, symbolsAscii, symbolsCjk, symbolsMore, symbolsExtra)
         all.forEach { layout ->
             layout.rows.forEachIndexed { index, row ->
                 check(kotlin.math.abs(row.totalUnits - ROW_UNITS) < 0.001f) {

@@ -55,10 +55,13 @@ enum class KeyType {
     /** 切到符号层（#+=） */
     TO_SYMBOLS,
 
-    /** 切到更多符号（=\< / 更多） */
+    /** 切到符号第二页（中文标点 / 箭头 / 常用图形） */
     TO_MORE_SYMBOLS,
 
-    /** 回到符号第一页（1/2） */
+    /** 切到符号第三页（货币 / 数学 / 其它） */
+    TO_EXTRA_SYMBOLS,
+
+    /** 回到符号第一页 */
     TO_MAIN_SYMBOLS,
     ;
 
@@ -69,7 +72,8 @@ enum class KeyType {
     val isFunctional: Boolean
         get() = when (this) {
             SHIFT, BACKSPACE, ENTER, ENTER_NEWLINE, LANGUAGE, NOT_IMPLEMENTED,
-            TO_NUMBERS, TO_LETTERS, TO_SYMBOLS, TO_MORE_SYMBOLS, TO_MAIN_SYMBOLS,
+            TO_NUMBERS, TO_LETTERS, TO_SYMBOLS, TO_MORE_SYMBOLS, TO_EXTRA_SYMBOLS,
+            TO_MAIN_SYMBOLS,
             -> true
 
             CHARACTER, COMMA, PERIOD, PUNCTUATION, SYMBOL, SPACE -> false

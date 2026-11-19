@@ -491,6 +491,7 @@ class KeyboardView @JvmOverloads constructor(
             KeyType.TO_LETTERS -> drawFunctionLabel(canvas, rect, key.displayText.ifEmpty { "ABC" })
             KeyType.TO_SYMBOLS -> drawFunctionLabel(canvas, rect, key.displayText.ifEmpty { "符号" })
             KeyType.TO_MORE_SYMBOLS -> drawFunctionLabel(canvas, rect, "符号")
+            KeyType.TO_EXTRA_SYMBOLS -> drawFunctionLabel(canvas, rect, "符号")
             KeyType.TO_MAIN_SYMBOLS -> drawFunctionLabel(canvas, rect, "符号")
         }
     }

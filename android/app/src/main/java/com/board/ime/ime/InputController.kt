@@ -261,6 +261,7 @@ class InputController(
             InputMode.ENGLISH, InputMode.CHINESE -> KeyboardLayouts.letters
             InputMode.NUMBER -> KeyboardLayouts.numbers
             InputMode.SYMBOL -> when {
+                symbolPage == 2 -> KeyboardLayouts.symbolsExtra
                 symbolPage == 1 -> KeyboardLayouts.symbolsMore
                 letterMode == InputMode.CHINESE -> KeyboardLayouts.symbolsCjk
                 else -> KeyboardLayouts.symbolsAscii
@@ -376,6 +377,7 @@ class InputController(
             KeyType.TO_LETTERS -> switchMode(letterMode)
             KeyType.TO_SYMBOLS -> showSymbolPage(0)
             KeyType.TO_MORE_SYMBOLS -> showSymbolPage(1)
+            KeyType.TO_EXTRA_SYMBOLS -> showSymbolPage(2)
             KeyType.TO_MAIN_SYMBOLS -> showSymbolPage(0)
         }
     }

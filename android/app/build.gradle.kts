@@ -64,10 +64,10 @@ android {
         applicationId = "com.board.ime"
         minSdk = 26
         targetSdk = 36
-        // v1.2.2：数字键盘左列「-」改为「？」、更换应用图标。
-        // versionCode 保持单调递增（1 → 2 → … → 7 → 8），不破坏已有升级链。
-        versionCode = 8
-        versionName = "1.2.2"
+        // v1.2.3：符号层扩展到三页，补齐日常中文标点、箭头与货币/数学符号。
+        // versionCode 保持单调递增（1 → 2 → … → 8 → 9），不破坏已有升级链。
+        versionCode = 9
+        versionName = "1.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
