@@ -1,7 +1,7 @@
 ﻿param([string]$Device = "3B162E000FF00000", [int]$WaitSec = 30)
 $ErrorActionPreference = "Continue"
 $adb = "C:\Users\Administrator\AppData\Local\Android\Sdk\platform-tools\adb.exe"
-$root = "E:\OpenCode\blueboard"
+$root = "E:\github\board"
 & $adb -s $Device shell run-as com.board.ime rm -rf cache/rime/log 2>&1 | Out-Null
 & $adb -s $Device logcat -c 2>&1 | Out-Null
 & $adb -s $Device shell am force-stop com.board.ime 2>&1 | Out-Null

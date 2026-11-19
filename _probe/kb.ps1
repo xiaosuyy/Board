@@ -5,7 +5,7 @@
     [string]$Shot = ""
 )
 $adb = "C:\Users\Administrator\AppData\Local\Android\Sdk\platform-tools\adb.exe"
-$root = "E:\OpenCode\blueboard"
+$root = "E:\github\board"
 
 # 模拟器（MuMu 900x1600）竖屏字母键中心坐标
 $key = @{

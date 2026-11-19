@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$root = "E:\OpenCode\blueboard\_probe"
+$root = "E:\github\board\_probe"
 $file = Join-Path $root "cloud\SyncClipboard.json"
 $log  = Join-Path $root "stub.log"
 $listener = New-Object System.Net.HttpListener

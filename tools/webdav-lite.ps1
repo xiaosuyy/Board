@@ -2,7 +2,7 @@
 # Test only: no auth, no concurrency control.
 param(
     [int]$Port = 8080,
-    [string]$Root = "E:\OpenCode\blueboard\_webdav_remote"
+    [string]$Root = "E:\github\board\_webdav_remote"
 )
 
 $ErrorActionPreference = "Continue"

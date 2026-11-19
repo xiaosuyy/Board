@@ -21,7 +21,7 @@ const { pinyin } = require(
   process.env.PINYIN_PRO_DIR + "/node_modules/pinyin-pro",
 );
 
-const RIME = "E:/OpenCode/blueboard/android/app/src/main/assets/rime";
+const RIME = "E:/github/board/android/app/src/main/assets/rime";
 const ESSAY = path.join(RIME, "essay.txt");
 const OUT = path.join(RIME, "board_common.dict.yaml");
 

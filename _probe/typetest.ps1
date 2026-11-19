@@ -1,6 +1,6 @@
 ﻿param(
   [Parameter(Mandatory = $true)][string]$Code,
-  [string]$Out = "E:\OpenCode\blueboard\_probe\type.png",
+  [string]$Out = "E:\github\board\_probe\type.png",
   [string]$Device = "3B162E000FF00000",
   [switch]$NoClear
 )

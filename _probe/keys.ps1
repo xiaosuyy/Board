@@ -1,5 +1,5 @@
 ﻿Add-Type -AssemblyName System.Drawing
-$path = if ($args.Count -ge 1) { $args[0] } else { "E:\OpenCode\blueboard\_probe\s1.png" }
+$path = if ($args.Count -ge 1) { $args[0] } else { "E:\github\board\_probe\s1.png" }
 $minRun = if ($args.Count -ge 2) { [int]$args[1] } else { 60 }
 $bmp = [System.Drawing.Bitmap]::FromFile($path)
 $w = $bmp.Width; $h = $bmp.Height

@@ -70,7 +70,7 @@ feat: complete cloud library phase 2
 **Android**（项目模块为 `:android:app`）
 
 ```powershell
-cd E:\OpenCode\blueboard
+cd E:\github\board
 .\gradlew.bat --offline :android:app:testDebugUnitTest
 .\gradlew.bat --offline :android:app:assembleDebug
 ```

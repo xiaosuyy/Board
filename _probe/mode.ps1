@@ -3,7 +3,7 @@
     [ValidateSet("", "CHINESE", "ENGLISH")][string]$Set = ""
 )
 $adb = "C:\Users\Administrator\AppData\Local\Android\Sdk\platform-tools\adb.exe"
-$root = "E:\OpenCode\blueboard"
+$root = "E:\github\board"
 
 function DumpXml([string]$name) {
     & $adb -s $Device shell uiautomator dump "/sdcard/$name.xml" 2>&1 | Out-Null
