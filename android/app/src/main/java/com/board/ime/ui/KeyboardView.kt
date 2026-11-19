@@ -117,7 +117,7 @@ class KeyboardView @JvmOverloads constructor(
     private val keys = ArrayList<KeySpec>()
     private val bounds = ArrayList<RectF>()
 
-    /** 合并块的外接矩形：stackId → 整块范围（数字层左侧 @ % - 连成一块） */
+    /** 合并块的外接矩形：stackId → 整块范围（数字层左侧 @ % ？ 连成一块） */
     private val stackRects = HashMap<Int, RectF>()
 
     /**

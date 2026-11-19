@@ -23,7 +23,7 @@ object KeyboardLayouts {
     private const val PAD_SIDE_UNIT = 1.8f
     private const val PAD_DIGIT_UNIT = (ROW_UNITS - PAD_SIDE_UNIT * 2f) / 3f
 
-    /** 数字层左侧 @ % - 三键合并块编号 */
+    /** 数字层左侧 @ % ？ 三键合并块编号 */
     private const val NUM_PAD_STACK = 1
 
     /** 符号键（普通 1 单位） */
@@ -73,9 +73,9 @@ object KeyboardLayouts {
     /**
      * 数字层：九宫格数字小键盘。
      *
-     * 左列 @ % -、中间 1-9、右列 ⌫ / 空格 / +，底部 ← 符号 0 . 搜索。
-     * 参考图左列是 @ % - + 四个小格、空格下面是表情键；按需求这里左列只保留
-     * 我们的三个键（+ 仍在右列第三行，不放进左列），右列第三行也不放表情。
+     * 左列 @ % ？、中间 1-9、右列 ⌫ / 空格 / +，底部 ← 符号 0 . 搜索。
+     * 参考图左列是 @ % - + 四个小格；按需求这里左列只保留
+     * @ % ？三个键（+ 仍在右列第三行，不放进左列）。
      */
     val numbers: KeyboardLayout = KeyboardLayout(
         listOf(
@@ -93,7 +93,15 @@ object KeyboardLayouts {
             ),
             KeyRow(
                 keys = listOf(
-                    padSide("-"), padKey("7"), padKey("8"), padKey("9"), padSym("+"),
+                    // 全角「？」的字形在字宽内偏左，显示用半角 ? 才能和 @ % 对齐；上屏仍是全角
+                    KeySpec(
+                        KeyType.SYMBOL,
+                        text = "？",
+                        label = "?",
+                        units = PAD_SIDE_UNIT,
+                        stackId = NUM_PAD_STACK,
+                    ),
+                    padKey("7"), padKey("8"), padKey("9"), padSym("+"),
                 ),
             ),
             KeyRow(

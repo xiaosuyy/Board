@@ -104,7 +104,4 @@
     <color name="app_on_green">#FFFFFFFF</color>
     <color name="app_error">#FFFF3B30</color>
     <color name="app_on_error">#FFFFFFFF</color>
-
-    <!-- 图标 -->
-    <color name="ic_launcher_background">#FF101214</color>
 </resources>
