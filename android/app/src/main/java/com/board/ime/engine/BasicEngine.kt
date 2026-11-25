@@ -38,8 +38,8 @@ class BasicEngine(initialMode: InputMode = InputMode.ENGLISH) : InputEngine {
     override fun candidates(): List<Candidate> {
         if (buffer.isEmpty()) return emptyList()
         return when (currentMode) {
-            // 中文由 Rime 引擎负责；BasicEngine 下中文层不产出候选
-            InputMode.CHINESE -> emptyList()
+            // 中文 / 日语由 Rime 引擎负责；BasicEngine 下这两层不产出候选
+            InputMode.CHINESE, InputMode.JAPANESE -> emptyList()
             InputMode.ENGLISH, InputMode.NUMBER, InputMode.SYMBOL ->
                 englishCandidates(buffer.toString())
         }
@@ -47,6 +47,12 @@ class BasicEngine(initialMode: InputMode = InputMode.ENGLISH) : InputEngine {
 
     override fun handleKey(key: EngineKey): EngineResult = when (key) {
         is EngineKey.Letter -> {
+            buffer.append(key.char)
+            EngineResult.Composing(buffer.toString())
+        }
+
+        // 九键数字键：英文 / 数字层下按原样组进 buffer（T9 中文由 RimeEngine 负责）
+        is EngineKey.Digit -> {
             buffer.append(key.char)
             EngineResult.Composing(buffer.toString())
         }

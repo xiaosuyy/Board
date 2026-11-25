@@ -91,6 +91,12 @@ class TopPanelController(
     /** 「收起键盘」：宿主调用 InputMethodService 的隐藏能力 */
     var onCollapseKeyboard: (() -> Unit)? = null
 
+    /** 「切换键盘」：宿主切换 全键盘 / 九键 / 日语 并持久化 */
+    var onSwitchKeyboard: (() -> Unit)? = null
+
+    /** 简洁模式：待机只显示收起键；输入不显示拼音、候选无选中色与分割线 */
+    var minimalMode: Boolean = false
+
     // ---------------------------------------------------------------- 语音
 
     /** 语音面板里的「←」：取消当前识别 */
@@ -433,9 +439,13 @@ class TopPanelController(
         onToolLayoutChanged?.invoke(layout)
     }
 
-    /** 工具栏里的工具点击：剪贴板就地打开，其余与「更多」走同一条路 */
+    /** 工具栏里的工具点击：剪贴板就地打开，切换键盘就地切换，其余与「更多」走同一条路 */
     private fun dispatchToolAction(action: MorePanel.Action) {
-        if (action == MorePanel.Action.CLIPBOARD) showClipboard() else onMoreAction?.invoke(action)
+        when (action) {
+            MorePanel.Action.CLIPBOARD -> showClipboard()
+            MorePanel.Action.SWITCH_KEYBOARD -> onSwitchKeyboard?.invoke()
+            else -> onMoreAction?.invoke(action)
+        }
     }
 
     private var state: TopPanelState = TopPanelState.TOOLBAR
@@ -487,6 +497,10 @@ class TopPanelController(
             when (action) {
                 MorePanel.Action.CLOSE -> closeMore()
                 MorePanel.Action.CLIPBOARD -> showClipboard()
+                MorePanel.Action.SWITCH_KEYBOARD -> {
+                    onSwitchKeyboard?.invoke()
+                    closeMore()
+                }
                 else -> onMoreAction?.invoke(action)
             }
         }
@@ -496,9 +510,17 @@ class TopPanelController(
                 ToolboxView.Action.CLIPBOARD -> showClipboard()
                 ToolboxView.Action.PHRASES -> onMoreAction?.invoke(MorePanel.Action.PHRASES)
                 ToolboxView.Action.EMOJI -> onMoreAction?.invoke(MorePanel.Action.EMOJI)
+                ToolboxView.Action.SETTINGS -> {
+                    closeToolbox()
+                    onMoreAction?.invoke(MorePanel.Action.SETTINGS)
+                }
                 ToolboxView.Action.SYMBOLS -> {
                     closeToolbox()
                     onToolboxSymbols?.invoke()
+                }
+                ToolboxView.Action.SWITCH_KEYBOARD -> {
+                    closeToolbox()
+                    onSwitchKeyboard?.invoke()
                 }
             }
         }
@@ -682,6 +704,8 @@ class TopPanelController(
 
     fun applyTheme(theme: KeyboardTheme) {
         enterOffsetPx = theme.spaceS.toFloat()
+        toolbar.setMinimal(minimalMode)
+        candidateBar.setMinimal(minimalMode)
         toolbar.applyTheme(theme)
         candidateBar.applyTheme(theme)
         morePanel.applyTheme(theme)

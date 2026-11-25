@@ -58,6 +58,7 @@ logger.lifecycle(
 android {
     namespace = "com.board.ime"
     compileSdk = 37
+    buildToolsVersion = "36.1.0"
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
@@ -87,7 +88,7 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            // 使用 local.properties 的 cmake.dir（系统 CMake 3.28），不固定 SDK 内置版本
         }
     }
 

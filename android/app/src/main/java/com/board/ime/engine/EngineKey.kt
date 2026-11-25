@@ -11,6 +11,9 @@ sealed interface EngineKey {
     /** 字母按键，[char] 已经由输入控制器根据 Shift 状态决定好大小写 */
     data class Letter(val char: Char) : EngineKey
 
+    /** 数字按键（九键 T9 输入） */
+    data class Digit(val char: Char) : EngineKey
+
     /** 退格 */
     data object Backspace : EngineKey
 

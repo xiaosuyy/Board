@@ -1,0 +1,71 @@
+# Rime schema
+# encoding: utf-8
+#
+# Board 日语输入方案（罗马字 → 汉字/假名）。
+# 词典 board_jp 以罗马字读音为编码，输入罗马字即可得到假名/汉字候选。
+
+schema:
+  schema_id: board_jp
+  name: 日语·罗马字
+  version: "1"
+  author:
+    - Board
+  description: |
+    日语输入（罗马字 → 汉字 / 假名）。
+    输入罗马字读音，候选给出假名与汉字写法。
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [ 日文, 西文 ]
+  - name: full_shape
+    states: [ 半角, 全角 ]
+  - name: ascii_punct
+    states: [ 。，, ．， ]
+
+engine:
+  processors:
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - script_translator
+  filters:
+    - uniquifier
+
+speller:
+  alphabet: "abcdefghijklmnopqrstuvwxyz'"
+  delimiter: " '"
+
+translator:
+  dictionary: board_jp
+  enable_completion: true
+  enable_sentence: false
+  enable_user_dict: true
+
+menu:
+  page_size: 200
+
+punctuator:
+  import_preset: symbols
+
+key_binder:
+  import_preset: default
+
+recognizer:
+  import_preset: default
+  patterns:
+    punct: '^/([0-9]0?|[A-Za-z]+)$'
+...

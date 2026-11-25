@@ -37,14 +37,14 @@ enum class AppearanceRadius(val label: String, val minDp: Float, val maxDp: Floa
     CLIPBOARD_CARD("剪贴板卡片圆角", 0f, 20f),
     ;
 
-    /** 默认值（dp），与 `dimens.xml` 一致 */
-    val defaultDp: Float
-        get() = when (this) {
-            KEYBOARD -> 14f
-            KEY -> 10f
-            CANDIDATE_CHIP -> 6f
-            CLIPBOARD_CARD -> 10f
-        }
+        /** 默认值（dp），与 `dimens.xml` 一致 */
+        val defaultDp: Float
+            get() = when (this) {
+                KEYBOARD -> 24f
+                KEY -> 10f
+                CANDIDATE_CHIP -> 6f
+                CLIPBOARD_CARD -> 10f
+            }
 
     companion object {
         fun fromName(value: String?): AppearanceRadius? =

@@ -10,6 +10,9 @@ enum class KeyType {
     /** 字母 / 数字：走输入引擎（受 Shift 影响，参与组词） */
     CHARACTER,
 
+    /** 九键数字键（2–9）：走 T9 拼音引擎，参与组词 */
+    T9_DIGIT,
+
     /** 逗号：跟随当前语言（中文全角「，」，英文半角「,」） */
     COMMA,
 
@@ -63,6 +66,12 @@ enum class KeyType {
 
     /** 回到符号第一页 */
     TO_MAIN_SYMBOLS,
+
+    /** 语音输入（九键底部行的声波图标） */
+    VOICE,
+
+    /** 重输：清空当前组词重新输入（九键右侧列） */
+    RESET,
     ;
 
     /**
@@ -73,10 +82,11 @@ enum class KeyType {
         get() = when (this) {
             SHIFT, BACKSPACE, ENTER, ENTER_NEWLINE, LANGUAGE, NOT_IMPLEMENTED,
             TO_NUMBERS, TO_LETTERS, TO_SYMBOLS, TO_MORE_SYMBOLS, TO_EXTRA_SYMBOLS,
-            TO_MAIN_SYMBOLS,
+            TO_MAIN_SYMBOLS, RESET,
             -> true
 
-            CHARACTER, COMMA, PERIOD, PUNCTUATION, SYMBOL, SPACE -> false
+            // 语音键用普通键底色（参考大厂九键：语音是居中的白色长条，不是灰功能键）
+            CHARACTER, T9_DIGIT, COMMA, PERIOD, PUNCTUATION, SYMBOL, SPACE, VOICE -> false
         }
 
     /** 是否需要展开成“多字符标签”的小字号 */

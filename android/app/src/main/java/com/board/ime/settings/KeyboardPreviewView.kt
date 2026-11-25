@@ -12,6 +12,8 @@ import com.board.ime.keyboard.KeyboardLayoutCalculator
 import com.board.ime.keyboard.KeyboardLayoutMetrics
 import com.board.ime.keyboard.KeyboardLayouts
 import com.board.ime.ui.KeyboardTheme
+import com.board.ime.ui.KeyboardTrayDrawable
+import com.board.ime.ui.KeyboardTrayOverlayDrawable
 import com.board.ime.ui.KeyboardView
 import com.board.ime.ui.panel.CandidateBar
 import com.board.ime.ui.panel.ToolId
@@ -83,18 +85,49 @@ class KeyboardPreviewView(context: Context) : FrameLayout(context) {
         )
 
         content.addView(panelHost, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34f)))
-        content.addView(divider, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1f)))
+        // 预览与真键盘一致：面板与键盘之间无分界线
+        content.addView(divider, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0))
         content.addView(keyboard, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         // 先垫背景示例图、再叠键盘本体：键盘底色半透明时透出它，模糊强度决定它多糊
         addView(backdrop, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(content, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        // 键盘本体贴底：预览容器可能高于键盘，键盘钉在底部（调高度时底部固定、向上生长）
+        addView(
+            content,
+            FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.BOTTOM,
+            ),
+        )
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         // outline 依赖实际宽高，尺寸变化后要重算，否则裁剪圆角还是旧的
         content.invalidateOutline()
+    }
+
+    /**
+     * 预览容器高度 = 键盘本体（顶部面板 + 键盘）高度，不额外撑高。
+     * 否则 MATCH_PARENT 的 backdrop 会把预览撑成整块可用高度，键盘贴底后上方多出一块空白。
+     */
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val contentHeightSpec = android.view.View.MeasureSpec.makeMeasureSpec(
+            android.view.View.MeasureSpec.getSize(heightMeasureSpec),
+            android.view.View.MeasureSpec.UNSPECIFIED,
+        )
+        measureChildWithMargins(content, widthMeasureSpec, 0, contentHeightSpec, 0)
+        val contentHeight = content.measuredHeight
+        val width = resolveSize(suggestedMinimumWidth, widthMeasureSpec)
+        measureChildWithMargins(
+            backdrop,
+            widthMeasureSpec,
+            0,
+            android.view.View.MeasureSpec.makeMeasureSpec(contentHeight, android.view.View.MeasureSpec.EXACTLY),
+            0,
+        )
+        setMeasuredDimension(width, contentHeight)
     }
 
     fun applyTheme(
@@ -105,23 +138,42 @@ class KeyboardPreviewView(context: Context) : FrameLayout(context) {
         keyboardLift: Boolean = true,
         screenWidthPx: Int = resources.displayMetrics.widthPixels,
         screenHeightPx: Int = resources.displayMetrics.heightPixels,
+        minimal: Boolean = false,
     ) {
         val radius = theme.radiusLarge
         if (floating) {
             // 悬浮键盘：四角都圆（与 BoardInputMethodService.floatingCard 一致）
-            content.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = radius
-                setColor(theme.keyboardBackground)
-            }
+            content.background = KeyboardTrayDrawable(
+                surfaceColor = theme.keyboardBackground,
+                isDark = theme.isDark,
+                radiusPx = radius,
+                density = resources.displayMetrics.density,
+                docked = false,
+            )
+            content.foreground = KeyboardTrayOverlayDrawable(
+                surfaceColor = theme.keyboardBackground,
+                isDark = theme.isDark,
+                radiusPx = radius,
+                density = resources.displayMetrics.density,
+                docked = false,
+            )
             content.outlineProvider = ViewOutlineProvider.BACKGROUND
         } else {
             // 停靠键盘：只圆上面两角，下面贴边直角（与真实键盘的模拟方式一致）
-            content.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                setColor(theme.keyboardBackground)
-                cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
-            }
+            content.background = KeyboardTrayDrawable(
+                surfaceColor = theme.keyboardBackground,
+                isDark = theme.isDark,
+                radiusPx = radius,
+                density = resources.displayMetrics.density,
+                docked = true,
+            )
+            content.foreground = KeyboardTrayOverlayDrawable(
+                surfaceColor = theme.keyboardBackground,
+                isDark = theme.isDark,
+                radiusPx = radius,
+                density = resources.displayMetrics.density,
+                docked = true,
+            )
             content.outlineProvider = object : ViewOutlineProvider() {
                 private val path = android.graphics.Path()
                 override fun getOutline(v: View, outline: android.graphics.Outline) {
@@ -144,10 +196,11 @@ class KeyboardPreviewView(context: Context) : FrameLayout(context) {
         panelParams.height = theme.topPanelHeight
         panelHost.layoutParams = panelParams
         val dividerParams = divider.layoutParams as LinearLayout.LayoutParams
-        dividerParams.height = theme.dividerHeight.coerceAtLeast(1)
+        dividerParams.height = 0
         divider.layoutParams = dividerParams
-        divider.setBackgroundColor(theme.divider)
 
+        toolbar.setMinimal(minimal)
+        candidateBar.setMinimal(minimal)
         toolbar.applyTheme(theme)
         toolbar.setTools(tools)
         candidateBar.applyTheme(theme)
@@ -156,7 +209,8 @@ class KeyboardPreviewView(context: Context) : FrameLayout(context) {
         keyboard.applyTheme(theme)
         keyboard.applyMetrics(metricsFor(geometry, appearance, floating, keyboardLift, screenWidthPx, screenHeightPx))
 
-        // 毛玻璃：对背后示例图应用模糊，强度跟着「键盘背景毛玻璃」滑块走
+        // 毛玻璃：背后示例图跟随主题深浅，模糊强度跟着「键盘背景不透明度」走
+        backdrop.setDark(theme.isDark)
         applyBackdropBlur(appearance.keyboardBlurStrength)
 
         themed = true
@@ -254,7 +308,7 @@ class KeyboardPreviewView(context: Context) : FrameLayout(context) {
 
     companion object {
         /** 兜底工具栏：只在调用方没注入真实工具栏配置时使用 */
-        private val SAMPLE_TOOLS = listOf(ToolId.EMOJI, ToolId.CLIPBOARD, ToolId.VOICE, ToolId.TRANSLATE)
+        private val SAMPLE_TOOLS = listOf(ToolId.SWITCH_KEYBOARD, ToolId.EMOJI, ToolId.CLIPBOARD, ToolId.VOICE, ToolId.TRANSLATE)
 
         /** 预览背后示例图的最大模糊半径（dp），与输入法服务保持一致 */
         private const val MAX_BLUR_RADIUS_DP = 25f
@@ -275,55 +329,63 @@ class KeyboardPreviewView(context: Context) : FrameLayout(context) {
 }
 
 /**
- * 预览专用的「背后 App 内容」示例：多彩渐变 + 色块 + 文字行。
- * 模糊前能看清文字与色块，模糊后糊成一片 —— 拖动毛玻璃强度时对比非常直观。
+ * 预览专用的「背后 App 内容」示例：中性灰卡片 + 文字行，深浅跟随主题。
+ * 模糊前能看清文字与卡片，模糊后糊成一片 —— 拖动「键盘背景不透明度」时，
+ * 背后内容自动模糊成毛玻璃。
  */
 private class BackdropView(context: android.content.Context) : android.view.View(context) {
 
     private val backgroundPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-    private val blockPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private val cardPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
     private val linePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         style = android.graphics.Paint.Style.FILL
+    }
+
+    private var dark = false
+
+    fun setDark(value: Boolean) {
+        if (dark == value) return
+        dark = value
+        invalidate()
     }
 
     override fun onDraw(canvas: android.graphics.Canvas) {
         super.onDraw(canvas)
         if (width <= 0 || height <= 0) return
 
+        val (bgStart, bgEnd) = if (dark) {
+            0xFF1C1C1E.toInt() to 0xFF26262A.toInt()
+        } else {
+            0xFFF2F2F4.toInt() to 0xFFE6E6E9.toInt()
+        }
         backgroundPaint.shader = android.graphics.LinearGradient(
             0f, 0f, width.toFloat(), height.toFloat(),
-            intArrayOf(
-                0xFF6FA8DC.toInt(), 0xFF93C5FD.toInt(), 0xFFF6A6B2.toInt(),
-                0xFFFFD3A5.toInt(), 0xFF9BE8C8.toInt(),
-            ),
+            intArrayOf(bgStart, bgEnd),
             null,
             android.graphics.Shader.TileMode.CLAMP,
         )
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         backgroundPaint.shader = null
 
-        // 模拟 App 里的卡片（白色圆角矩形）
-        blockPaint.color = 0xE6FFFFFF.toInt()
+        // 模拟 App 卡片：低饱和的半透明圆角块
+        cardPaint.color = if (dark) 0x24FFFFFF else 0xB3FFFFFF.toInt()
         val unit = height / 5f
         for (row in 0 until 4) {
             val top = row * unit + unit * 0.22f
             val blockHeight = unit * 0.55f
             canvas.drawRoundRect(
                 width * 0.06f, top, width * 0.42f, top + blockHeight,
-                unit * 0.12f, unit * 0.12f, blockPaint,
+                unit * 0.12f, unit * 0.12f, cardPaint,
             )
             canvas.drawRoundRect(
                 width * 0.52f, top, width * 0.94f, top + blockHeight,
-                unit * 0.12f, unit * 0.12f, blockPaint,
+                unit * 0.12f, unit * 0.12f, cardPaint,
             )
         }
 
-        // 模拟文字行（粗细不一的深色横条）
-        val lineColors = intArrayOf(
-            0xB32B2B2B.toInt(), 0x99555555.toInt(), 0x80333333.toInt(), 0xB3222222.toInt(),
-        )
+        // 模拟文字行：与主题一致的中性灰
+        linePaint.color = if (dark) 0x59FFFFFF else 0x99333333.toInt()
         for (row in 0 until 4) {
-            linePaint.color = lineColors[row]
             val top = row * unit + unit * 0.30f
             canvas.drawRoundRect(
                 width * 0.09f, top, width * 0.38f, top + unit * 0.06f,

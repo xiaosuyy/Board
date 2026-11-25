@@ -35,7 +35,7 @@
     <color name="board_blue_soft_dark">#FF1D2735</color>
 
     <!-- ==================== 键盘调色板 · 浅色 ==================== -->
-    <color name="kb_light_background">#FFE9EBEE</color>
+    <color name="kb_light_background">#FFDCE0E3</color>
     <color name="kb_light_key">@color/board_white</color>
     <color name="kb_light_key_pressed">#FFD8DBDF</color>
     <color name="kb_light_key_functional">#FFD3D7DC</color>

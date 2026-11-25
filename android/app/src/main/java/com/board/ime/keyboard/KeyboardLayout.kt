@@ -49,16 +49,15 @@ object KeyboardLayouts {
                     add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
                 },
             ),
-            // 底行：123 · ，。 · 空格 · 符号 · 中/EN · 搜索
-            // 对比大厂（搜狗/讯飞把「符号」直接放在主键盘底行，一步进入符号页），
-            // 原布局符号要 123 → 符号 两步才进得去，太深；这里把「符号」提到字母层，
-            // 压缩空格 / 回车 / 123 的宽度，保持整行 10 单位不变。
+            // 底行：123 · 符号 · 空格 · 中/EN · 搜索
+            // 已删掉原来的「，。」标点键（逗号点按 / 句号上滑），
+            // 「符号」左移到原标点键的位置，空格键吸收腾出的宽度，
+            // 整行仍为 10 单位不变。
             KeyRow(
                 keys = listOf(
                     KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.15f),
-                    KeySpec(KeyType.PUNCTUATION, units = 1.15f),
-                    KeySpec(KeyType.SPACE, units = 3.5f),
                     KeySpec(KeyType.TO_SYMBOLS, label = "符号", units = 1.4f),
+                    KeySpec(KeyType.SPACE, units = 4.65f),
                     KeySpec(KeyType.LANGUAGE, units = 1.4f),
                     KeySpec(KeyType.ENTER, units = 1.4f),
                 ),
@@ -117,6 +116,65 @@ object KeyboardLayouts {
                     KeySpec(KeyType.TO_SYMBOLS, label = "符号", units = PAD_DIGIT_UNIT),
                     padKey("0"),
                     KeySpec(KeyType.SYMBOL, text = ".", units = PAD_DIGIT_UNIT),
+                    KeySpec(KeyType.ENTER, units = PAD_SIDE_UNIT),
+                ),
+            ),
+        ),
+        ignoresFunctionKeyRatio = true,
+    )
+
+    // ------------------------------------------------------------ 九键层（T9）
+
+    /** 九键左侧标点竖条合并块编号（，。？ 连成一张圆角卡片，不含感叹号） */
+    private const val T9_PUNCT_STACK = 2
+
+    /** 九键数字键：中间三列，宽度与数字层一致（左右列窄、中间均分） */
+    private fun t9Digit(text: String, letters: String? = null): KeySpec =
+        KeySpec(KeyType.T9_DIGIT, text = text, label = text, subLabel = letters, units = PAD_DIGIT_UNIT)
+
+    /**
+     * 九键（T9）拼音层（对齐搜狗 / 讯飞九键）：
+     * - 左列竖条：，。？（不含感叹号）
+     * - 中间 3×3：1 分词 / 2–9 字母组（不显示数字，不切数字面板就打不出数字）
+     * - 右列：退格 / 重输 / ！
+     * - 底部：符 · 123 · 空格 · 中/英 · 回车（每个键对齐上方列宽，回车不再单独加宽）
+     * 整行仍为 10 单位，自适应宽度。
+     */
+    val t9: KeyboardLayout = KeyboardLayout(
+        listOf(
+            KeyRow(
+                keys = listOf(
+                    KeySpec(KeyType.SYMBOL, text = "，", units = PAD_SIDE_UNIT, stackId = T9_PUNCT_STACK),
+                    t9Digit("1", "分词"),
+                    t9Digit("2", "ABC"),
+                    t9Digit("3", "DEF"),
+                    KeySpec(KeyType.BACKSPACE, units = PAD_SIDE_UNIT),
+                ),
+            ),
+            KeyRow(
+                keys = listOf(
+                    KeySpec(KeyType.SYMBOL, text = "。", units = PAD_SIDE_UNIT, stackId = T9_PUNCT_STACK),
+                    t9Digit("4", "GHI"),
+                    t9Digit("5", "JKL"),
+                    t9Digit("6", "MNO"),
+                    KeySpec(KeyType.RESET, units = PAD_SIDE_UNIT),
+                ),
+            ),
+            KeyRow(
+                keys = listOf(
+                    KeySpec(KeyType.SYMBOL, text = "？", units = PAD_SIDE_UNIT, stackId = T9_PUNCT_STACK),
+                    t9Digit("7", "PQRS"),
+                    t9Digit("8", "TUV"),
+                    t9Digit("9", "WXYZ"),
+                    KeySpec(KeyType.SYMBOL, text = "！", units = PAD_SIDE_UNIT),
+                ),
+            ),
+            KeyRow(
+                keys = listOf(
+                    KeySpec(KeyType.TO_SYMBOLS, label = "符", units = PAD_SIDE_UNIT),
+                    KeySpec(KeyType.TO_NUMBERS, label = "123", units = PAD_DIGIT_UNIT),
+                    KeySpec(KeyType.SPACE, units = PAD_DIGIT_UNIT),
+                    KeySpec(KeyType.LANGUAGE, units = PAD_DIGIT_UNIT),
                     KeySpec(KeyType.ENTER, units = PAD_SIDE_UNIT),
                 ),
             ),
@@ -222,7 +280,7 @@ object KeyboardLayouts {
 
     init {
         // 布局是手工维护的常量表，这里在类加载时做一次断言，避免以后改错单位。
-        val all = listOf(letters, numbers, symbolsAscii, symbolsCjk, symbolsMore, symbolsExtra)
+        val all = listOf(letters, t9, numbers, symbolsAscii, symbolsCjk, symbolsMore, symbolsExtra)
         all.forEach { layout ->
             layout.rows.forEachIndexed { index, row ->
                 check(kotlin.math.abs(row.totalUnits - ROW_UNITS) < 0.001f) {

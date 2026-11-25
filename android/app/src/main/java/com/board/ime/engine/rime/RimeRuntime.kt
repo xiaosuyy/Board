@@ -22,6 +22,12 @@ object RimeRuntime {
     /** 第一版默认方案：朙月拼音 · 简化字（简体输出） */
     const val DEFAULT_SCHEMA = "luna_pinyin_simp"
 
+    /** 九键（T9）拼音方案 */
+    const val T9_SCHEMA = "board_t9"
+
+    /** 日语罗马字方案 */
+    const val JP_SCHEMA = "board_jp"
+
     /**
      * 用户词典名（学习记录写在这里）。
      * 由 schema 的 `translator/dictionary` 决定：luna_pinyin(_simp) 都是 `luna_pinyin`，
@@ -272,6 +278,23 @@ object RimeRuntime {
         val id = sessionId
         if (id == 0L) return ""
         return RimeNative.nativeGetCurrentSchema(id).orEmpty()
+    }
+
+    /**
+     * 在**当前会话**里直接切换方案（不重新部署、不重建会话）。
+     *
+     * 用于键盘种类切换（全键盘 / 九键 / 日语）：board_t9 / board_jp 已在首次部署时
+     * 常驻 schema_list 并编译好 prism，切换只是 `select_schema`，毫秒级、可同步调用。
+     * 失败（方案尚未部署）时返回 false，由调用方兜底走 [applySchemaChange] 重新部署。
+     */
+    fun selectSchema(schemaId: String): Boolean {
+        lock.withLock {
+            val id = sessionId
+            if (id == 0L) return false
+            val ok = RimeNative.nativeSelectSchema(id, schemaId)
+            if (ok) preferredSchema = schemaId
+            return ok
+        }
     }
 
     /** 重启会话（写了自定义短语、清空学习记录之后调用） */

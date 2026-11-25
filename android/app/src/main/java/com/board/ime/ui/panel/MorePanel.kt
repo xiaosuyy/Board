@@ -43,6 +43,7 @@ class MorePanel @JvmOverloads constructor(
         PHRASES,
         CLIPBOARD,
         EMOJI,
+        SWITCH_KEYBOARD,
     }
 
     var onAction: ((Action) -> Unit)? = null

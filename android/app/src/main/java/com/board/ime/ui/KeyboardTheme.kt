@@ -353,13 +353,13 @@ data class KeyboardTheme(
             val keyBackgroundOverride = appearance.color(
                 com.board.ime.settings.AppearanceColor.KEY_BACKGROUND,
             )
-            val panelBackgroundOverride = appearance.color(
-                com.board.ime.settings.AppearanceColor.CANDIDATE_BAR,
-            )
             val selectedBackgroundOverride = appearance.color(
                 com.board.ime.settings.AppearanceColor.CANDIDATE_SELECTED,
             )
             val accentOverride = appearance.color(com.board.ime.settings.AppearanceColor.ACCENT)
+            val keyboardBackgroundOverride = appearance.color(
+                com.board.ime.settings.AppearanceColor.KEYBOARD_BACKGROUND,
+            )
 
             val resolvedKeyText = appearance.color(com.board.ime.settings.AppearanceColor.KEY_TEXT)
                 ?: keyBackgroundOverride?.let(::autoTextColor)
@@ -367,17 +367,18 @@ data class KeyboardTheme(
             val resolvedCandidateText = appearance.color(
                 com.board.ime.settings.AppearanceColor.CANDIDATE_TEXT,
             )
-                ?: panelBackgroundOverride?.let(::autoTextColor)
+                ?: keyboardBackgroundOverride?.let(::autoTextColor)
                 ?: candidateText
 
+            // 键盘背景 / 工具栏背景 / 候选栏背景合并为「整体键盘背景」：
+            // 三个区域同色、同透明度，中间不再有分界线。
+            val resolvedKeyboardBackground = applyBackgroundAlpha(
+                keyboardBackgroundOverride ?: keyboardBackground,
+                appearance.keyboardBackgroundAlpha,
+            )
+
             return copy(
-                keyboardBackground = applyBackgroundAlpha(
-                    appearance.colorOr(
-                        com.board.ime.settings.AppearanceColor.KEYBOARD_BACKGROUND,
-                        keyboardBackground,
-                    ),
-                    appearance.keyboardBackgroundAlpha,
-                ),
+                keyboardBackground = resolvedKeyboardBackground,
                 keyBackground = keyBackgroundOverride ?: keyBackground,
                 keyPressedBackground = keyBackgroundOverride?.let { shade(it, 0.90f) }
                     ?: keyPressedBackground,
@@ -389,11 +390,8 @@ data class KeyboardTheme(
                 functionKeyText = resolvedKeyText,
                 accent = accentOverride ?: accent,
                 accentText = accentOverride?.let(::autoTextColor) ?: accentText,
-                panelBackground = panelBackgroundOverride ?: panelBackground,
-                toolbarBackground = appearance.colorOr(
-                    com.board.ime.settings.AppearanceColor.TOOLBAR,
-                    panelBackgroundOverride ?: panelBackground,
-                ),
+                panelBackground = resolvedKeyboardBackground,
+                toolbarBackground = resolvedKeyboardBackground,
                 candidateText = resolvedCandidateText,
                 candidateSelectedBackground = selectedBackgroundOverride ?: candidateSelectedBackground,
                 candidateSelectedText = selectedBackgroundOverride?.let(::autoTextColor)

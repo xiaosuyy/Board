@@ -85,6 +85,9 @@ class ToolbarView @JvmOverloads constructor(
         if (key == AvatarStore.KEY_AVATAR_UPDATED_AT) refreshAvatar()
     }
 
+    /** 简洁模式：待机时只显示最右「收起键盘」，隐藏更多 / 切换键盘 / 工具 */
+    private var minimal = false
+
     /** 当前布局（列表顺序 = 从右往左） */
     private var tools: List<ToolId> = emptyList()
 
@@ -127,6 +130,14 @@ class ToolbarView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** 简洁模式：true 时待机只显示最右「收起键盘」 */
+    fun setMinimal(value: Boolean) {
+        if (minimal == value) return
+        minimal = value
+        rebuildBounds()
+        invalidate()
+    }
+
     fun desiredHeight(): Int = theme.topPanelHeight
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -165,6 +176,14 @@ class ToolbarView @JvmOverloads constructor(
         val side = theme.toolSidePadding.toFloat()
         val gap = theme.spaceXs.toFloat()
 
+        // 简洁模式：只保留最右「收起键盘」
+        if (minimal) {
+            val right = width - side - hit
+            fixedActions += Action.COLLAPSE_KEYBOARD
+            fixedBounds += RectF(right, top, right + hit, bottom)
+            return
+        }
+
         // 最左：更多
         fixedActions += Action.OPEN_MORE
         fixedBounds += RectF(side, top, side + hit, bottom)
@@ -174,7 +193,7 @@ class ToolbarView @JvmOverloads constructor(
         fixedActions += Action.COLLAPSE_KEYBOARD
         fixedBounds += RectF(right, top, right + hit, bottom)
 
-        // 工具：从右往左（第 1 个紧挨「收起键盘」左侧）
+        // 工具：从右往左（第 1 个紧挨「收起键盘」左侧；切换键盘也是普通工具，可拖动 / 移入更多）
         val leftLimit = toolLeftLimit()
         val visible = ArrayList<ToolId>(tools.size)
         var x = right - hit - gap

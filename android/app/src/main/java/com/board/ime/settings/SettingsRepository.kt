@@ -127,16 +127,12 @@ class SettingsRepository(context: Context) {
                 AppearanceConfig.MIN_KEYBOARD_BACKGROUND_ALPHA,
                 AppearanceConfig.MAX_KEYBOARD_BACKGROUND_ALPHA,
             )
-        val blurStrength = runCatching {
-            prefs.getFloat(
-                KEY_KEYBOARD_BLUR_STRENGTH,
-                AppearanceConfig.DEFAULT_KEYBOARD_BLUR_STRENGTH,
-            )
-        }.getOrDefault(AppearanceConfig.DEFAULT_KEYBOARD_BLUR_STRENGTH)
-            .coerceIn(
-                AppearanceConfig.MIN_KEYBOARD_BLUR_STRENGTH,
-                AppearanceConfig.MAX_KEYBOARD_BLUR_STRENGTH,
-            )
+        // 毛玻璃强度自动跟随「键盘背景不透明度」：底色越透明，背后内容越糊。
+        // 用户拖「不透明度」滑块时，背板直接呈现毛玻璃，无需单独的模糊滑块。
+        val blurStrength = (1f - backgroundAlpha).coerceIn(
+            AppearanceConfig.MIN_KEYBOARD_BLUR_STRENGTH,
+            AppearanceConfig.MAX_KEYBOARD_BLUR_STRENGTH,
+        )
         return AppearanceConfig(
             colors,
             radii,

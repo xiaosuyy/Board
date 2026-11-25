@@ -72,6 +72,17 @@ class CandidateBar @JvmOverloads constructor(
         invalidate()
     }
 
+    /** 简洁模式：不显示拼音 pill、候选无选中色、候选之间无分割线 */
+    var minimal: Boolean = false
+        private set
+
+    fun setMinimal(value: Boolean) {
+        if (minimal == value) return
+        minimal = value
+        lastRenderedKey = null
+        renderInternal()
+    }
+
     private var theme: KeyboardTheme = KeyboardTheme.from(
         context,
         com.board.ime.settings.ThemeMode.SYSTEM,
@@ -233,12 +244,9 @@ class CandidateBar @JvmOverloads constructor(
      * 不占用候选点击区域（空带本身不是候选）。
      */
     private val actionWidthPx = resources.getDimensionPixelSize(R.dimen.kb_candidate_action_width)
-    private val actionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeWidth = resources.displayMetrics.density * 1.6f
-        alpha = 170
-    }
+
+    /** 与工具栏「收起键盘」完全同源的同款图标渲染器（大小 / 线宽 / 圆角一致） */
+    private val painter = PanelIconPainter(resources)
 
     /** 右侧展开按钮这一条是否正在被按下（只用于 tap 判定，不影响横向滑动） */
     private var actionTouching = false
@@ -306,7 +314,6 @@ class CandidateBar @JvmOverloads constructor(
         val twoLineHeight = (theme.topPanelHeight - theme.spaceXs * 2)
             .coerceAtLeast(theme.candidateChipHeight)
         selectedBackgroundTwoLine = insetChip(selectedBackground!!, twoLineHeight)
-        actionPaint.color = theme.candidateMutedText
         hintMaskPaint.color = theme.panelBackground
 
         pillView.apply {
@@ -425,7 +432,8 @@ class CandidateBar @JvmOverloads constructor(
         lastRenderedKey = key
 
         // ---- 拼音 pill ----
-        val showPill = pill != null
+        // 简洁模式：不显示正在输入的拼音 / 单词，只留候选词
+        val showPill = pill != null && !minimal
         pillView.visibility = if (showPill) VISIBLE else GONE
         if (pill != null) pillView.text = pill
         firstDivider.visibility = if (showPill && list.isNotEmpty()) VISIBLE else GONE
@@ -442,14 +450,16 @@ class CandidateBar @JvmOverloads constructor(
                 divider?.visibility = GONE
                 continue
             }
-            if (divider != null) divider.visibility = VISIBLE
+            // 简洁模式：候选之间不画分割线
+            if (divider != null) divider.visibility = if (minimal) GONE else VISIBLE
             view.visibility = VISIBLE
             // 候选 index：与引擎给出的候选列表下标完全一致（英文释义不参与）
             view.tag = index
             val selected = index == 0 && !candidate.isHint
             val chineseColor = when {
                 candidate.isHint -> theme.candidateMutedText
-                selected -> theme.candidateSelectedText
+                // 简洁模式：候选无选中色，首个候选也用普通文字色
+                selected && !minimal -> theme.candidateSelectedText
                 else -> theme.candidateText
             }
             // 中文（label）与英文（englishGloss）属于同一个 View：一起绘制 / 一起点击
@@ -461,6 +471,7 @@ class CandidateBar @JvmOverloads constructor(
             )
             val twoLine = CandidateItemMetrics.showsEnglishLine(candidate.englishGloss)
             view.background = when {
+                minimal -> null
                 selected && twoLine -> selectedBackgroundTwoLine
                 selected -> selectedBackgroundInset
                 else -> null
@@ -504,22 +515,16 @@ class CandidateBar @JvmOverloads constructor(
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
         if (candidates.isEmpty()) return
-        // 右侧固定「展开全部候选」按钮：同色窄遮罩 + 一个 ∨（展开）/ ∧（收起）。
-        // 位置钉在**可视区右端**（不随横向滚动移动），点击判定见 onTouchEvent。
+        // 右侧固定「展开全部候选」按钮：同色窄遮罩 + 与「收起键盘」同款 V 形箭头，
+        // 未展开朝下（CHEVRON_DOWN = 点此展开），已展开朝上（CHEVRON_UP = 点此收起）。
+        // 位置钉在可视区右端，点击判定见 onTouchEvent。
         val stripRight = (scrollX + width).toFloat()
         val stripLeft = stripRight - theme.panelHorizontalPadding - actionWidthPx
         canvas.drawRect(stripLeft, 0f, stripRight, height.toFloat(), hintMaskPaint)
         val cx = stripLeft + actionWidthPx / 2f
         val cy = height / 2f
-        val dx = actionWidthPx * 0.18f
-        val dy = height * 0.11f
-        if (expanded) {
-            canvas.drawLine(cx - dx, cy + dy, cx, cy - dy, actionPaint)
-            canvas.drawLine(cx, cy - dy, cx + dx, cy + dy, actionPaint)
-        } else {
-            canvas.drawLine(cx - dx, cy - dy, cx, cy + dy, actionPaint)
-            canvas.drawLine(cx, cy + dy, cx + dx, cy - dy, actionPaint)
-        }
+        val icon = if (expanded) PanelIcon.CHEVRON_UP else PanelIcon.CHEVRON_DOWN
+        painter.draw(canvas, cx, cy, theme.toolIconSize, icon, theme.candidateMutedText)
     }
 
     /**

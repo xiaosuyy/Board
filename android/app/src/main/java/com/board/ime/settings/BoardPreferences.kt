@@ -53,6 +53,11 @@ class BoardPreferences(context: Context) : SyncContentGate {
         info.lastUpdateTime > info.firstInstallTime
     }.getOrDefault(false)
 
+    /** 键盘布局种类：全键盘 / 九键 / 日语（工具栏「切换键盘」图标循环切换） */
+    var keyboardKind: KeyboardKind
+        get() = KeyboardKind.fromName(prefs.getString(KEY_KEYBOARD_KIND, null))
+        set(value) = prefs.edit().putString(KEY_KEYBOARD_KIND, value.name).apply()
+
     /** 键盘外观 */
     var themeMode: ThemeMode
         get() = ThemeMode.fromName(prefs.getString(KEY_THEME_MODE, null))
@@ -105,6 +110,16 @@ class BoardPreferences(context: Context) : SyncContentGate {
     var candidateEnglishGlossEnabled: Boolean
         get() = prefs.getBoolean(KEY_CANDIDATE_ENGLISH_GLOSS, false)
         set(value) = prefs.edit().putBoolean(KEY_CANDIDATE_ENGLISH_GLOSS, value).apply()
+
+    /**
+     * 简洁模式（默认关闭）：
+     * - 待机时工具栏只显示最右「收起键盘」图标；
+     * - 输入时不显示组词拼音，只显示候选词；
+     * - 候选词无选中色、候选之间无分割线。
+     */
+    var minimalMode: Boolean
+        get() = prefs.getBoolean(KEY_MINIMAL_MODE, false)
+        set(value) = prefs.edit().putBoolean(KEY_MINIMAL_MODE, value).apply()
 
     /**
      * 中英文之间自动加空格（默认关闭）：
@@ -286,6 +301,7 @@ class BoardPreferences(context: Context) : SyncContentGate {
     private companion object {
         const val FILE_NAME = "board_settings"
         const val KEY_MODE = "input_mode"
+        const val KEY_KEYBOARD_KIND = "keyboard_kind"
 
         /** 全新安装、且用户还没有任何偏好时的默认语言：中文 */
         val DEFAULT_MODE_FRESH_INSTALL = InputMode.CHINESE
@@ -299,6 +315,8 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_CANDIDATE_SIZE = "candidate_text_size"
         /** 候选栏英文释义开关（默认关闭） */
         const val KEY_CANDIDATE_ENGLISH_GLOSS = "candidate_english_gloss_enabled"
+        /** 简洁模式（默认关闭） */
+        const val KEY_MINIMAL_MODE = "minimal_mode"
         /** 中英文自动空格（字母 / 数字分别开关，默认都关） */
         const val KEY_AUTO_SPACE_LETTERS = "auto_space_letters"
         const val KEY_AUTO_SPACE_DIGITS = "auto_space_digits"

@@ -47,6 +47,10 @@ class RimeEngine(
 
     private var currentMode: InputMode = InputMode.CHINESE
 
+    /** 是否处于由 Rime 负责的字母层（中文 / 日语） */
+    private val isRimeMode: Boolean
+        get() = currentMode == InputMode.CHINESE || currentMode == InputMode.JAPANESE
+
     private var candidatesCache: List<Candidate> = emptyList()
     private var rimeIndexCache: List<Int> = emptyList()
     private var composingCache: String = ""
@@ -61,14 +65,14 @@ class RimeEngine(
         }
 
     override val composing: CharSequence
-        get() = if (currentMode == InputMode.CHINESE || composingCache.isNotEmpty()) {
+        get() = if (isRimeMode || composingCache.isNotEmpty()) {
             composingCache
         } else {
             latin.composing
         }
 
     override fun candidates(): List<Candidate> =
-        if (currentMode == InputMode.CHINESE || composingCache.isNotEmpty()) {
+        if (isRimeMode || composingCache.isNotEmpty()) {
             candidatesCache
         } else {
             // 数字自定义码：只有「当前数字串 == 某个纯数字 code」时才追加候选；
@@ -81,7 +85,7 @@ class RimeEngine(
     override fun reset() {
         latin.reset()
         // NUMBER/SYMBOL 下 `@` 也可能在 Rime 里留下 composing，这时也要一并清掉。
-        if (currentMode != InputMode.CHINESE && composingCache.isEmpty()) return
+        if (!isRimeMode && composingCache.isEmpty()) return
 
         // 与「同步线程关/开会话」互斥，避免用到已销毁的 session
         RimeRuntime.withSession(Unit) { session ->
@@ -108,7 +112,7 @@ class RimeEngine(
         // 其余 NUMBER / SYMBOL 输入（数字、普通标点等）与 ENGLISH 模式仍走原来的 BasicEngine。
         val specialAt = (currentMode == InputMode.NUMBER || currentMode == InputMode.SYMBOL) &&
             key is EngineKey.Punctuation && key.text == "@"
-        if (currentMode != InputMode.CHINESE && !specialAt) {
+        if (!isRimeMode && !specialAt) {
             // 之前 `@` 可能在 Rime 里留下 composing；回到 BasicEngine 前先清掉，
             // 避免候选条/输入框显示与当前 composing 不一致。
             clearRimeComposingIfAny()
@@ -138,7 +142,7 @@ class RimeEngine(
 
     override fun pickCandidate(index: Int): EngineResult {
         // NUMBER/SYMBOL 下若 `@` 正在 Rime 里 composing，点候选仍要走 Rime。
-        if (currentMode != InputMode.CHINESE && composingCache.isEmpty()) {
+        if (!isRimeMode && composingCache.isEmpty()) {
             // 候选映射必须与 [candidates] 完全一致：先 BasicEngine 候选，其后是数字自定义候选。
             val base = latin.candidates()
             val numeric = numericCustomCandidates(latin.composing.toString())
@@ -180,6 +184,15 @@ class RimeEngine(
             }
         }
 
+        // 九键数字键（T9 拼音）：数字直接送入 Rime，由 board_t9 方案的字母表接受
+        is EngineKey.Digit -> {
+            if (RimeNative.nativeProcessKey(session, RimeKey.of(key.char), 0)) {
+                afterInput(session)
+            } else {
+                EngineResult.Ignored
+            }
+        }
+
         EngineKey.Backspace -> {
             if (composingCache.isEmpty()) {
                 EngineResult.Ignored
@@ -189,8 +202,12 @@ class RimeEngine(
             }
         }
 
-        // 空格选词；没有候选时按原样上屏并补一个空格
-        EngineKey.Space -> commitWithSuffix(session, suffix = " ", preferCandidate = true)
+        // 空格选词；没有候选时按原样上屏。中文补一个空格；日语（日本 IME 空格 = 转换）不补。
+        EngineKey.Space -> commitWithSuffix(
+            session,
+            suffix = if (currentMode == InputMode.JAPANESE) "" else " ",
+            preferCandidate = true,
+        )
 
         // 回车确认：按原样上屏，不补空格
         EngineKey.Enter -> commitWithSuffix(session, suffix = "", preferCandidate = false)
@@ -226,10 +243,15 @@ class RimeEngine(
         val text = if (preferCandidate && candidatesCache.isNotEmpty()) {
             selectAndDrain(session, 0)
         } else {
-            // 双拼：preedit 是全拼（编辑区显示的内容），回车按显示的全拼上屏，去掉音节间空格
-            val preedit = RimeNative.nativeGetPreedit(session).orEmpty()
-            val raw = (preedit.ifEmpty { RimeNative.nativeGetInput(session).orEmpty() })
-                .replace(" ", "")
+            // 日语回车确认：上屏当前平假名（composingCache 已是假名）；
+            // 双拼：preedit 是全拼（编辑区显示的内容），回车按显示的全拼上屏，去掉音节间空格。
+            val raw = if (currentMode == InputMode.JAPANESE) {
+                composingCache
+            } else {
+                val preedit = RimeNative.nativeGetPreedit(session).orEmpty()
+                (preedit.ifEmpty { RimeNative.nativeGetInput(session).orEmpty() })
+                    .replace(" ", "")
+            }
             RimeNative.nativeClearComposition(session)
             RimeNative.nativeGetCommit(session)
             refresh(session)
@@ -255,7 +277,8 @@ class RimeEngine(
             // 但**什么都不做**（commit 为空、composition 未清空），表现为「点后面的候选没反应」。
             // 兜底：提交该候选文本。若候选只覆盖前几个音节（如 xu 对应「许」），
             // 把剩余音节（pengcheng）重新送入 librime，继续逐字选词（对齐微信）。
-            if (!candidateText.isNullOrEmpty() && composingCache.isNotEmpty()) {
+            // 日语罗马字没有「音节空格」可拆，这条逐字兜底只在中文模式生效。
+            if (currentMode == InputMode.CHINESE && !candidateText.isNullOrEmpty() && composingCache.isNotEmpty()) {
                 val rest = syllables.drop(candidateText.length).joinToString("")
                 RimeNative.nativeClearComposition(session)
                 RimeNative.nativeGetCommit(session)
@@ -276,9 +299,14 @@ class RimeEngine(
     private fun refresh(session: Long) {
         val input = RimeNative.nativeGetInput(session).orEmpty()
         val preedit = RimeNative.nativeGetPreedit(session).orEmpty()
-        // 双拼方案带 preedit_format：preedit 是转换后的全拼（编辑区显示全拼，与微信一致）；
+        // 日语：编辑区把罗马字转成平假名（对齐主流日语输入法）；
+        // 中文双拼方案带 preedit_format：preedit 是转换后的全拼（编辑区显示全拼，与微信一致）；
         // 全拼方案两者相同，行为不变。
-        composingCache = preedit.ifEmpty { input }
+        composingCache = if (currentMode == InputMode.JAPANESE) {
+            JapaneseRomanizer.toKana(preedit.ifEmpty { input })
+        } else {
+            preedit.ifEmpty { input }
+        }
         if (composingCache.isEmpty()) {
             candidatesCache = emptyList()
             rimeIndexCache = emptyList()
@@ -294,9 +322,21 @@ class RimeEngine(
             indices += index
         }
         val syllables = preedit.split(' ', '\'').count { it.isNotEmpty() }
-        val ordered = orderCandidates(visible, indices, syllables)
+        // 日语候选保持 Rime 词频序（汉字/假名长度与中文不同，不做「整句→词→单字」重排）
+        val ordered = if (currentMode == InputMode.CHINESE) {
+            orderCandidates(visible, indices, syllables)
+        } else {
+            visible to indices
+        }
         candidatesCache = ordered.first
         rimeIndexCache = ordered.second
+
+        // 九键 T9：composing 不显示数字编码（64426），改显示首选候选（对齐大厂九键）。
+        // 全拼 / 双拼的 preedit 是拼音字母、日语是罗马字，只有 T9 的 preedit 是纯数字，
+        // 用「不含字母」区分即可。
+        if (currentMode == InputMode.CHINESE && preedit.isNotEmpty() && preedit.none { it.isLetter() }) {
+            composingCache = candidatesCache.firstOrNull()?.text ?: composingCache
+        }
     }
 
     /**

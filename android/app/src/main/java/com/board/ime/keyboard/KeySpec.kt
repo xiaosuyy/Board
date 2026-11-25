@@ -12,6 +12,11 @@ data class KeySpec(
     val text: String? = null,
     /** 展示文本，默认与 [text] 相同 */
     val label: String? = null,
+    /**
+     * 副标签（九键数字键下方的小字母，如 2 键的「ABC」）。
+     * 只用于展示，不影响上屏。
+     */
+    val subLabel: String? = null,
     /** 相对宽度单位 */
     val units: Float = 1f,
     /**

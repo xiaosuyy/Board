@@ -34,6 +34,7 @@ enum class PanelIcon(@DrawableRes val res: Int) {
     STAR(R.drawable.ic_board_star),
     TRASH(R.drawable.ic_board_trash),
     KEYBOARD_HIDE(R.drawable.ic_board_keyboard_hide),
+    SWITCH_KEYBOARD(R.drawable.ic_board_switch_keyboard),
     CLOUD(R.drawable.ic_board_cloud),
     DEVICE(R.drawable.ic_board_device),
     DOWNLOAD(R.drawable.ic_board_download),

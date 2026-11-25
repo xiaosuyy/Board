@@ -1,0 +1,103 @@
+# Rime schema
+# encoding: utf-8
+#
+# Board 九键（T9）拼音输入方案。
+# 按键为数字 1–9，speller 接受数字，词典 board_t9 以**连续数字**为编码
+# （如「你好」→ 64426），librime 自动切分音节。
+# 显示 / 上屏沿用 luna_pinyin 的简体（zh_hans）过滤。
+
+schema:
+  schema_id: board_t9
+  name: 九键拼音
+  version: "1"
+  author:
+    - Board
+  description: |
+    九键（T9）拼音输入方案。
+    数字键 2–9 对应拼音字母组：2=ABC，3=DEF，4=GHI，5=JKL，
+    6=MNO，7=PQRS，8=TUV，9=WXYZ。
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [ 中文, 西文 ]
+  - name: full_shape
+    states: [ 半角, 全角 ]
+  - options:
+      - zh_hant
+      - zh_hans
+    reset: 1
+    states:
+      - 傳統漢字
+      - 简化字
+  - name: ascii_punct
+    states: [ 。，, ．， ]
+
+engine:
+  processors:
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - table_translator@custom_phrase
+    - script_translator
+  filters:
+    - simplifier@zh_hans
+    - uniquifier
+
+speller:
+  alphabet: "1234567890"
+  delimiter: "'"
+
+translator:
+  dictionary: board_t9
+  enable_completion: true
+  enable_sentence: true
+  enable_user_dict: true
+
+menu:
+  page_size: 200
+
+custom_phrase:
+  dictionary: ""
+  user_dict: custom_phrase
+  db_class: stabledb
+  enable_completion: false
+  enable_sentence: false
+  initial_quality: 10000000
+
+punctuator:
+  import_preset: symbols
+
+key_binder:
+  import_preset: default
+
+recognizer:
+  import_preset: default
+  patterns:
+    punct: '^/([0-9]0?|[A-Za-z]+)$'
+
+zh_hans:
+  option_name: zh_hans
+  opencc_config: t2s.json
+  tips: none
+  excluded_types: [ reverse_lookup ]
+
+zh_hant:
+  option_name: zh_hant
+  opencc_config: t2s.json
+  tips: none
+  excluded_types: [ reverse_lookup ]
+...

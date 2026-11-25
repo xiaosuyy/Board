@@ -56,6 +56,7 @@ import com.board.ime.settings.BoardPreferences
 import com.board.ime.settings.BoardSettingsActivity
 import com.board.ime.settings.EngineKind
 import com.board.ime.settings.CandidateTextSize
+import com.board.ime.settings.KeyboardKind
 import com.board.ime.settings.KeyboardScope
 import com.board.ime.settings.LayoutMode
 import com.board.ime.settings.SettingsRepository
@@ -67,6 +68,8 @@ import com.board.ime.sync.SyncScheduler
 import com.board.ime.sync.SyncTrigger
 import com.board.ime.sync.DeviceRepository
 import com.board.ime.ui.KeyboardTheme
+import com.board.ime.ui.KeyboardTrayDrawable
+import com.board.ime.ui.KeyboardTrayOverlayDrawable
 import com.board.ime.ui.panel.MorePanel
 import com.board.ime.ui.panel.PanelLayoutMode
 import com.board.ime.ui.panel.TopPanelController
@@ -931,7 +934,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // 后台抓取一次 memecub 梗图（网络失败自动回退本地内置斗图）
         prefetchMemecubMemes()
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
-        buildController(preferences.engineKind, preferences.mode)
+        buildController(preferences.engineKind, initialLetterMode())
 
         // B1（D1）：必须与 SyncEngine/SyncEngineHolder 使用**同一个** repository 实例。
         // 之前这里自己 new 了一个，导致「本机新增历史」回调挂在不被使用的实例上
@@ -1005,6 +1008,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             observeClipboard(panel.searchQuery, remoteOnly)
         }
         panel.onCollapseKeyboard = { collapseKeyboard() }
+        panel.onSwitchKeyboard = { onSwitchKeyboard() }
         panel.onVoiceCancel = { voiceSession?.cancel() }
         panel.onVoiceStop = { voiceSession?.toggle() }
         panel.onVoiceMicStop = { voiceSession?.toggle() }
@@ -1231,8 +1235,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             MorePanel.Action.VOICE -> onVoiceTool()
             MorePanel.Action.PHRASES -> openPhrases()
             MorePanel.Action.EMOJI -> panelController?.showEmoji()
-            // CLOSE / CLIPBOARD 由 TopPanelController 内部处理
-            MorePanel.Action.CLOSE, MorePanel.Action.CLIPBOARD -> Unit
+            // CLOSE / CLIPBOARD / SWITCH_KEYBOARD 由 TopPanelController 内部处理
+            MorePanel.Action.CLOSE, MorePanel.Action.CLIPBOARD, MorePanel.Action.SWITCH_KEYBOARD -> Unit
         }
     }
 
@@ -1832,7 +1836,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         rimeEngine = newEngine as? RimeEngine
         controller.onStateChanged = null
         engine = newEngine
-        controller = InputController(newEngine, letterMode).also {
+        controller = InputController(newEngine, letterMode, preferences.keyboardKind).also {
             it.onStateChanged = {
                 refreshInputView()
                 // 注入译文本身也会触发状态变化：不在注入过程中再排一次翻译
@@ -1852,6 +1856,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             it.onEmojiCommitted = { emoji -> emojiRepository?.recordRecent(emoji) }
             // 只打一个 v 再按空格：打开快捷面板
             it.onVSpaceToolbox = { panelController?.showToolbox() }
+            // 九键底部行的语音键：与工具栏「语音」走同一条入口
+            it.onVoice = { onVoiceTool() }
             // 中英文自动空格（默认关闭，字母 / 数字分别开关）
             it.autoSpace = {
                 AutoSpaceConfig(
@@ -1884,10 +1890,36 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         appliedEngineKind = kind
     }
 
+    /**
+     * 当前键盘种类对应的字母层默认语言：
+     * 日语键盘 → 日语；九键 → 中文；全键盘 → 用户偏好（中 / 英）。
+     */
+    private fun initialLetterMode(): InputMode =
+        letterModeFor(preferences.keyboardKind, preferences.mode)
+
+    /** 把「保存的语言」归一化到「当前键盘种类允许的语言」。 */
+    private fun letterModeFor(kind: KeyboardKind, saved: InputMode): InputMode = when (kind) {
+        KeyboardKind.JAPANESE ->
+            if (saved == InputMode.ENGLISH) InputMode.ENGLISH else InputMode.JAPANESE
+
+        KeyboardKind.T9 ->
+            if (saved == InputMode.ENGLISH) InputMode.ENGLISH else InputMode.CHINESE
+
+        KeyboardKind.QWERTY ->
+            if (saved == InputMode.JAPANESE) InputMode.CHINESE else saved
+    }
+
+    /** 当前键盘种类对应的 Rime 方案 id */
+    private fun schemaFor(kind: KeyboardKind): String = when (kind) {
+        KeyboardKind.QWERTY -> preferences.shuangpin.schemaId
+        KeyboardKind.T9 -> RimeRuntime.T9_SCHEMA
+        KeyboardKind.JAPANESE -> RimeRuntime.JP_SCHEMA
+    }
+
     private fun ensureEngineKind() {
         val desired = preferences.engineKind
         if (appliedEngineKind == desired) return
-        buildController(desired, preferences.mode)
+        buildController(desired, initialLetterMode())
         if (desired == EngineKind.RIME) {
             prepareRimeIfNeeded()
         }
@@ -1905,7 +1937,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             runCatching { dictionaryRepository.syncRimeSchemaConfig() }
             appliedRimeOptions = dictionaryRepository.currentSchemaOptions()
             val deployed = installed && RimeRuntime.deploy(fullCheck = RimeRuntime.dataWasReinstalled)
-            val opened = deployed && RimeRuntime.openSession(preferences.shuangpin.schemaId)
+            val opened = deployed && RimeRuntime.openSession(schemaFor(preferences.keyboardKind))
             mainHandler.post {
                 if (opened) {
                     Log.i(
@@ -1926,13 +1958,49 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }
     }
 
+    /** 工具栏「切换键盘」：全键盘 → 九键 → 日语 循环，持久化并切换 Rime 方案 */
+    private fun onSwitchKeyboard() {
+        val next = preferences.keyboardKind.next()
+        preferences.keyboardKind = next
+        controller.applyKeyboardKind(next)
+        // 同步语言偏好：日语键盘记「日」、九键记「中」、全键盘保留用户上次的语言
+        persistLetterMode()
+        switchRimeSchemaIfReady(next)
+        refreshInputView()
+    }
+
+    /** 键盘种类变化后，Rime 已就绪时切换方案 */
+    private fun switchRimeSchemaIfReady(kind: KeyboardKind) {
+        if (!rimePrepareStarted || preferences.engineKind != EngineKind.RIME) return
+        val schema = schemaFor(kind)
+        if (RimeRuntime.currentSchema() == schema) return
+
+        // 快速路径：board_t9 / board_jp 首次部署时已编译，直接在当前会话里 select_schema，
+        // 毫秒级、同步完成 —— 保证「切到九键后立刻按键」也走九键方案，而不是旧的全拼方案
+        // 把数字当普通字符上屏。
+        if (RimeRuntime.isReady && RimeRuntime.selectSchema(schema)) {
+            Log.i(TAG, "切换键盘方案 $schema（快速）")
+            return
+        }
+
+        // 慢速兜底：方案尚未部署（例如首次切换到该键盘）时，后台重新部署 + 重开会话
+        serviceScope.launch {
+            runCatching { dictionaryRepository.syncRimeSchemaConfig() }
+            if (!RimeRuntime.isReady) return@launch
+            val switched = RimeRuntime.applySchemaChange(schema)
+            Log.i(TAG, "切换键盘方案 $schema（部署） = $switched")
+            mainHandler.post { refreshInputView() }
+        }
+    }
+
     // ------------------------------------------------------------ 视图刷新
 
     private fun refreshInputView() {
         val binding = binding ?: return
         binding.keyboardView.keyboardLayout = controller.currentLayout
         binding.keyboardView.keyboardMode = controller.mode
-        binding.keyboardView.languageIsChinese = controller.letterMode == InputMode.CHINESE
+        binding.keyboardView.letterLanguage = controller.letterMode
+        binding.keyboardView.languageIsJapanese = controller.keyboardKind == KeyboardKind.JAPANESE
         binding.keyboardView.setShiftState(active = controller.shiftActive, locked = controller.capsLock)
 
         // P3 Stage 1：候选进入 UI 前按开关附加本地英文释义。
@@ -1952,7 +2020,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
     /** 面板本身不再显示输入状态，这里只把「引擎暂时不可用」这类真实状态传下去 */
     private fun rimeStatusText(): String? {
-        if (controller.mode != InputMode.CHINESE) return null
+        if (controller.mode != InputMode.CHINESE && controller.mode != InputMode.JAPANESE) return null
         if (appliedEngineKind != EngineKind.RIME) return null
         return RimeRuntime.statusText()
     }
@@ -1990,11 +2058,13 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }
         val binding = binding ?: return
 
-        binding.panelDivider.setBackgroundColor(resolved.divider)
+        // 键盘背景 / 工具栏背景 / 候选栏背景已合并为整体，彻底去掉面板与键盘之间的分界线
+        binding.panelDivider.setBackgroundColor(Color.TRANSPARENT)
         binding.panelDivider.layoutParams = binding.panelDivider.layoutParams?.apply {
-            height = resolved.dividerHeight
+            height = 0
         }
         binding.keyboardView.applyTheme(resolved)
+        panelController?.minimalMode = preferences.minimalMode
         panelController?.applyTheme(resolved)
 
         // 毛玻璃：把「键盘背景不透明度 + 模糊强度」同步到输入法窗口
@@ -2080,6 +2150,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             val margin = resolved.edgeMarginPx
             floatParams.setMargins(margin, margin, margin, margin)
             binding.keyboardFloat.background = floatingCard(theme, theme.radiusLarge)
+            binding.keyboardFloat.foreground = trayOverlay(theme, theme.radiusLarge, docked = false)
             binding.keyboardRoot.setBackgroundColor(Color.TRANSPARENT)
             window?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         } else {
@@ -2105,13 +2176,14 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
      */
     private fun applyDockedCard(view: View, theme: KeyboardTheme) {
         val radius = theme.radiusLarge
-        view.background = GradientDrawable().apply {
-            setColor(theme.keyboardBackground)
-            cornerRadii = floatArrayOf(
-                radius, radius, radius, radius,
-                0f, 0f, 0f, 0f,
-            )
-        }
+        view.background = KeyboardTrayDrawable(
+            surfaceColor = theme.keyboardBackground,
+            isDark = theme.isDark,
+            radiusPx = radius,
+            density = resources.displayMetrics.density,
+            docked = true,
+        )
+        view.foreground = trayOverlay(theme, radius, docked = true)
         view.clipToOutline = true
         view.outlineProvider = object : android.view.ViewOutlineProvider() {
             private val path = android.graphics.Path()
@@ -2144,14 +2216,26 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         else -> PanelLayoutMode.CLIPBOARD_ONLY
     }
 
-    private fun floatingCard(theme: KeyboardTheme, radius: Float) = GradientDrawable().apply {
-        setColor(theme.keyboardBackground)
-        cornerRadius = radius
-    }
+    private fun floatingCard(theme: KeyboardTheme, radius: Float) = KeyboardTrayDrawable(
+        surfaceColor = theme.keyboardBackground,
+        isDark = theme.isDark,
+        radiusPx = radius,
+        density = resources.displayMetrics.density,
+        docked = false,
+    )
+
+    private fun trayOverlay(theme: KeyboardTheme, radius: Float, docked: Boolean) =
+        KeyboardTrayOverlayDrawable(
+            surfaceColor = theme.keyboardBackground,
+            isDark = theme.isDark,
+            radiusPx = radius,
+            density = resources.displayMetrics.density,
+            docked = docked,
+        )
 
     private fun applyPreferences() {
         ensureEngineKind()
-        controller.setLetterMode(preferences.mode)
+        controller.setLetterMode(letterModeFor(preferences.keyboardKind, preferences.mode))
         applyTheme()
         syncRimeOptionsIfChanged()
     }
@@ -2174,8 +2258,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             )
             runCatching { dictionaryRepository.syncRimeSchemaConfig() }
             if (!RimeRuntime.isReady) return@launch
-            val switched = RimeRuntime.applySchemaChange(desired.schemaId)
-            Log.i(TAG, "Rime 方案切换 ${desired.schemaId} = $switched")
+            // 按「当前键盘种类」重新选中方案：改双拼只影响全键盘，日语 / 九键仍各用各的方案
+            val schema = schemaFor(preferences.keyboardKind)
+            val switched = RimeRuntime.applySchemaChange(schema)
+            Log.i(TAG, "Rime 方案切换 $schema = $switched")
             mainHandler.post { refreshInputView() }
         }
     }

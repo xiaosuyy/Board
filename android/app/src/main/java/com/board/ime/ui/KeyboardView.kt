@@ -88,10 +88,18 @@ class KeyboardView @JvmOverloads constructor(
         }
 
     /**
-     * 底层语言是否为中文。「中/EN」键的深浅按它显示：
-     * 符号层里当前层不是字母，但语言键仍要反映中 / 英状态。
+     * 当前字母层语言，决定「语言键」哪半高亮：
+     * [InputMode.CHINESE] / [InputMode.JAPANESE] 高亮左半，[InputMode.ENGLISH] 高亮右半。
      */
-    var languageIsChinese: Boolean = true
+    var letterLanguage: InputMode = InputMode.CHINESE
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
+    /** 语言键左半标签是否为「日」（false = 「中」）。由键盘种类（日语 / 其它）决定 */
+    var languageIsJapanese: Boolean = false
         set(value) {
             if (field == value) return
             field = value
@@ -283,11 +291,9 @@ class KeyboardView @JvmOverloads constructor(
         // 命中区域向外扩半个间隙 → 键与键之间不再有「点了没反应」的死区
         val expandX = metrics.keyGapHorizontalPx / 2f
         val expandY = metrics.keyGapVerticalPx / 2f
-        // 功能键宽度倍率：只影响字母 / 符号层；数字九宫格固定列宽，必须上下对齐
-        val fnRatio = if (keyboardLayout.ignoresFunctionKeyRatio) 1f else metrics.functionKeyWidthRatio
 
         keyboardLayout.rows.forEachIndexed { rowIndex, row ->
-            val unit = contentWidth / row.unitsWith(fnRatio)
+            val unit = contentWidth / row.unitsWith()
             if (unit <= 0f) return@forEachIndexed
 
             val top = metrics.paddingVerticalPx +
@@ -295,7 +301,7 @@ class KeyboardView @JvmOverloads constructor(
             var cursor = padH + row.leadingPadUnits * unit
 
             row.keys.forEach { key ->
-                val width = key.unitsFor(fnRatio) * unit
+                val width = key.unitsFor() * unit
                 val left = cursor + metrics.keyGapHorizontalPx / 2f
                 val right = cursor + width - metrics.keyGapHorizontalPx / 2f
                 val rect = RectF(left, top, right, top + metrics.keyHeightPx)
@@ -321,14 +327,13 @@ class KeyboardView @JvmOverloads constructor(
         }
     }
 
-    /** 某个键在给定功能键倍率下的实际宽度单位 */
-    private fun KeySpec.unitsFor(functionKeyRatio: Float): Float =
-        if (type.isFunctional && functionKeyRatio != 1f) units * functionKeyRatio else units
+    /** 某个键的实际宽度单位（功能键与普通键统一，不再单独缩放） */
+    private fun KeySpec.unitsFor(): Float = units
 
-    /** 一行的总单位数（考虑功能键倍率） */
-    private fun KeyRow.unitsWith(functionKeyRatio: Float): Float {
+    /** 一行的总单位数 */
+    private fun KeyRow.unitsWith(): Float {
         var sum = leadingPadUnits + trailingPadUnits
-        keys.forEach { sum += it.unitsFor(functionKeyRatio) }
+        keys.forEach { sum += it.units }
         return sum
     }
 
@@ -399,11 +404,11 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     private fun backgroundColorFor(key: KeySpec, pressed: Boolean): Int = when {
-        // 强调色只出现在“按键状态”这种少量场景
+        // 强调色只出现在“Shift 激活 / 大写锁定”这种状态
         key.type == KeyType.SHIFT && (shiftActive || capsLock) -> theme.accent
-        pressed && key.type.isFunctional -> theme.functionKeyPressedBackground
+        // 功能键与普通键共用同一套底色：大写 / 123 / 符号 / 中英 / 回车 / 删除
+        // 都不再单独用深灰功能键底色，视觉上整块键盘保持一致。
         pressed -> theme.keyPressedBackground
-        key.type.isFunctional -> theme.functionKeyBackground
         else -> theme.keyBackground
     }
 
@@ -419,17 +424,27 @@ class KeyboardView @JvmOverloads constructor(
                 color = theme.keyText,
             )
 
-            KeyType.SYMBOL -> drawAdaptiveLabel(
-                canvas = canvas,
-                rect = rect,
-                text = key.displayText,
-                color = theme.keyText,
-            )
+            // 九键数字键：大数字在上，小字母组在下（对齐搜狗 / 讯飞九键）
+            KeyType.T9_DIGIT -> drawT9Digit(canvas, key, rect)
+
+            KeyType.SYMBOL -> {
+                // 竖条（如九键左侧 ，。？！）多字符时竖排，单字符正常居中
+                if (key.stackId != 0 && key.displayText.length > 1) {
+                    drawStackedLabel(canvas, rect, key.displayText, theme.keyText, theme.keyTextSize * 0.9f)
+                } else {
+                    drawAdaptiveLabel(
+                        canvas = canvas,
+                        rect = rect,
+                        text = key.displayText,
+                        color = theme.keyText,
+                    )
+                }
+            }
 
             KeyType.COMMA -> drawLabel(
                 canvas = canvas,
                 rect = rect,
-                text = if (keyboardMode == InputMode.CHINESE) "，" else ",",
+                text = commaLabel(),
                 color = theme.keyText,
                 size = theme.keyTextSize,
             )
@@ -437,20 +452,19 @@ class KeyboardView @JvmOverloads constructor(
             KeyType.PERIOD -> drawLabel(
                 canvas = canvas,
                 rect = rect,
-                text = if (keyboardMode == InputMode.CHINESE) "。" else ".",
+                text = periodLabel(),
                 color = theme.keyText,
                 size = theme.keyTextSize,
             )
 
             // 微信字母层底行的「，。」：主标点是逗号，上方小号浅色句号提示上滑输入
             KeyType.PUNCTUATION -> {
-                val chinese = keyboardMode == InputMode.CHINESE
                 val cx = rect.centerX()
                 drawCenteredText(
                     canvas = canvas,
                     cx = cx,
                     cy = rect.centerY() - rect.height() * 0.17f,
-                    text = if (chinese) "。" else ".",
+                    text = periodLabel(),
                     color = dimmedColor(theme.keyText, PERIOD_HINT_ALPHA),
                     size = theme.keyTextSize * 0.5f,
                 )
@@ -458,7 +472,7 @@ class KeyboardView @JvmOverloads constructor(
                     canvas = canvas,
                     cx = cx,
                     cy = rect.centerY() + rect.height() * 0.15f,
-                    text = if (chinese) "，" else ",",
+                    text = commaLabel(),
                     color = theme.keyText,
                     size = theme.keyTextSize,
                 )
@@ -501,6 +515,12 @@ class KeyboardView @JvmOverloads constructor(
             KeyType.TO_MORE_SYMBOLS -> drawFunctionLabel(canvas, rect, "符号")
             KeyType.TO_EXTRA_SYMBOLS -> drawFunctionLabel(canvas, rect, "符号")
             KeyType.TO_MAIN_SYMBOLS -> drawFunctionLabel(canvas, rect, "符号")
+
+            // 九键底部行的语音键：声波波形（普通键底色，用主文字色）
+            KeyType.VOICE -> drawVoiceGlyph(canvas, rect, theme.keyText)
+
+            // 九键右侧列的「重输」
+            KeyType.RESET -> drawFunctionLabel(canvas, rect, "重输")
         }
     }
 
@@ -509,6 +529,36 @@ class KeyboardView @JvmOverloads constructor(
         if (text.isEmpty()) return
         val size = if (text.length > 1) theme.functionKeyTextSize else theme.keyTextSize
         drawLabel(canvas, rect, text, color, size)
+    }
+
+    /** 九键数字键：只显示字母组 / 分词居中，不显示数字（不切数字面板就不显示数字） */
+    private fun drawT9Digit(canvas: Canvas, key: KeySpec, rect: RectF) {
+        val sub = key.subLabel
+        if (sub.isNullOrEmpty()) {
+            drawLabel(canvas, rect, key.label ?: key.text ?: return, theme.keyText, theme.keyTextSize)
+            return
+        }
+        // 字母组大字居中；4 个字母（PQRS / WXYZ）降一号避免溢出，「分词」两字也稍收一点
+        val size = when (sub.length) {
+            1 -> theme.keyTextSize
+            2 -> theme.keyTextSize * 0.85f
+            3 -> theme.keyTextSize * 0.9f
+            else -> theme.keyTextSize * 0.72f
+        }
+        drawLabel(canvas, rect, sub, theme.keyText, size)
+    }
+
+    /** 逗号键显示：中文「，」/ 日语「、」/ 其它「,」 */
+    private fun commaLabel(): String = when (keyboardMode) {
+        InputMode.CHINESE -> "，"
+        InputMode.JAPANESE -> "、"
+        else -> ","
+    }
+
+    /** 句号键显示：中文 / 日语「。」/ 其它「.」 */
+    private fun periodLabel(): String = when (keyboardMode) {
+        InputMode.CHINESE, InputMode.JAPANESE -> "。"
+        else -> "."
     }
 
     private fun drawFunctionLabel(canvas: Canvas, rect: RectF, text: String) {
@@ -538,7 +588,7 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     /**
-     * 「中/EN」键：当前语言的半区用正常功能键文字色，另一半同色降透明度。
+     * 「中/EN」或「日/EN」键：当前语言的半区用正常文字色，另一半同色降透明度。
      * 透明度变化只会让颜色更浅，不会比整体文字更深；[LANGUAGE_WEAK_ALPHA]
      * 保留一半不透明度，深色 / 浅色主题下都还能看清。
      */
@@ -546,7 +596,10 @@ class KeyboardView @JvmOverloads constructor(
         val size = theme.functionKeyTextSize * 0.8f
         val strong = theme.functionKeyText
         val weak = dimmedColor(strong, LANGUAGE_WEAK_ALPHA)
-        val zh = "中"
+        val left = if (languageIsJapanese) "日" else "中"
+        val leftActive = letterLanguage ==
+            (if (languageIsJapanese) InputMode.JAPANESE else InputMode.CHINESE)
+        val rightActive = letterLanguage == InputMode.ENGLISH
         val slash = "/"
         val en = "EN"
 
@@ -554,18 +607,18 @@ class KeyboardView @JvmOverloads constructor(
         textPaint.textAlign = Paint.Align.LEFT
         val metrics = textPaint.fontMetrics
         val baseline = rect.centerY() - (metrics.ascent + metrics.descent) / 2f
-        val wZh = textPaint.measureText(zh)
+        val wLeft = textPaint.measureText(left)
         val wSlash = textPaint.measureText(slash)
         val wEn = textPaint.measureText(en)
-        var x = rect.centerX() - (wZh + wSlash + wEn) / 2f
+        var x = rect.centerX() - (wLeft + wSlash + wEn) / 2f
 
-        textPaint.color = if (languageIsChinese) strong else weak
-        canvas.drawText(zh, x, baseline, textPaint)
-        x += wZh
+        textPaint.color = if (leftActive) strong else weak
+        canvas.drawText(left, x, baseline, textPaint)
+        x += wLeft
         textPaint.color = weak
         canvas.drawText(slash, x, baseline, textPaint)
         x += wSlash
-        textPaint.color = if (languageIsChinese) weak else strong
+        textPaint.color = if (rightActive) strong else weak
         canvas.drawText(en, x, baseline, textPaint)
 
         textPaint.textAlign = Paint.Align.CENTER
@@ -693,6 +746,46 @@ class KeyboardView @JvmOverloads constructor(
         val halfChord = radius * 0.866f
         canvas.drawLine(cx - halfChord, cy - offsetY, cx + halfChord, cy - offsetY, glyphStroke)
         canvas.drawLine(cx - halfChord, cy + offsetY, cx + halfChord, cy + offsetY, glyphStroke)
+    }
+
+    /** 声波波形（语音键）：中间最高、两侧对称渐矮的竖条，非麦克风 */
+    private fun drawVoiceGlyph(canvas: Canvas, rect: RectF, color: Int) {
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        val maxHalf = rect.height() * 0.28f
+        val barW = rect.width() * 0.045f
+        val gap = rect.width() * 0.06f
+        val heights = floatArrayOf(0.42f, 0.76f, 1f, 0.76f, 0.42f)
+
+        glyphFill.color = color
+        for (i in heights.indices) {
+            val half = maxHalf * heights[i]
+            val x = cx + (i - 2) * (barW + gap)
+            canvas.drawRoundRect(
+                x - barW / 2f,
+                cy - half,
+                x + barW / 2f,
+                cy + half,
+                barW / 2f,
+                barW / 2f,
+                glyphFill,
+            )
+        }
+    }
+
+    /** 竖排绘制多字符（九键左侧标点竖条），逐字符从上到下 */
+    private fun drawStackedLabel(canvas: Canvas, rect: RectF, text: String, color: Int, size: Float) {
+        if (text.isEmpty()) return
+        textPaint.color = color
+        textPaint.textSize = size
+        val metrics = textPaint.fontMetrics
+        val lineHeight = (metrics.descent - metrics.ascent) * 0.9f
+        val totalHeight = lineHeight * text.length
+        var baseline = rect.centerY() - totalHeight / 2f - metrics.ascent
+        for (ch in text) {
+            canvas.drawText(ch.toString(), rect.centerX(), baseline, textPaint)
+            baseline += lineHeight
+        }
     }
 
     // ---------------------------------------------------------------- 触摸
@@ -888,6 +981,9 @@ class KeyboardView @JvmOverloads constructor(
 
         /** 逗号键上方的句号提示：同色半透明，浅一点但仍可辨认 */
         const val PERIOD_HINT_ALPHA = 0.55f
+
+        /** 九键数字键下方字母组的透明度（浅色小字） */
+        const val T9_SUB_ALPHA = 0.6f
 
         /** 「中/EN」未激活的一半：保留 50% 不透明度，浅但不至于看不见 */
         const val LANGUAGE_WEAK_ALPHA = 0.5f

@@ -21,6 +21,7 @@ enum class ToolId(
     SETTINGS("settings", "设置", PanelIcon.SETTINGS, MorePanel.Action.SETTINGS),
     PHRASES("phrases", "常用语", PanelIcon.PHRASES, MorePanel.Action.PHRASES),
     EMOJI("emoji", "表情", PanelIcon.EMOJI, MorePanel.Action.EMOJI),
+    SWITCH_KEYBOARD("switch_keyboard", "切换键盘", PanelIcon.SWITCH_KEYBOARD, MorePanel.Action.SWITCH_KEYBOARD),
     ;
 
     companion object {
@@ -92,7 +93,8 @@ data class ToolLayout(
          * （剪贴板不再重复出现在「更多」里 —— 它已经常驻工具栏。）
          */
         val DEFAULT = ToolLayout(
-            toolbar = listOf(ToolId.CLIPBOARD, ToolId.EMOJI),
+            // 工具栏第 1 个渲染在最右：切换键盘紧挨「收起键盘」
+            toolbar = listOf(ToolId.SWITCH_KEYBOARD, ToolId.CLIPBOARD, ToolId.EMOJI),
             more = listOf(
                 ToolId.THEME,
                 ToolId.TRANSLATE,
@@ -109,20 +111,25 @@ data class ToolLayout(
          */
         fun parse(toolbarRaw: String?, moreRaw: String?): ToolLayout {
             if (toolbarRaw == null && moreRaw == null) return DEFAULT
-            val layout = normalize(
+            var layout = normalize(
                 decode(toolbarRaw),
                 decode(moreRaw),
             )
-            // 老用户的自定义布局里还没有「表情」：它这次是新增的工具，
-            // 直接放进工具栏（用户明确要求 emoji 常驻工具栏）；工具栏满了就留在「更多」。
-            if (layout.toolbar.contains(ToolId.EMOJI)) return layout
-            if (layout.toolbar.size < MAX_TOOLBAR) {
-                return layout.copy(
-                    toolbar = layout.toolbar + ToolId.EMOJI,
-                    more = layout.more - ToolId.EMOJI,
-                )
-            }
+            // 老用户的自定义布局里还没有「表情」「切换键盘」：补进去
+            // （工具栏未满则放工具栏，满了留在「更多」）。
+            layout = ensureToolPresent(layout, ToolId.EMOJI)
+            layout = ensureToolPresent(layout, ToolId.SWITCH_KEYBOARD)
             return layout
+        }
+
+        /** 确保 [tool] 出现在布局里：工具栏未满则追加到工具栏，否则留在「更多」 */
+        private fun ensureToolPresent(layout: ToolLayout, tool: ToolId): ToolLayout {
+            if (tool in layout.toolbar || tool in layout.more) return layout
+            return if (layout.toolbar.size < MAX_TOOLBAR) {
+                layout.copy(toolbar = layout.toolbar + tool, more = layout.more - tool)
+            } else {
+                layout.copy(more = layout.more + tool)
+            }
         }
 
         private fun decode(raw: String?): List<ToolId> =

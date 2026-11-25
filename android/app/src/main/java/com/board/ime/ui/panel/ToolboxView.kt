@@ -27,6 +27,8 @@ class ToolboxView @JvmOverloads constructor(
         PHRASES,
         SYMBOLS,
         EMOJI,
+        SETTINGS,
+        SWITCH_KEYBOARD,
     }
 
     var onAction: ((Action) -> Unit)? = null
@@ -84,6 +86,8 @@ class ToolboxView @JvmOverloads constructor(
             Entry(Action.PHRASES, PanelIcon.PHRASES, "常用语"),
             Entry(Action.SYMBOLS, PanelIcon.EDIT, "符号"),
             Entry(Action.EMOJI, PanelIcon.EMOJI, "表情"),
+            Entry(Action.SETTINGS, PanelIcon.SETTINGS, "设置"),
+            Entry(Action.SWITCH_KEYBOARD, PanelIcon.SWITCH_KEYBOARD, "切换键盘"),
         )
     }
 }

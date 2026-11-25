@@ -327,6 +327,7 @@ class SettingsSectionActivity : AppCompatActivity() {
                 keyboardLift = previewKeyboardLift,
                 screenWidthPx = screenWidthPx,
                 screenHeightPx = screenHeightPx,
+                minimal = preferences.minimalMode,
             )
             setSampleEnglishGloss(preferences.candidateEnglishGlossEnabled)
         }
@@ -347,20 +348,11 @@ class SettingsSectionActivity : AppCompatActivity() {
         )
         val previewWidth = if (floating) previewMetrics.widthPx else screenWidthPx
 
-        // 下半屏常驻：预览整体贴底，标题在预览上方；dock 由上层按 weight 撑满下半屏。
-        val dock = android.widget.FrameLayout(this).apply {
-            setPadding(0, 0, 0, 0)
-        }
-        val inner = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM,
-            )
-        }
-        inner.addView(
+        // 下半屏常驻：标题钉在顶部，键盘预览钉在底部（贴底）。
+        // 调键盘高度时，键盘底部始终贴住屏幕底、向上生长，不会出现「下面越来越空」。
+        val dock = android.widget.FrameLayout(this)
+
+        dock.addView(
             TextView(this@SettingsSectionActivity).apply {
                 text = "键盘预览（${scope.label}）· 点按顶部切换工具栏 / 候选栏"
                 setTextSize(
@@ -370,21 +362,26 @@ class SettingsSectionActivity : AppCompatActivity() {
                 setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
                 setPadding(dp(20f), dp(8f), dp(20f), dp(6f))
             },
+            android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP,
+            ),
         )
-        inner.addView(
+
+        dock.addView(
             preview,
-            LinearLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams(
                 previewWidth,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or if (floating) Gravity.END else Gravity.CENTER_HORIZONTAL,
             ).apply {
-                gravity = if (floating) Gravity.END else Gravity.CENTER_HORIZONTAL
                 if (floating) {
                     marginEnd = previewMetrics.edgeMarginPx
                     bottomMargin = previewMetrics.edgeMarginPx
                 }
             },
         )
-        dock.addView(inner)
         return dock
     }
 
@@ -517,6 +514,7 @@ class SettingsSectionActivity : AppCompatActivity() {
             keyboardLift = previewKeyboardLift,
             screenWidthPx = previewScreenWidthPx,
             screenHeightPx = previewScreenHeightPx,
+            minimal = preferences.minimalMode,
         )
         clipboardCardSample?.apply {
             (background as? android.graphics.drawable.GradientDrawable)?.cornerRadius =
@@ -595,14 +593,38 @@ class SettingsSectionActivity : AppCompatActivity() {
         )
         content.addView(SettingsUi.cardView(this, candidates))
 
+        // ---- 简洁模式：待机只留收起键，输入只留候选词（无拼音 / 无选中色 / 无分割线） ----
+        val minimal = SettingsUi.card(this)
+        minimal.addView(SettingsUi.heading(this, "简洁模式"))
+        minimal.addView(
+            SettingsUi.switchRow(
+                this,
+                "开启简洁模式",
+                preferences.minimalMode,
+            ) { enabled ->
+                preferences.minimalMode = enabled
+                refreshAppearancePreview()
+            },
+        )
+        minimal.addView(
+            SettingsUi.hint(
+                this,
+                "待机时只显示收起键盘图标；输入时不显示拼音，候选无选中色、无分割线。",
+            ),
+        )
+        content.addView(SettingsUi.cardView(this, minimal))
+
         // ---- 键盘尺寸与精细调整：和颜色 / 圆角一样属于「外观」 ----
         buildAppearanceGeometryCard(content)
 
         val colors = SettingsUi.card(this)
         colors.addView(SettingsUi.heading(this, "颜色"))
-        AppearanceColor.entries.forEach { target ->
-            colors.addView(colorRow(target, appearance.color(target), resolvedTheme))
-        }
+        // 键盘背景 / 工具栏背景 / 候选栏背景已合并为「整体键盘背景」，工具栏与候选栏不再单独调色
+        AppearanceColor.entries
+            .filterNot { it == AppearanceColor.TOOLBAR || it == AppearanceColor.CANDIDATE_BAR }
+            .forEach { target ->
+                colors.addView(colorRow(target, appearance.color(target), resolvedTheme))
+            }
         colors.addView(
             SettingsUi.sliderRow(
                 this,
@@ -617,22 +639,9 @@ class SettingsSectionActivity : AppCompatActivity() {
             },
         )
         colors.addView(
-            SettingsUi.sliderRow(
-                this,
-                "键盘背景毛玻璃",
-                appearance.keyboardBlurStrength * 100f,
-                AppearanceConfig.MIN_KEYBOARD_BLUR_STRENGTH * 100f,
-                AppearanceConfig.MAX_KEYBOARD_BLUR_STRENGTH * 100f,
-                "%",
-            ) { percent ->
-                settingsRepository.setKeyboardBlurStrength(percent / 100f)
-                refreshAppearancePreview()
-            },
-        )
-        colors.addView(
             SettingsUi.hint(
                 this,
-                "毛玻璃 = 键盘底色半透明 + 背后内容模糊（需 Android 12+；低版本退化为纯半透明）。",
+                "键盘底色半透明时，背后内容会自动模糊成毛玻璃（需 Android 12+；低版本退化为纯半透明）。",
             ),
         )
         colors.addView(
@@ -948,20 +957,6 @@ class SettingsSectionActivity : AppCompatActivity() {
                 unit = "dp",
             ) { value ->
                 settingsRepository.updateGeometry(scope) { it.copy(keyGapDp = value) }
-                refreshAppearancePreview()
-            },
-        )
-
-        card.addView(
-            SettingsUi.sliderRow(
-                this,
-                "功能键宽度",
-                value = geometry.functionKeyWidthRatio,
-                min = KeyboardGeometry.MIN_FN_RATIO,
-                max = KeyboardGeometry.MAX_FN_RATIO,
-                unit = "x",
-            ) { value ->
-                settingsRepository.updateGeometry(scope) { it.copy(functionKeyWidthRatio = value) }
                 refreshAppearancePreview()
             },
         )

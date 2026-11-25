@@ -227,6 +227,9 @@ object RimeSchemaBuilder {
             append("  schema_list:\n")
             append("    - schema: ").append(RimeRuntime.DEFAULT_SCHEMA).append('\n')
             append("    - schema: luna_pinyin\n")
+            // 九键 / 日语方案常驻列表：deploy 会预编译它们的词典（board_t9 / board_jp）
+            append("    - schema: ").append(RimeRuntime.T9_SCHEMA).append('\n')
+            append("    - schema: ").append(RimeRuntime.JP_SCHEMA).append('\n')
             if (options.shuangpin.isDoublePinyin) {
                 append("    - schema: ").append(options.shuangpin.schemaId).append('\n')
             }

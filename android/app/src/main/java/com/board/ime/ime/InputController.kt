@@ -15,6 +15,7 @@ import com.board.ime.keyboard.KeySpec
 import com.board.ime.keyboard.KeyType
 import com.board.ime.keyboard.KeyboardLayout
 import com.board.ime.keyboard.KeyboardLayouts
+import com.board.ime.settings.KeyboardKind
 
 /**
  * 输入控制器。
@@ -33,6 +34,7 @@ import com.board.ime.keyboard.KeyboardLayouts
 class InputController(
     private val engine: InputEngine,
     initialLetterMode: InputMode = InputMode.ENGLISH,
+    initialKeyboardKind: KeyboardKind = KeyboardKind.QWERTY,
 ) {
 
     var inputConnection: InputConnection? = null
@@ -94,6 +96,9 @@ class InputController(
     /** 只输入一个 v 再按空格：打开快捷面板（剪贴板 / 常用语 / 符号 / 表情） */
     var onVSpaceToolbox: (() -> Unit)? = null
 
+    /** 九键底部行的语音键（由服务注入，触发语音输入） */
+    var onVoice: (() -> Unit)? = null
+
     /**
      * 译模式的实时译文候选（由服务异步注入）。
      *
@@ -137,12 +142,22 @@ class InputController(
     var capsLock: Boolean = false
         private set
 
-    /** 当前输入状态（四种之一） */
+    /** 当前输入状态（五种之一） */
     var mode: InputMode = InputMode.ENGLISH
         private set
 
-    /** 数字 / 符号层背后“记住的字母层”，按 ABC 时回到这里 */
+    /** 数字 / 符号层背后"记住的字母层"，按 ABC 时回到这里 */
     var letterMode: InputMode = InputMode.ENGLISH
+        private set
+
+    /**
+     * 当前键盘布局种类（全键盘 / 九键 / 日语）。
+     *
+     * 它与 [mode] 正交：决定「字母层」用哪套键位（QWERTY 与日语都用 letters，
+     * 九键用 t9），以及「中/EN」键切换的语言范围（九键 / 全键盘在中英之间，
+     * 日语在日英之间）。
+     */
+    var keyboardKind: KeyboardKind = initialKeyboardKind
         private set
 
     init {
@@ -264,12 +279,18 @@ class InputController(
     /** 当前应该显示的键盘布局 */
     val currentLayout: KeyboardLayout
         get() = when (mode) {
-            InputMode.ENGLISH, InputMode.CHINESE -> KeyboardLayouts.letters
             InputMode.NUMBER -> KeyboardLayouts.numbers
             InputMode.SYMBOL -> when {
                 symbolPage == 2 -> KeyboardLayouts.symbolsExtra
                 symbolPage == 1 -> KeyboardLayouts.symbolsMore
                 else -> KeyboardLayouts.symbolsMainWithRecent(recentSymbols())
+            }
+            // 字母层：九键（中文）用 t9，其余（中文 / 英文 / 日语）用全键盘 letters。
+            // 九键切到英文时回全键盘（对齐微信九键），日语本身就是 QWERTY 键位。
+            else -> if (keyboardKind == KeyboardKind.T9 && mode == InputMode.CHINESE) {
+                KeyboardLayouts.t9
+            } else {
+                KeyboardLayouts.letters
             }
         }
 
@@ -358,9 +379,45 @@ class InputController(
 
     /** 由候选栏的模式标签调用：切换底层语言并回到字母层 */
     fun toggleLanguage() {
-        val next = letterMode.toggled()
+        // 日语键盘的「日/EN」键只在 日语 ↔ 英文 之间切换；全键盘 / 九键的「中/EN」在中英之间切换。
+        val next = when (keyboardKind) {
+            KeyboardKind.JAPANESE ->
+                if (letterMode == InputMode.JAPANESE) InputMode.ENGLISH else InputMode.JAPANESE
+
+            else -> letterMode.toggled()
+        }
         letterMode = next
         switchMode(next)
+    }
+
+    /**
+     * 由工具栏「切换键盘」图标调用：切到指定键盘种类并回到对应字母层。
+     *
+     * 先按原样结束当前组词（避免跨键盘残留拼音 / 罗马字），再切换布局与语言。
+     * 日语键盘默认回日语、九键默认回中文、全键盘保留当前中英。
+     */
+    fun applyKeyboardKind(kind: KeyboardKind) {
+        if (keyboardKind == kind) return
+        keyboardKind = kind
+        val target = when (kind) {
+            KeyboardKind.QWERTY ->
+                if (letterMode == InputMode.JAPANESE) InputMode.CHINESE else letterMode
+
+            KeyboardKind.T9 -> InputMode.CHINESE
+            KeyboardKind.JAPANESE -> InputMode.JAPANESE
+        }
+        if (expression != null) {
+            expression = null
+            inputConnection?.setComposingText("", CURSOR_AT_END)
+            inputConnection?.finishComposingText()
+        } else {
+            commitCompositionInternal(preferCandidate = true)
+        }
+        letterMode = target
+        mode = target
+        engine.mode = target
+        clearModifiers()
+        notifyStateChanged()
     }
 
     // ------------------------------------------------------------ 按键
@@ -368,14 +425,15 @@ class InputController(
     fun onKey(key: KeySpec) {
         when (key.type) {
             KeyType.CHARACTER -> onCharacter(key)
+            KeyType.T9_DIGIT -> onT9Digit(key)
             KeyType.SYMBOL -> onLiteral(key.text)
             KeyType.SHIFT -> onShift()
             KeyType.BACKSPACE -> onBackspace()
             KeyType.SPACE -> onSpace()
             KeyType.ENTER -> onEnter()
-            KeyType.COMMA -> onLiteral(if (letterMode == InputMode.CHINESE) "，" else ",")
-            KeyType.PERIOD -> onLiteral(if (letterMode == InputMode.CHINESE) "。" else ".")
-            KeyType.PUNCTUATION -> onLiteral(if (letterMode == InputMode.CHINESE) "，" else ",")
+            KeyType.COMMA -> onLiteral(commaText)
+            KeyType.PERIOD -> onLiteral(periodText)
+            KeyType.PUNCTUATION -> onLiteral(commaText)
             KeyType.ENTER_NEWLINE -> onEnterNewline()
             KeyType.NOT_IMPLEMENTED -> onHint?.invoke("该功能尚未开发")
             // 语言键：切换底层语言；若当前在字母层则同时切换布局
@@ -386,6 +444,8 @@ class InputController(
             KeyType.TO_MORE_SYMBOLS -> showSymbolPage(1)
             KeyType.TO_EXTRA_SYMBOLS -> showSymbolPage(2)
             KeyType.TO_MAIN_SYMBOLS -> showSymbolPage(0)
+            KeyType.VOICE -> onVoice?.invoke()
+            KeyType.RESET -> discardComposition()
         }
     }
 
@@ -705,9 +765,9 @@ class InputController(
         notifyStateChanged()
     }
 
-    /** 「，。」键上滑 / 长按：句号（中文「。」/ 英文「.」） */
+    /** 「，。」键上滑 / 长按：句号（中文 / 日语「。」/ 英文「.」） */
     fun onPunctuationPeriod() {
-        onLiteral(if (letterMode == InputMode.CHINESE) "。" else ".")
+        onLiteral(periodText)
         notifyStateChanged()
     }
 
@@ -722,6 +782,47 @@ class InputController(
         if (shiftActive && !capsLock) shiftActive = false
         notifyStateChanged()
     }
+
+    /** 九键数字键：2–9 走 T9 拼音引擎；「1」为分词键（对齐大厂九键） */
+    private fun onT9Digit(key: KeySpec) {
+        val text = key.text ?: return
+        if (text == "1") {
+            onT9Segment()
+            return
+        }
+        if (expression != null) {
+            appendExpression(text)
+            return
+        }
+        applyEngineResult(engine.handleKey(EngineKey.Digit(text[0])))
+        notifyStateChanged()
+    }
+
+    /** 「1」分词：正在组词且已有候选时，把首选词上屏、剩余音节继续组词；无组词则进符号页 */
+    private fun onT9Segment() {
+        val composingLen = engine.composing.length
+        if (composingLen > 0 && engine.candidates().isNotEmpty()) {
+            applyEngineResult(engine.pickCandidate(0), composingLen)
+        } else {
+            showSymbolPage(0)
+        }
+        notifyStateChanged()
+    }
+
+    /** 逗号：中文「，」/ 日语「、」/ 其它「,」 */
+    private val commaText: String
+        get() = when (letterMode) {
+            InputMode.CHINESE -> "，"
+            InputMode.JAPANESE -> "、"
+            else -> ","
+        }
+
+    /** 句号：中文 / 日语「。」/ 其它「.」 */
+    private val periodText: String
+        get() = when (letterMode) {
+            InputMode.CHINESE, InputMode.JAPANESE -> "。"
+            else -> "."
+        }
 
     /** 符号层固定文本：先提交未完成的组词，再输出文本 */
     private fun onLiteral(text: String?) {

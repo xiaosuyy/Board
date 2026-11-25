@@ -77,7 +77,8 @@ class RimeDataInstaller(private val context: Context) {
          *      补齐手机/电脑/快递/外卖/支付宝等日常词；字母层新增「符号」键
          * v12：候选一页 50 → 200（展开「全部候选」能看到更多）；符号页重排，
          *      常用中文标点提到第一页
+         * v13：新增九键（board_t9）与日语（board_jp）方案 + 词库，支持工具栏切换键盘
          */
-        const val ASSET_VERSION = "12"
+        const val ASSET_VERSION = "13"
     }
 }

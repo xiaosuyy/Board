@@ -5,7 +5,7 @@
          键帽、候选 chip、剪贴板卡片、更多入口、搜索框、按下反馈都从下面取值。 -->
     <dimen name="kb_radius_small">6dp</dimen>
     <dimen name="kb_radius_medium">10dp</dimen>
-    <dimen name="kb_radius_large">14dp</dimen>
+    <dimen name="kb_radius_large">24dp</dimen>
 
     <dimen name="kb_space_xs">2dp</dimen>
     <dimen name="kb_space_s">4dp</dimen>
