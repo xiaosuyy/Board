@@ -66,6 +66,12 @@ class KeyboardView @JvmOverloads constructor(
 
     var listener: OnKeyboardActionListener? = null
 
+    /**
+     * 是否响应触摸。设置页里的键盘预览置为 false，让触摸事件交给外层
+     * ScrollView 滚动，而不是被键盘吃掉（预览本身不参与真实输入）。
+     */
+    var touchEnabled: Boolean = true
+
     var keyboardLayout: KeyboardLayout = KeyboardLayouts.letters
         set(value) {
             if (field === value) return
@@ -195,12 +201,14 @@ class KeyboardView @JvmOverloads constructor(
 
     init {
         isClickable = true
-        setBackgroundColor(theme.keyboardBackground)
+        // 键盘区底色由外框 keyboard_float 统一提供（支持「键盘背景不透明度」半透明），
+        // 这里不再重复铺一层，否则半透明底色会双层叠加、实际透明度与设置值不符。
+        setBackgroundColor(Color.TRANSPARENT)
     }
 
     fun applyTheme(theme: KeyboardTheme) {
         this.theme = theme
-        setBackgroundColor(theme.keyboardBackground)
+        setBackgroundColor(Color.TRANSPARENT)
         metricsDirty = true
         rebuildKeyBounds()
         requestLayout()
@@ -690,6 +698,7 @@ class KeyboardView @JvmOverloads constructor(
     // ---------------------------------------------------------------- 触摸
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!touchEnabled) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x

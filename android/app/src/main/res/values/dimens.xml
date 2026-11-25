@@ -52,7 +52,7 @@
 
     <!-- 候选栏：只有一行，拼音 pill + 候选 chip 都塞在固定面板里 -->
     <dimen name="kb_candidate_chip_height">32dp</dimen>
-    <dimen name="kb_candidate_min_width">40dp</dimen>
+    <dimen name="kb_candidate_min_width">32dp</dimen>
     <!-- 候选栏右侧「展开全部候选」（∨ / ∧）按钮的保留宽度：按钮画在这一条里，不遮挡候选文字 -->
     <dimen name="kb_candidate_action_width">40dp</dimen>
 

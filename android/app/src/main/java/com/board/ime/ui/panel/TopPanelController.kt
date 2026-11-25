@@ -7,6 +7,7 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 import com.board.ime.clipboard.ClipboardCounts
 import com.board.ime.clipboard.ClipboardSummary
+import com.board.ime.emoji.MemeRepository
 import com.board.ime.engine.Candidate
 import com.board.ime.engine.InputMode
 import com.board.ime.keyboard.KeySpec
@@ -50,6 +51,7 @@ class TopPanelController(
     private val phrasesPanel: PhrasesPanel,
     private val emojiHeader: EmojiHeader,
     private val emojiPanel: EmojiPanel,
+    private val memePanel: MemePanel,
     private val candidateGridPanel: CandidateGridPanel,
 ) {
 
@@ -173,12 +175,25 @@ class TopPanelController(
     /** 最近使用过的 emoji */
     var onEmojiRecent: (() -> List<String>)? = null
 
+    /** 斗图列表（内置热门斗图表情） */
+    var onMemeList: (() -> List<MemeRepository.Meme>)? = null
+
+    /** 点选一张斗图（宿主负责分享到微信 / QQ） */
+    var onMemePick: ((MemeRepository.Meme) -> Unit)? = null
+
     private var emojiSearching = false
     private var emojiQuery = ""
     private var emojiResults: List<String> = emptyList()
 
+    /** true = 当前在「斗图」子页；false = 「表情」子页 */
+    private var memeMode = false
+
     val isEmojiSearching: Boolean
         get() = state == TopPanelState.EMOJI && emojiSearching
+
+    /** 当前是否停在表情面板的「斗图」子页 */
+    val isMemeMode: Boolean
+        get() = state == TopPanelState.EMOJI && memeMode
 
     // ---------------------------------------------------------------- v + 空格 快捷面板
 
@@ -199,13 +214,16 @@ class TopPanelController(
         applyState()
     }
 
-    /** 打开表情面板（固定高度不变；先显示最近 + 全部） */
+    /** 打开表情面板（固定高度不变；默认停在「表情」子页，先显示最近 + 全部） */
     fun showEmoji() {
         emojiSearching = false
         emojiQuery = ""
+        memeMode = false
+        emojiHeader.setMemeMode(false)
         emojiHeader.setSearching(false)
         emojiHeader.setQuery("")
         renderEmoji()
+        renderMeme()
         state = TopPanelState.EMOJI
         applyState()
     }
@@ -254,8 +272,38 @@ class TopPanelController(
         emojiSearching = false
         emojiQuery = ""
         emojiResults = emptyList()
+        memeMode = false
+        emojiHeader.setMemeMode(false)
         emojiHeader.setSearching(false)
         emojiHeader.setQuery("")
+    }
+
+    /** 切到「表情」子页 */
+    private fun switchToEmojiTab() {
+        if (!memeMode) return
+        emojiSearching = false
+        emojiQuery = ""
+        memeMode = false
+        emojiHeader.setMemeMode(false)
+        emojiHeader.setSearching(false)
+        emojiHeader.setQuery("")
+        renderEmoji()
+        applyState()
+        // 「表情 / 斗图」切换只改内容、不改 PanelLayoutMode（仍是 EMOJI_ONLY），
+        // applyState 里 appliedLayout 不变就不会通知宿主 → 强制再推一次，让宿主刷新面板可见性。
+        onPanelLayoutChanged?.invoke(PanelLayoutMode.EMOJI_ONLY)
+    }
+
+    /** 切到「斗图」子页 */
+    private fun switchToMemeTab() {
+        if (memeMode) return
+        emojiSearching = false
+        emojiQuery = ""
+        memeMode = true
+        emojiHeader.setMemeMode(true)
+        renderMeme()
+        applyState()
+        onPanelLayoutChanged?.invoke(PanelLayoutMode.EMOJI_ONLY)
     }
 
     private fun renderEmoji() {
@@ -271,6 +319,15 @@ class TopPanelController(
             items,
             emptyText = if (emojiQuery.isEmpty()) "暂无表情" else "没有找到相关表情",
         )
+    }
+
+    private fun renderMeme() {
+        memePanel.render(onMemeList?.invoke().orEmpty())
+    }
+
+    /** 斗图数据源变化（如网络梗图抓取完成）：刷新斗图内容 */
+    fun refreshMemeList() {
+        renderMeme()
     }
 
     private fun handleEmojiSearchKey(key: KeySpec): Boolean {
@@ -474,7 +531,10 @@ class TopPanelController(
 
         emojiHeader.onBack = { handleEmojiBack() }
         emojiHeader.onToggleSearch = { toggleEmojiSearch() }
+        emojiHeader.onEmojiTabClick = { switchToEmojiTab() }
+        emojiHeader.onMemeTabClick = { switchToMemeTab() }
         emojiPanel.onPick = { emoji -> onEmojiInsert?.invoke(emoji) }
+        memePanel.onPick = { meme -> onMemePick?.invoke(meme) }
         clipboardHeader.onToggleEdit = { toggleClipboardEdit() }
         clipboardHeader.onToggleSearch = { toggleSearch() }
         clipboardHeader.onClearSearch = { stopSearch() }
@@ -635,6 +695,7 @@ class TopPanelController(
         phrasesPanel.applyTheme(theme)
         emojiHeader.applyTheme(theme)
         emojiPanel.applyTheme(theme)
+        memePanel.applyTheme(theme)
         candidateGridPanel.applyTheme(theme)
     }
 

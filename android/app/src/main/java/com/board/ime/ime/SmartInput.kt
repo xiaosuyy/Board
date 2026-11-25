@@ -43,7 +43,6 @@ object SmartInput {
         }
         val value = Calculator.evaluate(body) ?: return emptyList()
         val plain = value.stripTrailingZeros().toPlainString()
-        // 计算器结果放第一；金额 / 读法只在结果是纯数字时才有意义，这里不重复给
         return listOf(Suggestion(plain, plain), Suggestion("= $plain", plain))
     }
 

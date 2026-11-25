@@ -117,7 +117,32 @@ class SettingsRepository(context: Context) {
                 radii[target] = value.coerceIn(target.minDp, target.maxDp)
             }
         }
-        return AppearanceConfig(colors, radii)
+        val backgroundAlpha = runCatching {
+            prefs.getFloat(
+                KEY_KEYBOARD_BACKGROUND_ALPHA,
+                AppearanceConfig.DEFAULT_KEYBOARD_BACKGROUND_ALPHA,
+            )
+        }.getOrDefault(AppearanceConfig.DEFAULT_KEYBOARD_BACKGROUND_ALPHA)
+            .coerceIn(
+                AppearanceConfig.MIN_KEYBOARD_BACKGROUND_ALPHA,
+                AppearanceConfig.MAX_KEYBOARD_BACKGROUND_ALPHA,
+            )
+        val blurStrength = runCatching {
+            prefs.getFloat(
+                KEY_KEYBOARD_BLUR_STRENGTH,
+                AppearanceConfig.DEFAULT_KEYBOARD_BLUR_STRENGTH,
+            )
+        }.getOrDefault(AppearanceConfig.DEFAULT_KEYBOARD_BLUR_STRENGTH)
+            .coerceIn(
+                AppearanceConfig.MIN_KEYBOARD_BLUR_STRENGTH,
+                AppearanceConfig.MAX_KEYBOARD_BLUR_STRENGTH,
+            )
+        return AppearanceConfig(
+            colors,
+            radii,
+            keyboardBackgroundAlpha = backgroundAlpha,
+            keyboardBlurStrength = blurStrength,
+        )
     }
 
     /** 设置 / 清除某个颜色项（传 null 表示恢复默认） */
@@ -138,11 +163,39 @@ class SettingsRepository(context: Context) {
         }.apply()
     }
 
+    /** 设置键盘背景不透明度（0～1） */
+    fun setKeyboardBackgroundAlpha(value: Float) {
+        prefs.edit()
+            .putFloat(
+                KEY_KEYBOARD_BACKGROUND_ALPHA,
+                value.coerceIn(
+                    AppearanceConfig.MIN_KEYBOARD_BACKGROUND_ALPHA,
+                    AppearanceConfig.MAX_KEYBOARD_BACKGROUND_ALPHA,
+                ),
+            )
+            .apply()
+    }
+
+    /** 设置键盘背景毛玻璃强度（0～1） */
+    fun setKeyboardBlurStrength(value: Float) {
+        prefs.edit()
+            .putFloat(
+                KEY_KEYBOARD_BLUR_STRENGTH,
+                value.coerceIn(
+                    AppearanceConfig.MIN_KEYBOARD_BLUR_STRENGTH,
+                    AppearanceConfig.MAX_KEYBOARD_BLUR_STRENGTH,
+                ),
+            )
+            .apply()
+    }
+
     /** 一键恢复默认外观（白 / 黑 / 灰 + 少量蓝，配色主题回到「标准」） */
     fun resetAppearance() {
         prefs.edit().apply {
             AppearanceColor.entries.forEach { remove(colorKey(it)) }
             AppearanceRadius.entries.forEach { remove(radiusKey(it)) }
+            remove(KEY_KEYBOARD_BACKGROUND_ALPHA)
+            remove(KEY_KEYBOARD_BLUR_STRENGTH)
             remove(KEY_PALETTE)
         }.apply()
     }
@@ -165,6 +218,8 @@ class SettingsRepository(context: Context) {
         private const val NO_COLOR = 0
 
         private const val KEY_PALETTE = "palette"
+        private const val KEY_KEYBOARD_BACKGROUND_ALPHA = "keyboard_background_alpha"
+        private const val KEY_KEYBOARD_BLUR_STRENGTH = "keyboard_blur_strength"
         private const val KEY_LEVEL = "height_level"
         private const val KEY_HEIGHT_FACTOR = "height_factor"
         private const val KEY_GAP = "key_gap"

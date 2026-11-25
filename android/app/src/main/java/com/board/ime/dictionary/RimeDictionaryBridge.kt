@@ -301,12 +301,13 @@ object RimeDictionaryBridge {
         val body = buildString {
             append(PATCH_MARKER).append('\n')
             append("patch:\n")
-            // 单页候选数（Rime 一次生成多少候选，≠ UI 可见数量）。
+            // 单页候选数（Rime 一次生成多少候选，≠ UI 一屏可见数量）。
             // ⚠️ 用户目录里的同名文件会**顶掉**资产目录里的那一份（Rime 不会把两份 patch 合并），
-            // 资产版 luna_pinyin_simp.custom.yaml 里写的也是 menu/page_size: 50；
+            // 资产版 luna_pinyin_simp.custom.yaml 里写的也是 menu/page_size: 200；
             // 这里必须显式重复这个设置，否则会掉回 default.yaml 的默认值 5。
-            // UI 可横向滑动查看整页候选；这里与 CandidateBar.MAX_CANDIDATES 保持一致。
-            append("  menu/page_size: 50\n")
+            // 取 200：候选栏横向滑动看前 50（CandidateBar.MAX_CANDIDATES），
+            // 点 ∨ 展开后 CandidateGridPanel 一次铺出全部 200 个候选。
+            append("  menu/page_size: 200\n")
             // 简体 / 繁体：luna_pinyin.schema 的开关 2 是字形选择（0=傳統漢字，1=简化字）。
             append("  switches/@2/reset: ").append(if (options.traditional) 0 else 1).append('\n')
             appendTranslatorSettings()
@@ -350,7 +351,7 @@ object RimeDictionaryBridge {
         val body = buildString {
             append(PATCH_MARKER).append('\n')
             append("patch:\n")
-            append("  menu/page_size: 50\n")
+            append("  menu/page_size: 200\n")
             // 双拼方案的开关 2 是 simplification（0=漢字，1=汉字）
             append("  switches/@2/reset: ").append(if (options.traditional) 0 else 1).append('\n')
             appendTranslatorSettings()
@@ -364,11 +365,12 @@ object RimeDictionaryBridge {
             append("    enable_completion: false\n")
             append("    enable_sentence: false\n")
             append("    initial_quality: 1\n")
-            // 只写一个 `engine/translators/+` 列表：custom_phrase + board_common + 导入词库
+            // 只写一个 `engine/translators/+` 列表：custom_phrase + board_common + board_modern + 导入词库
             // （YAML 里重复的同一个 key 会互相覆盖）
             append("  \"engine/translators/+\":\n")
             append("    - table_translator@custom_phrase\n")
             append("    - script_translator@board_common\n")
+            append("    - script_translator@board_modern\n")
             sources.forEach { source ->
                 append("    - script_translator@").append(translatorName(source)).append('\n')
             }
@@ -401,10 +403,11 @@ object RimeDictionaryBridge {
         sources: List<DictionarySource>,
         includeTranslatorList: Boolean = true,
     ) {
-        // 现代常用词补充词源（essay.txt 高频 2–4 字词）
+        // 现代常用词补充词源：board_common（essay.txt 高频 2–4 字词）+ board_modern（现代大词库）
         if (includeTranslatorList) {
             append("  \"engine/translators/+\":\n")
             append("    - script_translator@board_common\n")
+            append("    - script_translator@board_modern\n")
             sources.forEach { source ->
                 append("    - script_translator@").append(translatorName(source)).append('\n')
             }
@@ -418,9 +421,20 @@ object RimeDictionaryBridge {
         append("    initial_quality: 1\n")
         append("    comment_format:\n")
         append("      - xform/.+//\n")
+        // board_modern：现代常用词大词库，补齐手机/电脑/快递等日常词；与基础词库同权竞争
+        append("  board_modern:\n")
+        append("    dictionary: board_modern\n")
+        append("    enable_completion: false\n")
+        append("    enable_sentence: false\n")
+        append("    enable_user_dict: false\n")
+        append("    enable_encoder: false\n")
+        append("    initial_quality: 0\n")
+        append("    comment_format:\n")
+        append("      - xform/.+//\n")
         // 词典必须列入 schema/dependencies，deployer 才会预编译成 table.bin
         append("  \"schema/dependencies/+\":\n")
         append("    - board_common\n")
+        append("    - board_modern\n")
         if (sources.isNotEmpty()) {
             sources.forEach { source ->
                 append("    - ").append(logicalDictionaryName(source)).append('\n')

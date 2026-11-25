@@ -288,6 +288,7 @@ object SettingsUi {
     private fun formatValue(value: Float, unit: String): String = when (unit) {
         "x" -> String.format(java.util.Locale.US, "%.2fx", value)
         "dp" -> String.format(java.util.Locale.US, "%.0fdp", value)
+        "%" -> String.format(java.util.Locale.US, "%.0f%%", value)
         else -> String.format(java.util.Locale.US, "%.1f%s", value, unit)
     }
 

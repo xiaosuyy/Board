@@ -17,10 +17,10 @@ enum class CandidateTextSize(
     /** 候选英文释义字号（sp）：辅助信息，明显小于中文 */
     val englishGlossSp: Float,
 ) {
-    SMALL("小", 16f, 14f, 12f, 10f),
-    STANDARD("标准", 19f, 16f, 14f, 11f),
-    LARGE("大", 22f, 17f, 16f, 12f),
-    XLARGE("特大", 25f, 18f, 18f, 13f),
+    SMALL("小", 16f, 14f, 9f, 10f),
+    STANDARD("标准", 19f, 16f, 10f, 11f),
+    LARGE("大", 22f, 17f, 12f, 12f),
+    XLARGE("特大", 25f, 18f, 14f, 13f),
     ;
 
     companion object {

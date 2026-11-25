@@ -1,6 +1,5 @@
 package com.board.ime.dictionary
 
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,10 +27,11 @@ class RimeDictionaryBridgePatchTest {
         assertTrue("写出补丁失败", RimeDictionaryBridge.applySchemaPatch(dir, listOf(source)))
         val text = java.io.File(dir, "luna_pinyin_simp.custom.yaml").readText()
 
-        assertTrue("必须与 UI 候选上限一致", text.contains("menu/page_size: 50"))
+        assertTrue("必须与 UI 候选上限一致", text.contains("menu/page_size: 200"))
         assertTrue("必须显式开启用户词典学习", text.contains("\"translator/enable_user_dict\": true"))
+        // 用户导入的大词库必须为负，排在基础常用词之后（board_modern 是内置补充词库，
+        // 语义与 board_common 同类，允许同权竞争，不在此约束内）。
         assertTrue("额外词源质量必须为负", text.contains("initial_quality: -1000"))
-        assertFalse("额外词源不能再是 0（会压过基础常用词）", text.contains("initial_quality: 0"))
     }
 
     @Test
@@ -44,24 +44,15 @@ class RimeDictionaryBridgePatchTest {
     }
 
     @Test
-    fun `patch enables fuzzy pinyin correction and completion`() {
+    fun `patch enables completion and sentence`() {
         val dir = java.nio.file.Files.createTempDirectory("board-rime-patch3").toFile()
         RimeDictionaryBridge.applySchemaPatch(dir, emptyList())
         val text = java.io.File(dir, "luna_pinyin_simp.custom.yaml").readText()
 
         assertTrue("需要前缀补全", text.contains("\"translator/enable_completion\": true"))
-        // 模糊音：zh/z、ch/c、sh/s
-        assertTrue("需要平翘舌模糊音", text.contains("pinyin:/zh_z_bufen"))
-        // n/l
-        assertTrue("需要 n/l 模糊音", text.contains("pinyin:/n_l_bufen"))
-        // h/f
-        assertTrue("需要 h/f 模糊音", text.contains("pinyin:/hu_f_buhun"))
-        // 前后鼻音
-        assertTrue("需要前后鼻音模糊音", text.contains("pinyin:/en_eng_bufen"))
-        // 纠错必须保留：模糊音不能把原有纠错挤掉
-        assertTrue("必须保留拼写纠错", text.contains("pinyin:/spelling_correction"))
-        assertTrue("必须保留按键纠错", text.contains("pinyin:/key_correction"))
-        assertTrue("必须保留简拼", text.contains("pinyin:/abbreviation"))
+        assertTrue("需要整句候选", text.contains("\"translator/enable_sentence\": true"))
+        // 模糊音 / 简拼 / 纠错自 v10 起由 RimeSchemaBuilder 写入影子 base schema
+        // （用户目录 luna_pinyin.schema.yaml），不再由本 patch 写 speller/algebra。
     }
 
     @Test
@@ -84,5 +75,8 @@ class RimeDictionaryBridgePatchTest {
         assertTrue("必须挂接 board_common 词源", text.contains("script_translator@board_common"))
         assertTrue("board_common 必须指向 board_common 词典", text.contains("dictionary: board_common"))
         assertTrue("board_common 必须列入 schema/dependencies（否则不编译 table.bin）", text.contains("- board_common"))
+        assertTrue("必须挂接 board_modern 词源", text.contains("script_translator@board_modern"))
+        assertTrue("board_modern 必须指向 board_modern 词典", text.contains("dictionary: board_modern"))
+        assertTrue("board_modern 必须列入 schema/dependencies（否则不编译 table.bin）", text.contains("- board_modern"))
     }
 }

@@ -85,6 +85,12 @@ class InputController(
     /** 每次上屏（引擎提交）通知一次，由服务记录学习词的最后使用时间 */
     var onWordCommitted: ((String) -> Unit)? = null
 
+    /** 每点一个符号（符号层）通知一次，由服务记录「最近使用符号」 */
+    var onSymbolCommitted: ((String) -> Unit)? = null
+
+    /** 最近使用符号（按最近优先）；由服务从偏好注入 */
+    var recentSymbolsProvider: (() -> List<String>)? = null
+
     /** 只输入一个 v 再按空格：打开快捷面板（剪贴板 / 常用语 / 符号 / 表情） */
     var onVSpaceToolbox: (() -> Unit)? = null
 
@@ -263,10 +269,11 @@ class InputController(
             InputMode.SYMBOL -> when {
                 symbolPage == 2 -> KeyboardLayouts.symbolsExtra
                 symbolPage == 1 -> KeyboardLayouts.symbolsMore
-                letterMode == InputMode.CHINESE -> KeyboardLayouts.symbolsCjk
-                else -> KeyboardLayouts.symbolsAscii
+                else -> KeyboardLayouts.symbolsMainWithRecent(recentSymbols())
             }
         }
+
+    private fun recentSymbols(): List<String> = recentSymbolsProvider?.invoke().orEmpty()
 
     private var lastShiftTapAt = 0L
 
@@ -490,7 +497,12 @@ class InputController(
      */
     private fun enterExpressionIfRequested(): Boolean {
         if (mode != InputMode.CHINESE) return false
-        if (engine.composing.toString() != "v") return false
+        val composing = engine.composing.toString()
+        // 朙月拼音里 `v` 是 `ü` 的键位，speller / translator 的 preedit_format 可能把它
+        // 显示成 `ü` 或 `u`；三种都按 v 表达式处理，避免「打了 v 却进不了表达式模式」。
+        val isV = composing == "v" || composing == "ü" || composing == "u"
+        Log.d(TAG, "enterExpression: mode=$mode composing='$composing' isV=$isV")
+        if (!isV) return false
         engine.reset()
         expression = "v"
         mode = InputMode.NUMBER
@@ -720,6 +732,11 @@ class InputController(
             return
         }
         if (!dispatch(EngineKey.Punctuation(value))) commitText(value)
+        // 记录「最近使用符号」：只记单个可见字符（字母 / 数字键不走这里），
+        // 置顶时再过滤掉第一页本就有的常用标点，避免重复
+        if (value.length == 1 && !value[0].isWhitespace()) {
+            onSymbolCommitted?.invoke(value)
+        }
         notifyStateChanged()
     }
 

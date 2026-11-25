@@ -64,10 +64,10 @@ android {
         applicationId = "com.board.ime"
         minSdk = 26
         targetSdk = 36
-        // v1.2.3：符号层扩展到三页，补齐日常中文标点、箭头与货币/数学符号。
-        // versionCode 保持单调递增（1 → 2 → … → 8 → 9），不破坏已有升级链。
-        versionCode = 9
-        versionName = "1.2.3"
+        // v1.2.4：输入体验优化（词库 / 候选 / 符号 / 毛玻璃 / 斗图 / 金额）。
+        // versionCode 保持单调递增（1 → 2 → … → 9 → 10），不破坏已有升级链。
+        versionCode = 10
+        versionName = "1.2.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

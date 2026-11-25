@@ -73,7 +73,11 @@ class RimeDataInstaller(private val context: Context) {
          * v9：board_common 补 字节 / GitHub；候选按「整句 → 词 → 单字」重排
          * v10：7 种双拼方案（自然码 / 小鹤 / 微软 / 搜狗 / 智能ABC / 紫光 / 拼音加加）；
          *      模糊音 / 繁体改由运行期影子 schema 注入（12 组单独开关）
+         * v11：新增 board_modern 现代常用词大词库（华宇野风/清华THUOCL/腾讯词向量合并），
+         *      补齐手机/电脑/快递/外卖/支付宝等日常词；字母层新增「符号」键
+         * v12：候选一页 50 → 200（展开「全部候选」能看到更多）；符号页重排，
+         *      常用中文标点提到第一页
          */
-        const val ASSET_VERSION = "10"
+        const val ASSET_VERSION = "12"
     }
 }

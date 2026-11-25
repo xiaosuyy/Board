@@ -319,7 +319,8 @@ class RimeEngine(
         visible.indices.forEach { index ->
             when (visible[index].text.length) {
                 0, 1 -> chars += index
-                in 2..3 -> words += index
+                // 2–4 字都算「词」：4 字成语 / 专名（奥林匹克、社会主义）不该被当成整句挤到最后
+                in 2..4 -> words += index
                 else -> sentences += index
             }
         }

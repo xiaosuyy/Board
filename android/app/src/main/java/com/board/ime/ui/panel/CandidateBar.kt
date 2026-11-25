@@ -482,9 +482,9 @@ class CandidateBar @JvmOverloads constructor(
     private fun dividerParams(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(dividerWidth(), dividerHeight()).apply {
             gravity = Gravity.CENTER_VERTICAL
-            // 候选间距沿用设计值（不再收紧）：单屏可见数交给字号与滑动，
-            // 总量提升靠“一页更多候选 + 横向滑动”，而不是把间距压小
-            val gap = theme.spaceS
+            // 候选间距收紧到 spaceXs：一屏尽量多显示几个候选（对齐搜狗/讯飞
+            // 一屏 9 个候选的密度），总量提升仍靠“一页更多候选 + 横向滑动”。
+            val gap = theme.spaceXs
             setMargins(gap, 0, gap, 0)
         }
 
@@ -563,11 +563,12 @@ class CandidateBar @JvmOverloads constructor(
 
     private companion object {
         /**
-         * 候选栏**最多渲染多少个候选**（可横向滑动的总数，不是屏幕上同时可见的数量）。
+         * 候选栏**单行**最多渲染多少个候选（横向滑动的上限，不是屏幕同时可见的数量）。
          *
-         * 可见数量由屏幕宽度决定（约 6～8 个），这里决定的是"滑一滑还能看到多少"。
-         * 底层由 Rime 的 `menu/page_size` 提供候选（App 生成的 patch 里设为 50），
-         * 这里保持一致：把整页候选都渲染出来，用户横向滑动即可看全。
+         * 可见数量由屏幕宽度决定（约 6～8 个），这里决定的是"横向滑一滑还能看到多少"。
+         * 底层 Rime 的 `menu/page_size` 已设为 200（「全部展开」面板一次性铺出更多候选），
+         * 但横向单行铺 200 个既不现实也没必要，这里取 50：前 50 个横向滑动，
+         * 想要看更多就点右侧 ∨ 展开成网格（CandidateGridPanel 渲染全部 200 个）。
          */
         const val MAX_CANDIDATES = 50
     }

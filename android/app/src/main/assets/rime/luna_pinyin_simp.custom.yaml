@@ -12,7 +12,7 @@
 patch:
   # 一页候选数（Rime 一次生成多少候选，≠ UI 可见数量）。
   # 顶部候选栏支持横向滑动，候选多一些才真正用得上滑动浏览。
-  menu/page_size: 50
+  menu/page_size: 200
   # 开启用户词典学习：选过的候选会被记录并加权，越用越靠前。
   translator/enable_user_dict: true
   # 整句候选：xiangquzijieshangban → 想去字节上班。
@@ -41,6 +41,7 @@ patch:
   # 不加偏移，纯按词频竞争排序。与「额外词源」共用同一个 translators/+ 列表。
   "engine/translators/+":
     - script_translator@board_common
+    - script_translator@board_modern
   board_common:
     dictionary: board_common
     enable_completion: false
@@ -50,6 +51,19 @@ patch:
     initial_quality: 1
     comment_format:
       - xform/.+//
-  # board_common 词典必须列入 schema/dependencies，deployer 才会预编译成 table.bin
+  # board_modern：现代常用词大词库（华宇野风/清华THUOCL/腾讯词向量等合并），
+  # 补齐 luna_pinyin（繁体/文言）与 essay.txt（古典语料）都没有的手机/电脑/快递等
+  # 日常词。initial_quality 取 0（与基础词库同权），按词频自然竞争排序。
+  board_modern:
+    dictionary: board_modern
+    enable_completion: false
+    enable_sentence: false
+    enable_user_dict: false
+    enable_encoder: false
+    initial_quality: 0
+    comment_format:
+      - xform/.+//
+  # board_common / board_modern 词典必须列入 schema/dependencies，deployer 才会预编译成 table.bin
   "schema/dependencies/+":
     - board_common
+    - board_modern

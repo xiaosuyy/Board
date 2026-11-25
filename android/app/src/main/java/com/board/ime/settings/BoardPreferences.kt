@@ -209,6 +209,27 @@ class BoardPreferences(context: Context) : SyncContentGate {
             .putString(KEY_RECENT_EMOJIS, value.joinToString(EMOJI_SEPARATOR.toString()))
             .apply()
 
+    /**
+     * 符号键盘的最近使用（只存符号字符本身，按最近优先）。
+     *
+     * 同样用不可见分隔符存成一个字符串，保证顺序。
+     */
+    var recentSymbols: List<String>
+        get() = prefs.getString(KEY_RECENT_SYMBOLS, null)
+            .orEmpty()
+            .split(SYMBOL_SEPARATOR)
+            .filter { it.isNotEmpty() }
+        set(value) = prefs.edit()
+            .putString(KEY_RECENT_SYMBOLS, value.joinToString(SYMBOL_SEPARATOR.toString()))
+            .apply()
+
+    /** 记录一个最近使用的符号（去重、移到最前、限制数量） */
+    fun recordRecentSymbol(symbol: String) {
+        if (symbol.isBlank() || symbol.length > 1) return
+        val current = recentSymbols.filter { it != symbol }
+        recentSymbols = (listOf(symbol) + current).take(MAX_RECENT_SYMBOLS)
+    }
+
     /** 头像更新时间（0 = 没有头像）。文件本体在 `files/profile/avatar.jpg`。 */
     var avatarUpdatedAt: Long
         get() = prefs.getLong(com.board.ime.profile.AvatarStore.KEY_AVATAR_UPDATED_AT, 0L)
@@ -294,7 +315,10 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_TOOLBAR_TOOLS = "toolbar_tools"
         const val KEY_MORE_TOOLS = "more_tools"
         const val KEY_RECENT_EMOJIS = "recent_emojis"
+        const val KEY_RECENT_SYMBOLS = "recent_symbols"
         const val EMOJI_SEPARATOR = '\u001F'
+        const val SYMBOL_SEPARATOR = '\u001F'
+        const val MAX_RECENT_SYMBOLS = 5
 
         /** Cloud Library 本机隐藏（只存 hash；不存正文/路径/URL） */
         const val KEY_HIDDEN_LIBRARY = "hidden_library_hashes"

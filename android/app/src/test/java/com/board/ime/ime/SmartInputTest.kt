@@ -59,8 +59,10 @@ class SmartInputTest {
     }
 
     @Test
-    fun `a single number gives RMB in words and in digits`() {
+    fun `a single number gives RMB uppercase then reading`() {
+        // 输入 v12345.67 直接给「大写金额」+「数字读法」两个候选
         val list = SmartInput.expression("v12345.67", now)
+        assertEquals(2, list.size)
         assertEquals("壹万贰仟叁佰肆拾伍元陆角柒分", list[0].commit)
         assertEquals("一万二千三百四十五点六七", list[1].commit)
     }

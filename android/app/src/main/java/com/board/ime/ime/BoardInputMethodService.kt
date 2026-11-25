@@ -38,6 +38,7 @@ import com.board.ime.dictionary.DictionaryChangeNotifier
 import com.board.ime.dictionary.DictionaryRepository
 import com.board.ime.dictionary.LearnedWordDecay
 import com.board.ime.emoji.EmojiRepository
+import com.board.ime.emoji.MemeRepository
 import com.board.ime.engine.BasicEngine
 import com.board.ime.engine.ChineseEnglishLexiconLoader
 import com.board.ime.engine.EnglishLexiconLoader
@@ -78,6 +79,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Board 输入法服务。
@@ -367,6 +369,75 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         controller.discardComposition()
         controller.commitText(emoji)
         emojiRepository?.recordRecent(emoji)
+    }
+
+    /**
+     * 斗图点选：本地图从 assets 复制、网络梗图下载到缓存目录，
+     * 用 FileProvider 生成 content:// URI，再通过系统分享面板发到微信 / QQ（ACTION_SEND，图片类型）。
+     *
+     * 不写系统剪贴板、不申请存储权限；图片只落在 App 私有 cache，分享完即可被系统回收。
+     */
+    private fun shareMeme(meme: MemeRepository.Meme) {
+        serviceScope.launch {
+            try {
+                val dir = java.io.File(cacheDir, "meme_share")
+                dir.mkdirs()
+                val file = java.io.File(dir, meme.asset)
+                if (!file.exists() || file.length() == 0L) {
+                    val remote = meme.remoteUrl
+                    if (remote != null) {
+                        val bytes = memeRepository?.downloadRemote(remote)
+                        if (bytes == null) throw IllegalStateException("网络图片下载失败")
+                        file.writeBytes(bytes)
+                    } else {
+                        assets.open("meme/${meme.asset}").use { input ->
+                            file.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                }
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this@BoardInputMethodService,
+                    "$packageName.fileprovider",
+                    file,
+                )
+                // startActivity / Toast 必须在主线程
+                withContext(Dispatchers.Main) {
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "image/webp"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        putExtra(Intent.EXTRA_TEXT, meme.label)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(Intent.createChooser(intent, "发送斗图到…"))
+                }
+            } catch (throwable: Throwable) {
+                Log.w(TAG, "分享斗图失败：${throwable.message}")
+                withContext(Dispatchers.Main) {
+                    runCatching {
+                        Toast.makeText(
+                            this@BoardInputMethodService,
+                            "分享失败，请重试",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+
+    /** 后台抓取一次 memecub 梗图，成功后刷新斗图面板；失败保持本地内置图 */
+    private fun prefetchMemecubMemes() {
+        if (memecubFetchStarted) return
+        memecubFetchStarted = true
+        val repo = memeRepository ?: return
+        serviceScope.launch {
+            val remote = runCatching { repo.fetchMemecub() }.getOrDefault(emptyList())
+            if (remote.isEmpty()) return@launch
+            memecubMemes = remote
+            // 当前正停在斗图面板时，抓取完成立即刷新
+            panelController?.let { if (it.isMemeMode) it.refreshMemeList() }
+        }
     }
 
     private fun editPhrase(entry: com.board.ime.database.entity.PhraseEntry) {
@@ -788,6 +859,17 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     /** 表情 / 符号检索（纯本地 assets，后台预热） */
     private var emojiRepository: EmojiRepository? = null
 
+    /** 斗图表情清单（本地 assets + memecub 网络源） */
+    private var memeRepository: MemeRepository? = null
+
+    /** memecub 网络梗图缓存（抓取成功后填充；为空说明未抓到，斗图面板回退本地图） */
+    @Volatile
+    private var memecubMemes: List<MemeRepository.Meme> = emptyList()
+
+    /** 是否已经开始抓取 memecub（只抓一次，避免每次打开斗图都请求） */
+    @Volatile
+    private var memecubFetchStarted = false
+
     /** 网络恢复回调：Push 失败后自动补一次剪贴板同步（不必用户进设置页） */
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
 
@@ -843,8 +925,11 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // 失败时保留内置兜底词表，不影响输入、不联网）。
         EnglishLexiconLoader.loadOnce(this)
         emojiRepository = EmojiRepository(this, preferences)
+        memeRepository = MemeRepository(this)
         // 表情数据只在第一次真正用到时解析；先在后台预热，点开面板不卡
         serviceScope.launch { runCatching { emojiRepository?.preload() } }
+        // 后台抓取一次 memecub 梗图（网络失败自动回退本地内置斗图）
+        prefetchMemecubMemes()
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
         buildController(preferences.engineKind, preferences.mode)
 
@@ -895,6 +980,7 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             phrasesPanel = binding.phrasesPanel,
             emojiHeader = binding.emojiHeader,
             emojiPanel = binding.emojiPanel,
+            memePanel = binding.memePanel,
             candidateGridPanel = binding.candidateGridPanel,
         )
         panel.onCandidateSelected = { index -> controller.pickCandidate(index) }
@@ -955,6 +1041,13 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onEmojiSearch = { query -> emojiRepository?.search(query).orEmpty() }
         panel.onEmojiAll = { emojiRepository?.all().orEmpty() }
         panel.onEmojiRecent = { emojiRepository?.recent().orEmpty() }
+        panel.onMemeList = {
+            val local = memeRepository?.all().orEmpty()
+            val remote = memecubMemes
+            // 网络梗图在前、本地内置图兜底在后；网络没抓到就用纯本地
+            if (remote.isEmpty()) local else remote + local
+        }
+        panel.onMemePick = { meme -> shareMeme(meme) }
         panel.onToolLayoutChanged = { layout ->
             // 复用现有 SharedPreferences（不新增数据库 / 表）
             preferences.toolbarTools = layout.encodeToolbar()
@@ -1582,6 +1675,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // 分隔线始终保留：面板与下方内容（键盘 / 剪贴板）的分界在四种状态下一致
         binding.panelDivider.visibility = View.VISIBLE
 
+        // 斗图面板默认隐藏，只有 EMOJI_ONLY 且停在「斗图」子页时才显示
+        binding.memePanel.visibility = View.GONE
+
         when (mode) {
             PanelLayoutMode.KEYBOARD_ONLY -> {
                 binding.keyboardView.visibility = View.VISIBLE
@@ -1645,16 +1741,17 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             }
 
             PanelLayoutMode.EMOJI_ONLY -> {
-                // 表情面板占键盘位置：与剪贴板 / 常用语一样，总高度不变
+                // 表情 / 斗图面板占键盘位置：与剪贴板 / 常用语一样，总高度不变
                 binding.keyboardView.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
                 binding.candidateGridPanel.visibility = View.GONE
-                binding.emojiPanel.visibility = View.VISIBLE
-                binding.emojiPanel.layoutParams = binding.emojiPanel.layoutParams.apply {
-                    height = keyboardHeight
-                }
+                val meme = panelController?.isMemeMode == true
+                binding.emojiPanel.visibility = if (meme) View.GONE else View.VISIBLE
+                binding.memePanel.visibility = if (meme) View.VISIBLE else View.GONE
+                val active = if (meme) binding.memePanel else binding.emojiPanel
+                active.layoutParams = active.layoutParams.apply { height = keyboardHeight }
             }
 
             PanelLayoutMode.EMOJI_WITH_KEYBOARD -> {
@@ -1780,6 +1877,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             // 学习词淡出：30 天没选的候选靠后；每次上屏记一次使用时间
             it.staleWord = { word -> learnedDecay.isDemoted(word) }
             it.onWordCommitted = { text -> if (isLearnedWordText(text)) learnedDecay.record(text) }
+            // 符号键盘「最近使用」：点过的符号置顶到符号页第一行
+            it.onSymbolCommitted = { symbol -> preferences.recordRecentSymbol(symbol) }
+            it.recentSymbolsProvider = { preferences.recentSymbols }
         }
         appliedEngineKind = kind
     }
@@ -1897,8 +1997,37 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         binding.keyboardView.applyTheme(resolved)
         panelController?.applyTheme(resolved)
 
+        // 毛玻璃：把「键盘背景不透明度 + 模糊强度」同步到输入法窗口
+        applyWindowBlur(settingsRepository.appearance())
+
         applyLayoutMetrics(resolved, scope)
         refreshInputView()
+    }
+
+    /**
+     * 把「毛玻璃」参数应用到输入法窗口。
+     *
+     * 输入法窗口本身是 translucent 的（Theme.Board.Ime），键盘外框的半透明背景
+     * 已经能透出背后的 App；这里再用 Android 12+ 的 `FLAG_BLUR_BEHIND` 把背后内容
+     * 模糊掉，形成真正的毛玻璃。低版本没有窗口模糊能力，退化为纯半透明。
+     */
+    private fun applyWindowBlur(appearance: com.board.ime.settings.AppearanceConfig) {
+        val targetWindow = window?.window ?: return
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return
+
+        val density = resources.displayMetrics.density
+        val maxRadius = (MAX_BLUR_RADIUS_DP * density).toInt()
+        val radius = (appearance.keyboardBlurStrength * maxRadius).toInt()
+        runCatching {
+            targetWindow.setBackgroundBlurRadius(radius)
+            if (radius > 0) {
+                targetWindow.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            } else {
+                targetWindow.clearFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            }
+        }.onFailure { throwable ->
+            Log.w(TAG, "应用毛玻璃失败（可能是不支持的窗口类型）：${throwable.message}")
+        }
     }
 
     /**
@@ -2217,6 +2346,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
         /** 外观 / 尺寸变更的合并窗口：60ms 内多次拖动只重绘一次 */
         private const val THEME_REFRESH_DELAY_MS = 60L
+
+        /** 毛玻璃最大模糊半径（dp），随强度 0～1 线性映射 */
+        private const val MAX_BLUR_RADIUS_DP = 25f
 
         /** 译模式「停一下」的判定：最后一次输入后 450ms 没有新输入才发请求 */
         private const val LIVE_TRANSLATE_DELAY_MS = 450L

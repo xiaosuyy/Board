@@ -49,14 +49,18 @@ object KeyboardLayouts {
                     add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
                 },
             ),
-            // 微信底行：123 · ，。 · 空格 · 中/EN · 搜索
+            // 底行：123 · ，。 · 空格 · 符号 · 中/EN · 搜索
+            // 对比大厂（搜狗/讯飞把「符号」直接放在主键盘底行，一步进入符号页），
+            // 原布局符号要 123 → 符号 两步才进得去，太深；这里把「符号」提到字母层，
+            // 压缩空格 / 回车 / 123 的宽度，保持整行 10 单位不变。
             KeyRow(
                 keys = listOf(
-                    KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.3f),
-                    KeySpec(KeyType.PUNCTUATION, units = 1.3f),
-                    KeySpec(KeyType.SPACE, units = 4.1f),
-                    KeySpec(KeyType.LANGUAGE, units = 1.6f),
-                    KeySpec(KeyType.ENTER, units = 1.7f),
+                    KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.15f),
+                    KeySpec(KeyType.PUNCTUATION, units = 1.15f),
+                    KeySpec(KeyType.SPACE, units = 3.5f),
+                    KeySpec(KeyType.TO_SYMBOLS, label = "符号", units = 1.4f),
+                    KeySpec(KeyType.LANGUAGE, units = 1.4f),
+                    KeySpec(KeyType.ENTER, units = 1.4f),
                 ),
             ),
         ),
@@ -126,23 +130,45 @@ object KeyboardLayouts {
     val symbolsAscii: KeyboardLayout = wechatSymbols()
     val symbolsCjk: KeyboardLayout = symbolsAscii
 
-    private fun wechatSymbols(): KeyboardLayout = KeyboardLayout(
-        listOf(
-            KeyRow(keys = listOf("_", "—", ";", "｜", "%", "+", "-", "×", "÷", "=").map { s(it) }),
-            KeyRow(keys = listOf("【", "】", "{", "}", "《", "》", "#", "$", "&", "·").map { s(it) }),
-            KeyRow(
-                keys = buildList {
-                    add(KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.5f))
-                    listOf("「", "」", "<", ">", "^", "*").forEach {
-                        add(KeySpec(KeyType.SYMBOL, text = it, units = 7f / 6f))
-                    }
-                    add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
-                },
+    private fun wechatSymbols(): KeyboardLayout = symbolsMainWithRecent(emptyList())
+
+    /**
+     * 符号第一页：把「最近使用」的符号置顶到第一行前面（对齐搜狗 / 讯飞）。
+     *
+     * - 固定第一行是 10 个最常用中文标点；最近使用里命中这些的**不再重复置顶**
+     * - 真正置顶的是第二 / 三页才会出现的符号（箭头、货币、数学等），
+     *   它们被提到第一行后，固定标点顺延，凑满整行 10 个
+     */
+    fun symbolsMainWithRecent(recent: List<String>): KeyboardLayout {
+        val base = listOf("，", "。", "？", "！", "、", "；", "：", "～", "…", "—")
+        val recents = recent
+            .map { it.trim() }
+            .filter { it.length == 1 && it !in base }
+            .distinct()
+            .take(RECENT_SYMBOL_COUNT)
+        val firstRow = (recents + base).take(10).map { s(it) }
+        return KeyboardLayout(
+            listOf(
+                KeyRow(keys = firstRow),
+                KeyRow(keys = listOf("“", "”", "‘", "’", "（", "）", "【", "】", "《", "》").map { s(it) }),
+                KeyRow(
+                    keys = buildList {
+                        add(KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.5f))
+                        listOf("·", "￥", "×", "÷", "°", "±").forEach {
+                            add(KeySpec(KeyType.SYMBOL, text = it, units = 7f / 6f))
+                        }
+                        add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
+                    },
+                ),
+                // 常用符号优先（对齐搜狗/讯飞）：第一页即最常用的中文标点，
+                // 西文编程符号 / 箭头 / 货币 / 数学放后续两页，不再把半角符号压在首屏。
+                symbolBottomRow(KeyType.TO_MORE_SYMBOLS),
             ),
-            // 微信符号层底部是分类标签；Board 落成功能行（← 中/英 / 更多 / 空格 / 搜索）
-            symbolBottomRow(KeyType.TO_MORE_SYMBOLS),
-        ),
-    )
+        )
+    }
+
+    /** 最近使用符号最多置顶几个 */
+    private const val RECENT_SYMBOL_COUNT = 5
 
     // ------------------------------------------------------------ 符号第二页（中文标点）
 
@@ -152,12 +178,12 @@ object KeyboardLayouts {
      */
     val symbolsMore: KeyboardLayout = KeyboardLayout(
         listOf(
-            KeyRow(keys = listOf("！", "：", "、", "（", "）", "“", "”", "‘", "’", "……").map { s(it) }),
-            KeyRow(keys = listOf("～", "￥", "℃", "→", "←", "↑", "↓", "★", "☆", "✓").map { s(it) }),
+            KeyRow(keys = listOf("→", "←", "↑", "↓", "★", "☆", "✓", "℃", "℉", "§").map { s(it) }),
+            KeyRow(keys = listOf("＋", "－", "×", "÷", "＝", "≈", "≠", "≤", "≥", "∞").map { s(it) }),
             KeyRow(
                 keys = buildList {
                     add(KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.5f))
-                    listOf("〔", "〕", "『", "』", "〈", "〉", "〇").forEach { add(s(it)) }
+                    listOf("€", "£", "¥", "$", "¢", "©", "®").forEach { add(s(it)) }
                     add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
                 },
             ),
@@ -170,12 +196,12 @@ object KeyboardLayouts {
     /** 第三页：货币 / 数学 / 西文杂项。 */
     val symbolsExtra: KeyboardLayout = KeyboardLayout(
         listOf(
-            KeyRow(keys = listOf("°", "±", "§", "•", "€", "£", "¥", "¢", "©", "®").map { s(it) }),
-            KeyRow(keys = listOf("™", "¶", "¿", "¡", "`", "|", "\\", "/", "~", "\"").map { s(it) }),
+            KeyRow(keys = listOf("_", "-", "+", "=", "%", "&", "#", "$", "@", "^").map { s(it) }),
+            KeyRow(keys = listOf("{", "}", "<", ">", "|", "\\", "/", "~", "`", "\"").map { s(it) }),
             KeyRow(
                 keys = buildList {
                     add(KeySpec(KeyType.TO_NUMBERS, label = "123", units = 1.5f))
-                    listOf("※", "‰", "∞", "≈", "≠", "≤", "≥").forEach { add(s(it)) }
+                    listOf("§", "¶", "•", "†", "¿", "¡", "½").forEach { add(s(it)) }
                     add(KeySpec(KeyType.BACKSPACE, units = 1.5f))
                 },
             ),

@@ -255,96 +255,6 @@ class SettingsSectionActivity : AppCompatActivity() {
             addView(SettingsUi.screen(this@SettingsSectionActivity))
         }
         currentScroll = scroll
-        root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-
-        // 外观页：底部常驻键盘预览，竖屏按真实键盘 1:1 渲染，贴底铺满宽度。
-        // 横屏 / 悬浮键盘的真实宽度超过竖屏，才等比缩小塞进来。
-        if (!showLogs && section == SettingsSection.APPEARANCE) {
-            val tools = com.board.ime.ui.panel.ToolLayout.parse(
-                preferences.toolbarTools,
-                preferences.moreTools,
-            ).toolbar
-            val display = resources.displayMetrics
-            val scope = geometryScope
-            val landscape = scope == KeyboardScope.LANDSCAPE
-            // 与输入法服务相同的判定：悬浮作用域，或横屏且「键盘布局 = 自动」
-            val floating = scope == KeyboardScope.FLOATING ||
-                (landscape && preferences.layoutMode == LayoutMode.AUTO)
-            // 竖屏 1:1；横屏按「竖屏宽 / 横屏宽」缩小，保证整块横屏键盘能放进设置页
-            val scale = if (landscape) display.widthPixels.toFloat() / display.heightPixels else 1f
-            val previewContext =
-                if (scale >= 0.999f) this else KeyboardPreviewView.scaledContext(this, scale)
-            // 目标方向的屏幕尺寸，同样按预览比例换算
-            val screenWidthPx = ((if (landscape) display.heightPixels else display.widthPixels) * scale).roundToInt()
-            val screenHeightPx = ((if (landscape) display.widthPixels else display.heightPixels) * scale).roundToInt()
-            previewFloating = floating
-            previewKeyboardLift = preferences.keyboardLiftEnabled
-            previewScreenWidthPx = screenWidthPx
-            previewScreenHeightPx = screenHeightPx
-
-            val geometry = settingsRepository.geometry(scope)
-            val appearance = settingsRepository.appearance()
-            val preview = KeyboardPreviewView(previewContext).apply {
-                setTools(tools)
-                applyTheme(
-                    appearanceTheme(previewContext),
-                    geometry,
-                    appearance,
-                    floating = floating,
-                    keyboardLift = previewKeyboardLift,
-                    screenWidthPx = screenWidthPx,
-                    screenHeightPx = screenHeightPx,
-                )
-                setSampleEnglishGloss(preferences.candidateEnglishGlossEnabled)
-            }
-            appearancePreview = preview
-
-            // 宽度与输入法服务用同一套计算：铺满 = 屏宽；悬浮 = 按比例夹取后的宽度
-            val previewMetrics = KeyboardLayoutCalculator.metrics(
-                config = KeyboardLayoutCalculator.configFor(
-                    previewContext,
-                    floating,
-                    geometry,
-                    previewKeyboardLift,
-                ),
-                screenWidthPx = screenWidthPx,
-                screenHeightPx = screenHeightPx,
-                density = previewContext.resources.displayMetrics.density,
-                rowCount = com.board.ime.keyboard.KeyboardLayouts.letters.rowCount,
-            )
-            val previewWidth = if (floating) previewMetrics.widthPx else screenWidthPx
-
-            val dock = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                // 竖屏贴底铺满，和真键盘一样没有左右留白；悬浮卡片保留系统边距
-                setPadding(0, 0, 0, 0)
-            }
-            dock.addView(
-                TextView(this@SettingsSectionActivity).apply {
-                    text = "键盘预览（${scope.label}）· 点按顶部切换工具栏 / 候选栏"
-                    setTextSize(
-                        android.util.TypedValue.COMPLEX_UNIT_PX,
-                        resources.getDimensionPixelSize(R.dimen.app_text_caption).toFloat(),
-                    )
-                    setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
-                    setPadding(dp(20f), dp(8f), dp(20f), dp(6f))
-                },
-            )
-            dock.addView(
-                preview,
-                LinearLayout.LayoutParams(
-                    previewWidth,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    gravity = if (floating) Gravity.END else Gravity.CENTER_HORIZONTAL
-                    if (floating) {
-                        marginEnd = previewMetrics.edgeMarginPx
-                        bottomMargin = previewMetrics.edgeMarginPx
-                    }
-                },
-            )
-            root.addView(dock)
-        }
 
         val content = scroll.getChildAt(0) as LinearLayout
         if (showLogs) {
@@ -364,8 +274,118 @@ class SettingsSectionActivity : AppCompatActivity() {
                 SettingsSection.ABOUT -> buildAboutPage(content)
             }
         }
+        if (!showLogs && section == SettingsSection.APPEARANCE) {
+            // 外观页：上半屏滚动设置项，下半屏常驻键盘预览（边调边看）
+            root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            root.addView(
+                buildAppearancePreview(),
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
+            )
+        } else {
+            root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        }
         SettingsUi.applySystemBarInset(root)
         return root
+    }
+
+    /**
+     * 外观页的键盘实时预览：竖屏按真实键盘 1:1 渲染，横屏 / 悬浮按比例缩小。
+     * 作为滚动区里的最后一个区块展示，拖动上面的滑块 / 圆角 / 配色时实时联动。
+     */
+    private fun buildAppearancePreview(): View {
+        val tools = com.board.ime.ui.panel.ToolLayout.parse(
+            preferences.toolbarTools,
+            preferences.moreTools,
+        ).toolbar
+        val display = resources.displayMetrics
+        val scope = geometryScope
+        val landscape = scope == KeyboardScope.LANDSCAPE
+        // 与输入法服务相同的判定：悬浮作用域，或横屏且「键盘布局 = 自动」
+        val floating = scope == KeyboardScope.FLOATING ||
+            (landscape && preferences.layoutMode == LayoutMode.AUTO)
+        // 竖屏 1:1；横屏按「竖屏宽 / 横屏宽」缩小，保证整块横屏键盘能放进设置页
+        val scale = if (landscape) display.widthPixels.toFloat() / display.heightPixels else 1f
+        val previewContext =
+            if (scale >= 0.999f) this else KeyboardPreviewView.scaledContext(this, scale)
+        // 目标方向的屏幕尺寸，同样按预览比例换算
+        val screenWidthPx = ((if (landscape) display.heightPixels else display.widthPixels) * scale).roundToInt()
+        val screenHeightPx = ((if (landscape) display.widthPixels else display.heightPixels) * scale).roundToInt()
+        previewFloating = floating
+        previewKeyboardLift = preferences.keyboardLiftEnabled
+        previewScreenWidthPx = screenWidthPx
+        previewScreenHeightPx = screenHeightPx
+
+        val geometry = settingsRepository.geometry(scope)
+        val appearance = settingsRepository.appearance()
+        val preview = KeyboardPreviewView(previewContext).apply {
+            setTools(tools)
+            applyTheme(
+                appearanceTheme(previewContext),
+                geometry,
+                appearance,
+                floating = floating,
+                keyboardLift = previewKeyboardLift,
+                screenWidthPx = screenWidthPx,
+                screenHeightPx = screenHeightPx,
+            )
+            setSampleEnglishGloss(preferences.candidateEnglishGlossEnabled)
+        }
+        appearancePreview = preview
+
+        // 宽度与输入法服务用同一套计算：铺满 = 屏宽；悬浮 = 按比例夹取后的宽度
+        val previewMetrics = KeyboardLayoutCalculator.metrics(
+            config = KeyboardLayoutCalculator.configFor(
+                previewContext,
+                floating,
+                geometry,
+                previewKeyboardLift,
+            ),
+            screenWidthPx = screenWidthPx,
+            screenHeightPx = screenHeightPx,
+            density = previewContext.resources.displayMetrics.density,
+            rowCount = com.board.ime.keyboard.KeyboardLayouts.letters.rowCount,
+        )
+        val previewWidth = if (floating) previewMetrics.widthPx else screenWidthPx
+
+        // 下半屏常驻：预览整体贴底，标题在预览上方；dock 由上层按 weight 撑满下半屏。
+        val dock = android.widget.FrameLayout(this).apply {
+            setPadding(0, 0, 0, 0)
+        }
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM,
+            )
+        }
+        inner.addView(
+            TextView(this@SettingsSectionActivity).apply {
+                text = "键盘预览（${scope.label}）· 点按顶部切换工具栏 / 候选栏"
+                setTextSize(
+                    android.util.TypedValue.COMPLEX_UNIT_PX,
+                    resources.getDimensionPixelSize(R.dimen.app_text_caption).toFloat(),
+                )
+                setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant))
+                setPadding(dp(20f), dp(8f), dp(20f), dp(6f))
+            },
+        )
+        inner.addView(
+            preview,
+            LinearLayout.LayoutParams(
+                previewWidth,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                gravity = if (floating) Gravity.END else Gravity.CENTER_HORIZONTAL
+                if (floating) {
+                    marginEnd = previewMetrics.edgeMarginPx
+                    bottomMargin = previewMetrics.edgeMarginPx
+                }
+            },
+        )
+        dock.addView(inner)
+        return dock
     }
 
     // ---------------------------------------------------------------- 输入
@@ -583,6 +603,38 @@ class SettingsSectionActivity : AppCompatActivity() {
         AppearanceColor.entries.forEach { target ->
             colors.addView(colorRow(target, appearance.color(target), resolvedTheme))
         }
+        colors.addView(
+            SettingsUi.sliderRow(
+                this,
+                "键盘背景不透明度",
+                appearance.keyboardBackgroundAlpha * 100f,
+                AppearanceConfig.MIN_KEYBOARD_BACKGROUND_ALPHA * 100f,
+                AppearanceConfig.MAX_KEYBOARD_BACKGROUND_ALPHA * 100f,
+                "%",
+            ) { percent ->
+                settingsRepository.setKeyboardBackgroundAlpha(percent / 100f)
+                refreshAppearancePreview()
+            },
+        )
+        colors.addView(
+            SettingsUi.sliderRow(
+                this,
+                "键盘背景毛玻璃",
+                appearance.keyboardBlurStrength * 100f,
+                AppearanceConfig.MIN_KEYBOARD_BLUR_STRENGTH * 100f,
+                AppearanceConfig.MAX_KEYBOARD_BLUR_STRENGTH * 100f,
+                "%",
+            ) { percent ->
+                settingsRepository.setKeyboardBlurStrength(percent / 100f)
+                refreshAppearancePreview()
+            },
+        )
+        colors.addView(
+            SettingsUi.hint(
+                this,
+                "毛玻璃 = 键盘底色半透明 + 背后内容模糊（需 Android 12+；低版本退化为纯半透明）。",
+            ),
+        )
         colors.addView(
             SettingsUi.button(this, "恢复默认外观") {
                 settingsRepository.resetAppearance()

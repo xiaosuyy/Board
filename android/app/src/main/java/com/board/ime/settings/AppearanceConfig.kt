@@ -61,6 +61,10 @@ enum class AppearanceRadius(val label: String, val minDp: Float, val maxDp: Floa
 data class AppearanceConfig(
     val colors: Map<AppearanceColor, Int> = emptyMap(),
     val radii: Map<AppearanceRadius, Float> = emptyMap(),
+    /** 键盘背景不透明度（0～1，1 = 完全不透明）。只作用于键盘底色，按键 / 候选栏保持实心。 */
+    val keyboardBackgroundAlpha: Float = DEFAULT_KEYBOARD_BACKGROUND_ALPHA,
+    /** 键盘背景毛玻璃强度（0～1，0 = 关闭，只半透明；1 = 最大模糊）。需 Android 12+ 才真正模糊。 */
+    val keyboardBlurStrength: Float = DEFAULT_KEYBOARD_BLUR_STRENGTH,
 ) {
     @ColorInt
     fun colorOr(target: AppearanceColor, fallback: Int): Int = colors[target] ?: fallback
@@ -73,10 +77,25 @@ data class AppearanceConfig(
         return value.coerceIn(target.minDp, target.maxDp)
     }
 
-    val hasAnyOverride: Boolean get() = colors.isNotEmpty() || radii.isNotEmpty()
+    val hasAnyOverride: Boolean
+        get() = colors.isNotEmpty() || radii.isNotEmpty() ||
+            keyboardBackgroundAlpha != DEFAULT_KEYBOARD_BACKGROUND_ALPHA ||
+            keyboardBlurStrength != DEFAULT_KEYBOARD_BLUR_STRENGTH
 
     companion object {
         val DEFAULT = AppearanceConfig()
         const val UNSET_RADIUS = -1f
+
+        /** 键盘背景不透明度：默认完全不透明 */
+        const val DEFAULT_KEYBOARD_BACKGROUND_ALPHA = 1f
+
+        /** 下限不能太低，否则键位看不清、误触增加 */
+        const val MIN_KEYBOARD_BACKGROUND_ALPHA = 0.2f
+        const val MAX_KEYBOARD_BACKGROUND_ALPHA = 1f
+
+        /** 键盘背景毛玻璃：默认关闭（保持现有视觉） */
+        const val DEFAULT_KEYBOARD_BLUR_STRENGTH = 0f
+        const val MIN_KEYBOARD_BLUR_STRENGTH = 0f
+        const val MAX_KEYBOARD_BLUR_STRENGTH = 1f
     }
 }

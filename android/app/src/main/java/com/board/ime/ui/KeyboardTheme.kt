@@ -10,6 +10,7 @@ import com.board.ime.R
 import com.board.ime.settings.CandidateTextSize
 import com.board.ime.settings.KeyboardPalette
 import com.board.ime.settings.ThemeMode
+import kotlin.math.roundToInt
 
 /**
  * 键盘渲染参数：颜色 + 尺寸（一次性解析好，View 层不再读资源）。
@@ -370,9 +371,12 @@ data class KeyboardTheme(
                 ?: candidateText
 
             return copy(
-                keyboardBackground = appearance.colorOr(
-                    com.board.ime.settings.AppearanceColor.KEYBOARD_BACKGROUND,
-                    keyboardBackground,
+                keyboardBackground = applyBackgroundAlpha(
+                    appearance.colorOr(
+                        com.board.ime.settings.AppearanceColor.KEYBOARD_BACKGROUND,
+                        keyboardBackground,
+                    ),
+                    appearance.keyboardBackgroundAlpha,
                 ),
                 keyBackground = keyBackgroundOverride ?: keyBackground,
                 keyPressedBackground = keyBackgroundOverride?.let { shade(it, 0.90f) }
@@ -429,5 +433,12 @@ data class KeyboardTheme(
             (android.graphics.Color.green(color) * factor).toInt().coerceIn(0, 255),
             (android.graphics.Color.blue(color) * factor).toInt().coerceIn(0, 255),
         )
+
+        /** 键盘背景不透明度：只改 alpha，不改变底色 RGB */
+        private fun applyBackgroundAlpha(color: Int, alpha: Float): Int =
+            androidx.core.graphics.ColorUtils.setAlphaComponent(
+                color,
+                (alpha.coerceIn(0f, 1f) * 255).roundToInt(),
+            )
     }
 }
