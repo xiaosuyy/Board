@@ -33,6 +33,7 @@ import com.board.ime.engine.rime.ShuangpinScheme
 import com.board.ime.ime.BoardInputMethodService
 import com.board.ime.keyboard.KeyboardLayoutCalculator
 import com.board.ime.ui.KeyboardTheme
+import com.board.ime.sound.KeyboardSoundManager
 import com.board.ime.sync.LearnedWordBridge
 import com.board.ime.sync.SyncContent
 import com.board.ime.sync.SyncEngineHolder
@@ -1292,11 +1293,55 @@ class SettingsSectionActivity : AppCompatActivity() {
 
         val behaviour = SettingsUi.card(this)
         behaviour.addView(SettingsUi.heading(this, "按键行为"))
+
+        // 音效：进程级单例，开关 / 风格 / 音量三套配置与 IME 共用同一套
+        KeyboardSoundManager.init(this)
+        val currentStyle = KeyboardSoundManager.SoundStyle.fromName(preferences.soundStyle)
+
+        // 音效风格切换（经典 / Pure）
+        val styleRow = SettingsUi.toggleGroup(
+            this,
+            KeyboardSoundManager.SoundStyle.entries.map { it.label },
+            currentStyle.ordinal,
+        ) { index ->
+            val newStyle = KeyboardSoundManager.SoundStyle.entries[index]
+            preferences.soundStyle = newStyle.name
+            KeyboardSoundManager.setStyle(newStyle)
+            // SoundPool 异步加载，稍等一帧再试听，避免刚切换还没加载完没声音
+            behaviour.postDelayed({ KeyboardSoundManager.preview() }, 60)
+        }
+
+        // 音效音量：拖动实时试听，调节与 IME 共用同一套配置
+        val volumeRow = SettingsUi.sliderRow(
+            this,
+            "音效音量",
+            value = preferences.soundVolume.toFloat(),
+            min = 0f,
+            max = 100f,
+            unit = "%",
+        ) { value ->
+            val percent = value.roundToInt()
+            preferences.soundVolume = percent
+            KeyboardSoundManager.configure(preferences.soundEnabled, percent)
+            KeyboardSoundManager.preview() // 拖动时实时试听
+        }
+
         behaviour.addView(
-            SettingsUi.switchRow(this, "按键音效", preferences.soundEnabled) {
-                preferences.soundEnabled = it
+            SettingsUi.switchRow(this, "按键音效", preferences.soundEnabled) { enabled ->
+                preferences.soundEnabled = enabled
+                KeyboardSoundManager.configure(enabled, preferences.soundVolume)
+                // 关闭时隐藏风格 / 音量调节但保留上次值；开启时恢复显示并试听一次
+                val visible = if (enabled) View.VISIBLE else View.GONE
+                styleRow.visibility = visible
+                volumeRow.visibility = visible
+                if (enabled) KeyboardSoundManager.preview()
             },
         )
+        behaviour.addView(styleRow)
+        behaviour.addView(volumeRow)
+        styleRow.visibility = if (preferences.soundEnabled) View.VISIBLE else View.GONE
+        volumeRow.visibility = if (preferences.soundEnabled) View.VISIBLE else View.GONE
+
         behaviour.addView(
             SettingsUi.switchRow(this, "按键震动", preferences.vibrateEnabled) {
                 preferences.vibrateEnabled = it
@@ -2105,70 +2150,75 @@ class SettingsSectionActivity : AppCompatActivity() {
     // ---------------------------------------------------------------- 语音
 
     private fun buildVoice(content: LinearLayout) {
-        val store = com.board.ime.voice.VoiceCredentialStore(this)
-        val current = store.load()
+        val modelManager = com.board.ime.voice.VoiceModelManager(this)
 
         val card = SettingsUi.card(this)
-        card.addView(SettingsUi.heading(this, "语音识别服务"))
-        card.addView(SettingsUi.value(this, "服务：百度实时语音识别（WebSocket，边录边发）"))
-        val (appIdLayout, appIdEdit) = SettingsUi.textField(this, "语音 AppID", current.appId)
-        val (keyLayout, keyEdit) = SettingsUi.textField(this, "语音 API Key", current.apiKey, password = true)
-        card.addView(appIdLayout)
-        card.addView(keyLayout)
-        card.addView(
-            SettingsUi.hint(
-                this,
-                "在百度智能云「语音技术」应用查看 AppID 与 API Key；与翻译凭据不是同一套。" +
-                    "凭据保存在 Android 加密存储中。",
-            ),
-        )
-        card.addView(
-            SettingsUi.button(this, "保存") {
-                store.save(
-                    com.board.ime.voice.VoiceCredentials(
-                        appId = appIdEdit.text?.toString().orEmpty(),
-                        apiKey = keyEdit.text?.toString().orEmpty(),
-                    ),
-                )
-                Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show()
-                render()
-            },
-        )
-        card.addView(
-            SettingsUi.button(this, "清空凭据") {
-                store.clear()
-                Toast.makeText(this, "已清空", Toast.LENGTH_SHORT).show()
-                render()
-            },
-        )
+        card.addView(SettingsUi.heading(this, "离线语音模型"))
         card.addView(
             SettingsUi.value(
                 this,
-                if (current.isComplete) "当前状态：已配置" else "当前状态：未配置",
+                when {
+                    modelManager.isLocalReady() ->
+                        "状态：已就绪 · 本地模型 · ${modelManager.sizeBytes() / 1024 / 1024} MB"
+                    modelManager.isBundled() ->
+                        "状态：已就绪 · 内置模型（随 APK 打包，无需下载）"
+                    else -> "状态：不可用"
+                },
             ),
         )
         card.addView(
             SettingsUi.hint(
                 this,
-                "额度以百度控制台为准。",
+                "语音识别完全在设备本地完成（SenseVoiceSmall + sherpa-onnx），" +
+                    "不联网、不调用云端服务。模型已内置进应用，长按空格即可离线语音输入。",
             ),
         )
-        if (!store.secureStorageAvailable) {
+        if (modelManager.isLocalReady()) {
             card.addView(
-                SettingsUi.hint(this, "注意：本机加密存储不可用，凭据只保留在本次会话内存中。"),
+                SettingsUi.button(this, "删除本地模型") {
+                    modelManager.delete()
+                    Toast.makeText(this, "已删除，将改用内置模型", Toast.LENGTH_SHORT).show()
+                    render()
+                },
             )
         }
         content.addView(SettingsUi.cardView(this, card))
+
+        val usage = SettingsUi.card(this)
+        usage.addView(SettingsUi.heading(this, "使用方法"))
+        usage.addView(
+            SettingsUi.hint(
+                this,
+                "· 长按空格键开始录音，松开自动上屏\n" +
+                    "· 录音过程中手指移出空格键可取消\n" +
+                    "· 支持普通话、英语及中英文混合识别",
+            ),
+        )
+        usage.addView(
+            SettingsUi.sliderRow(
+                this,
+                "长按触发语音时长",
+                value = preferences.voiceLongPressDelayMs.toFloat(),
+                min = 350f,
+                max = 500f,
+                unit = "ms",
+            ) { value ->
+                // 四舍五入到 50 的倍数（350 / 400 / 450 / 500），避免出现 373ms 这种零碎值
+                val ms = (value / 50f).roundToInt() * 50
+                preferences.voiceLongPressDelayMs = ms
+            },
+        )
+        content.addView(SettingsUi.cardView(this, usage))
 
         val privacy = SettingsUi.card(this)
         privacy.addView(SettingsUi.heading(this, "隐私说明"))
         privacy.addView(
             SettingsUi.hint(
                 this,
-                "· 语音输入需要联网（WSS 加密连接）\n" +
-                    "· 录音会边录边发给百度语音服务处理\n" +
-                    "· Board 不在本地保存录音、识别文本或识别历史\n" +
-                    "· 百度侧的数据处理与留存以其服务协议和隐私政策为准",
+                "· 所有音频处理均在设备本地完成，无需网络\n" +
+                    "· 录音数据只短暂保存在内存中，识别后立即释放\n" +
+                    "· 不上传、不保存、不写入日志或缓存\n" +
+                    "· 识别失败不会切换到任何联网服务",
             ),
         )
         content.addView(SettingsUi.cardView(this, privacy))

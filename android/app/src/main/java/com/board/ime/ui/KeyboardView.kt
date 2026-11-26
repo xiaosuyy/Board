@@ -22,6 +22,7 @@ import com.board.ime.keyboard.KeyboardLayouts
 import com.board.ime.keyboard.SpaceCursorDrag
 import com.board.ime.keyboard.SwipeDownGesture
 import kotlin.math.min
+import kotlin.math.sin
 
 /**
  * Board 自绘键盘。
@@ -62,6 +63,12 @@ class KeyboardView @JvmOverloads constructor(
          * @param steps 本次要移动的字符数（≥1）
          */
         fun onCursorMove(direction: Int, steps: Int)
+
+        /** 长按空格后手指移出空格键：取消本次语音输入（不提交） */
+        fun onSpaceVoiceCancel()
+
+        /** 长按空格后松开：停止录音并提交识别结果 */
+        fun onSpaceVoiceRelease()
     }
 
     var listener: OnKeyboardActionListener? = null
@@ -145,9 +152,18 @@ class KeyboardView @JvmOverloads constructor(
 
     private var pressedIndex = -1
     private var longPressFired = false
+
+    /** 空格键长按语音是否已激活（激活后：移出取消、松开提交） */
+    private var spaceVoiceActive = false
     private var downX = 0f
     private var downY = 0f
     private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+
+    /**
+     * 长按触发阈值（毫秒）。空格长按语音 / 语言键 / 标点键 / Shift 等共用，
+     * 默认 400ms，由宿主（输入法服务）从设置读取后注入，可配置。
+     */
+    var longPressDelayMs: Long = DEFAULT_LONG_PRESS_DELAY_MS
 
     /**
      * 空格键横向滑动 → 移动光标。
@@ -176,6 +192,53 @@ class KeyboardView @JvmOverloads constructor(
     private val handler = Handler(Looper.getMainLooper())
     private var repeatRunnable: Runnable? = null
 
+    /** 空格键语音动画的帧循环（约 30fps），只在语音激活时驱动重绘 */
+    private val voiceWaveTick = object : Runnable {
+        override fun run() {
+            if (!voiceActive) return
+            updateDisplayVolume()
+            invalidate()
+            handler.postDelayed(this, VOICE_WAVE_FRAME_MS)
+        }
+    }
+
+    /**
+     * 语音激活状态（长按空格进入语音时由宿主设置）。
+     * 激活期间空格键绘制声波频谱，替代「空格 / 输入法名」文字。
+     */
+    var voiceActive: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            handler.removeCallbacks(voiceWaveTick)
+            if (value) {
+                displayVolume = 0f
+                breathPhase = 0f
+                handler.post(voiceWaveTick)
+            }
+            invalidate()
+        }
+
+    /** 实时音量目标值（0..1，来自引擎的 dB 归一化），驱动空格键声波高度 */
+    var voiceVolume: Float = 0f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+        }
+
+    /** 每帧向 [voiceVolume] 目标平滑后的显示音量（攻击快、释放慢，30fps 丝滑） */
+    private var displayVolume = 0f
+
+    /** 静音呼吸动画的相位（缓慢推进，仅静音时用于低幅度起伏） */
+    private var breathPhase = 0f
+
+    /** 每帧把显示音量向真实目标逼近：说话时快速上升、停顿时平滑回落 */
+    private fun updateDisplayVolume() {
+        val target = voiceVolume.coerceIn(0f, 1f)
+        val rate = if (target > displayVolume) ATTACK_RATE else RELEASE_RATE
+        displayVolume += (target - displayVolume) * rate
+        breathPhase = (breathPhase + BREATH_STEP) % (2.0 * Math.PI).toFloat()
+    }
+
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -203,6 +266,7 @@ class KeyboardView @JvmOverloads constructor(
         if (key.type == KeyType.BACKSPACE) {
             startBackspaceRepeat(key)
         } else {
+            if (key.type == KeyType.SPACE) spaceVoiceActive = true
             listener?.onKeyLongPress(key)
         }
     }
@@ -486,16 +550,22 @@ class KeyboardView @JvmOverloads constructor(
                 size = theme.functionKeyTextSize,
             )
 
-            KeyType.SPACE -> drawLabel(
-                canvas = canvas,
-                rect = rect,
-                text = when (keyboardMode) {
-                    InputMode.NUMBER, InputMode.SYMBOL -> "空格"
-                    else -> keyboardMode.displayName
-                },
-                color = theme.functionKeyText,
-                size = theme.functionKeyTextSize,
-            )
+            KeyType.SPACE -> {
+                if (voiceActive) {
+                    drawSpaceVoiceWave(canvas, rect)
+                } else {
+                    drawLabel(
+                        canvas = canvas,
+                        rect = rect,
+                        text = when (keyboardMode) {
+                            InputMode.NUMBER, InputMode.SYMBOL -> "空格"
+                            else -> keyboardMode.displayName
+                        },
+                        color = theme.functionKeyText,
+                        size = theme.functionKeyTextSize,
+                    )
+                }
+            }
 
             KeyType.SHIFT -> drawShiftGlyph(canvas, rect, onAccentColor)
             KeyType.BACKSPACE -> drawBackspaceGlyph(canvas, rect, theme.functionKeyText)
@@ -577,6 +647,51 @@ class KeyboardView @JvmOverloads constructor(
         val metrics = textPaint.fontMetrics
         val baseline = rect.centerY() - (metrics.ascent + metrics.descent) / 2f
         canvas.drawText(text, rect.centerX(), baseline, textPaint)
+    }
+
+    /**
+     * 空格键语音激活时的声波频谱：多根圆角竖条，中心高、两侧自然递减，
+     * 高度由**真实麦克风音量**（dB 归一化后的 [displayVolume]）驱动，替代「空格 / 输入法名」文字。
+     *
+     * - 说话时：柱子随真实音量明显升高，较大音量可达最大高度的 80%～100%；
+     * - 静音时：进入低幅度「呼吸」动画（约 0.04～0.10 缓慢起伏），不剧烈、不静止；
+     * - 每根柱子叠加一个**幅度随真实音量缩放**的微扰，静音时归零，形成频谱层次感。
+     * 声波整体占空格键高度的 3/4，居中显示。
+     */
+    private fun drawSpaceVoiceWave(canvas: Canvas, rect: RectF) {
+        keyPaint.color = theme.accent
+        val centerX = rect.centerX()
+        val centerY = rect.centerY()
+        val n = SPACE_WAVE_ENVELOPE.size
+        val barWidth = dp(2.5f)
+        val gap = dp(1.5f)
+        val totalWidth = n * barWidth + (n - 1) * gap
+        var x = centerX - totalWidth / 2f + barWidth / 2f
+        val minH = dp(3f)
+        val maxH = rect.height() * 0.75f
+
+        // 静音判定：目标音量极低（噪声门限以下）时进入低幅度呼吸，否则用真实显示音量
+        val silent = voiceVolume < VOICE_GATE && displayVolume < VOICE_GATE
+        val level = if (silent) {
+            BREATH_MIN + BREATH_AMP * (0.5f + 0.5f * sin(breathPhase).toFloat())
+        } else {
+            displayVolume
+        }
+
+        for (i in 0 until n) {
+            val env = SPACE_WAVE_ENVELOPE[i]
+            // 独立微扰：幅度随真实音量缩放（静音时 displayVolume≈0 → 无扰动，不靠固定循环动画伪装）
+            val jitter = 1f + JITTER * env * displayVolume *
+                sin(breathPhase * 2f + i * 0.618f).toFloat()
+            val h = (minH + (maxH - minH) * env * level * jitter).coerceIn(minH, maxH)
+            val half = h / 2f
+            canvas.drawRoundRect(
+                x - barWidth / 2f, centerY - half,
+                x + barWidth / 2f, centerY + half,
+                barWidth / 2f, barWidth / 2f, keyPaint,
+            )
+            x += barWidth + gap
+        }
     }
 
     /** 以 (cx, cy) 为中心绘制一段文字（保持 textPaint 的居中对齐） */
@@ -799,15 +914,27 @@ class KeyboardView @JvmOverloads constructor(
                 spaceCursorDrag.reset()
                 letterSwipeDown.reset()
                 punctuationSwipeUp.reset()
+                spaceVoiceActive = false
                 val index = findKeyIndex(event.x, event.y)
                 if (index >= 0) {
                     longPressFired = false
                     setPressedIndex(index)
-                    handler.postDelayed(longPressRunnable, LONG_PRESS_DELAY_MS)
+                    handler.postDelayed(longPressRunnable, longPressDelayMs)
                 }
             }
 
             MotionEvent.ACTION_MOVE -> {
+                // 长按空格已进入语音：手指一旦移出空格键就取消，锁定本次触摸不再换键
+                if (spaceVoiceActive) {
+                    val idx = findKeyIndex(event.x, event.y)
+                    if (idx < 0 || keys[idx].type != KeyType.SPACE) {
+                        spaceVoiceActive = false
+                        cancelPendingTouch()
+                        listener?.onSpaceVoiceCancel()
+                    }
+                    return true
+                }
+
                 // 空格键横向滑动：移动光标（判定成立后锁定空格键，不再换键、不再长按）
                 if (keys.getOrNull(pressedIndex)?.type == KeyType.SPACE) {
                     val move = spaceCursorDrag.onMove(event.x - downX, event.y - downY)
@@ -854,12 +981,24 @@ class KeyboardView @JvmOverloads constructor(
                     longPressFired = false
                     setPressedIndex(index)
                     if (index >= 0) {
-                        handler.postDelayed(longPressRunnable, LONG_PRESS_DELAY_MS)
+                        handler.postDelayed(longPressRunnable, longPressDelayMs)
                     }
                 }
             }
 
             MotionEvent.ACTION_UP -> {
+                // 长按空格语音：松开 = 停止录音并提交，不再输入空格
+                if (spaceVoiceActive) {
+                    spaceVoiceActive = false
+                    cancelPendingTouch()
+                    setPressedIndex(-1)
+                    spaceCursorDrag.reset()
+                    letterSwipeDown.reset()
+                    punctuationSwipeUp.reset()
+                    listener?.onSpaceVoiceRelease()
+                    performClick()
+                    return true
+                }
                 val index = pressedIndex
                 val wasLongPress = longPressFired
                 // 滑动移动光标后抬手：不能再输入一个空格
@@ -884,6 +1023,10 @@ class KeyboardView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_CANCEL -> {
+                if (spaceVoiceActive) {
+                    spaceVoiceActive = false
+                    listener?.onSpaceVoiceCancel()
+                }
                 cancelPendingTouch()
                 setPressedIndex(-1)
                 spaceCursorDrag.reset()
@@ -961,14 +1104,48 @@ class KeyboardView @JvmOverloads constructor(
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
 
     private companion object {
-        const val LONG_PRESS_DELAY_MS = 400L
+        const val DEFAULT_LONG_PRESS_DELAY_MS = 400L
         const val REPEAT_INTERVAL_MS = 55L
 
+        /** 空格键语音声波的帧间隔（约 30fps） */
+        const val VOICE_WAVE_FRAME_MS = 33L
+
+        /** 声波柱子数量（中心高、两侧递减的频谱状分布） */
+        const val SPACE_WAVE_BAR_COUNT = 28
+
+        /** 声波柱包络：Hann 窗 + 底部基线，中心 1.0、两端 0.25，两侧自然递减 */
+        val SPACE_WAVE_ENVELOPE = FloatArray(SPACE_WAVE_BAR_COUNT) { i ->
+            val hann = 0.5f - 0.5f * kotlin.math.cos(
+                2.0 * Math.PI * i / (SPACE_WAVE_BAR_COUNT - 1),
+            ).toFloat()
+            0.25f + 0.75f * hann
+        }
+
+        /** 目标音量低于该值视为静音（噪声门限以下），进入呼吸动画 */
+        const val VOICE_GATE = 0.03f
+
+        /** 静音呼吸：最低高度与摆动幅度（低幅度轻微起伏，不剧烈） */
+        const val BREATH_MIN = 0.04f
+        const val BREATH_AMP = 0.06f
+
+        /** 呼吸相位推进（每帧 rad，30fps 下周期约 3.5s） */
+        const val BREATH_STEP = 0.06f
+
+        /** 显示音量的攻击/释放速率：攻击快、释放慢（每帧向目标逼近的比例） */
+        const val ATTACK_RATE = 0.5f
+        const val RELEASE_RATE = 0.10f
+
+        /** 柱子独立微扰幅度（随真实音量缩放，静音时≈0） */
+        const val JITTER = 0.20f
+
         /**
-         * 空格键横向滑动移动光标：死区 24dp（以内算点按 → 输入空格）。
-         * 微信是 50dp；这里调小，让滑动更快进入移动状态。
+         * 空格键横向滑动移动光标：死区 40dp（约 15mm，以内算点按 → 输入空格）。
+         *
+         * 之前是 24dp，但长按空格触发语音期间手指的轻微水平晃动很容易超过 24dp，
+         * 被误判成「滑动移动光标」而取消长按（这正是长按语音经常触发不了的根因）。
+         * 40dp 既能保留滑动光标手势，又给长按语音留足稳定的判定空间。
          */
-        const val SPACE_CURSOR_DEAD_ZONE_DP = 24f
+        const val SPACE_CURSOR_DEAD_ZONE_DP = 40f
 
         /** 越过死区后每 20dp 移动 1 个字符（微信是 33dp；这里调小以提高灵敏度） */
         const val SPACE_CURSOR_STEP_DP = 20f

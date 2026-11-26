@@ -21,7 +21,6 @@ import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
-import android.view.SoundEffectConstants
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -38,7 +37,6 @@ import com.board.ime.dictionary.DictionaryChangeNotifier
 import com.board.ime.dictionary.DictionaryRepository
 import com.board.ime.dictionary.LearnedWordDecay
 import com.board.ime.emoji.EmojiRepository
-import com.board.ime.emoji.MemeRepository
 import com.board.ime.engine.BasicEngine
 import com.board.ime.engine.ChineseEnglishLexiconLoader
 import com.board.ime.engine.EnglishLexiconLoader
@@ -54,6 +52,7 @@ import com.board.ime.keyboard.KeyboardLayoutCalculator
 import com.board.ime.keyboard.KeyboardLayoutMetrics
 import com.board.ime.settings.BoardPreferences
 import com.board.ime.settings.BoardSettingsActivity
+import com.board.ime.sound.KeyboardSoundManager
 import com.board.ime.settings.EngineKind
 import com.board.ime.settings.CandidateTextSize
 import com.board.ime.settings.KeyboardKind
@@ -115,24 +114,26 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     /**
      * 语音识别凭据（百度智能云语音服务的 AppID + API Key）。
      * **与翻译凭据完全分开存**（官方两套服务不是同一套凭据，混用会鉴权失败）。
+     *
+     * 注：语音输入已切换为本地离线识别，此凭据仅为历史翻译/兼容保留，语音不再使用。
      */
     private val voiceCredentials by lazy {
         com.board.ime.voice.VoiceCredentialStore(this)
     }
 
+    /** 离线语音模型管理（SenseVoiceSmall 已内置进 APK，也支持本地文件覆盖） */
+    private val voiceModelManager by lazy {
+        com.board.ime.voice.VoiceModelManager(this)
+    }
+
     /**
-     * 当前语音引擎：**百度实时语音识别（realtime ASR）**。
+     * 当前语音引擎：**本地离线语音识别（SenseVoiceSmall + sherpa-onnx）**。
      *
-     * 🎙 的语义永远是「语音 → 原语言文字」，**不接语音翻译**。
-     * 需要语音智能云的 **AppID + API Key**（与翻译平台的 APPID/密钥不是同一套）。
-     *
-     * 备选（如确实要做"边说边译"）：`BaiduVoiceTranslateEngine`，它复用翻译凭据，
-     * 但是整段上传、且输出的是译文 —— 与 🎙 的定位不符，默认不启用。
+     * 所有音频在设备本地处理，不联网、不调用云端 API、不依赖第三方语音服务；
+     * 模型已内置进 APK，开箱即用；模型不可用时上层给出明确提示，绝不回退到任何联网服务。
      */
     private val voiceEngine: com.board.ime.voice.VoiceRecognitionEngine by lazy {
-        com.board.ime.voice.BaiduRealtimeVoiceRecognitionProvider(
-            credentialsProvider = { voiceCredentials.load() },
-        )
+        com.board.ime.voice.VoiceInputEngine(this, voiceModelManager)
     }
 
     /**
@@ -154,10 +155,29 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
 
         override fun hideVoicePanel() {
             panelController?.closeVoice()
+            // 面板关闭时务必复位空格键声波，避免键盘收起/取消后声波残留
+            binding?.keyboardView?.voiceActive = false
         }
 
         override fun updateVoicePanel(state: VoiceState, text: String) {
             panelController?.updateVoice(state, text)
+            // 空格键语音动画：识别中显示声波，结束/出错恢复为普通空格
+            val listening = state == VoiceState.LISTENING || state == VoiceState.PROCESSING
+            binding?.keyboardView?.voiceActive = listening
+        }
+
+        override fun updateVoiceVolume(volume: Float) {
+            panelController?.updateVoiceVolume(volume)
+            binding?.keyboardView?.voiceVolume = volume
+        }
+
+        override fun onVoiceRecordingStarted() {
+            // 轻微触觉反馈，明确「录音已开始」（按住的手感）
+            runCatching {
+                binding?.keyboardView?.performHapticFeedback(
+                    android.view.HapticFeedbackConstants.LONG_PRESS,
+                )
+            }
         }
 
         /** 权限被拒：弹系统授权框（输入法没有弹权限的能力，交给透明 Activity 代劳） */
@@ -215,7 +235,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         if (voicePrivacyCard != null) return
         val root = window?.window?.decorView as? android.view.ViewGroup ?: return
         val card = com.board.ime.ui.panel.VoicePrivacyCard(this)
-        val cloud = voiceEngine.isConfigured()
         card.bind(
             KeyboardTheme.from(
                 this,
@@ -223,20 +242,11 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
                 preferences.candidateTextSize,
                 palette = settingsRepository.palette,
             ),
-            resolveVoiceServiceLabel(),
+            "本地离线语音识别",
             consent,
-            title = if (cloud) {
-                "使用百度实时语音识别"
-            } else {
-                "使用系统语音识别"
-            },
-            body = if (cloud) {
-                "语音会通过加密连接发送给百度语音服务处理。Board 不保存录音或识别结果。" +
-                    "数据处理及留存以百度相关服务协议和隐私政策为准。"
-            } else {
-                "语音会交给设备提供的系统语音识别服务处理，可能联网发送给该服务。" +
-                    "Board 不保存录音或识别结果。数据处理及留存以该服务提供方的政策为准。"
-            },
+            title = "使用本地离线语音识别",
+            body = "语音识别完全在设备本地完成，录音与识别文字不会离开您的手机，不上传、不保存、不写入日志。" +
+                "离线语音模型已内置进应用，无需网络即可使用。",
         )
         if (consent) {
             card.onAccept = {
@@ -372,75 +382,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         controller.discardComposition()
         controller.commitText(emoji)
         emojiRepository?.recordRecent(emoji)
-    }
-
-    /**
-     * 斗图点选：本地图从 assets 复制、网络梗图下载到缓存目录，
-     * 用 FileProvider 生成 content:// URI，再通过系统分享面板发到微信 / QQ（ACTION_SEND，图片类型）。
-     *
-     * 不写系统剪贴板、不申请存储权限；图片只落在 App 私有 cache，分享完即可被系统回收。
-     */
-    private fun shareMeme(meme: MemeRepository.Meme) {
-        serviceScope.launch {
-            try {
-                val dir = java.io.File(cacheDir, "meme_share")
-                dir.mkdirs()
-                val file = java.io.File(dir, meme.asset)
-                if (!file.exists() || file.length() == 0L) {
-                    val remote = meme.remoteUrl
-                    if (remote != null) {
-                        val bytes = memeRepository?.downloadRemote(remote)
-                        if (bytes == null) throw IllegalStateException("网络图片下载失败")
-                        file.writeBytes(bytes)
-                    } else {
-                        assets.open("meme/${meme.asset}").use { input ->
-                            file.outputStream().use { output -> input.copyTo(output) }
-                        }
-                    }
-                }
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    this@BoardInputMethodService,
-                    "$packageName.fileprovider",
-                    file,
-                )
-                // startActivity / Toast 必须在主线程
-                withContext(Dispatchers.Main) {
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "image/webp"
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        putExtra(Intent.EXTRA_TEXT, meme.label)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(Intent.createChooser(intent, "发送斗图到…"))
-                }
-            } catch (throwable: Throwable) {
-                Log.w(TAG, "分享斗图失败：${throwable.message}")
-                withContext(Dispatchers.Main) {
-                    runCatching {
-                        Toast.makeText(
-                            this@BoardInputMethodService,
-                            "分享失败，请重试",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                }
-            }
-        }
-    }
-
-    /** 后台抓取一次 memecub 梗图，成功后刷新斗图面板；失败保持本地内置图 */
-    private fun prefetchMemecubMemes() {
-        if (memecubFetchStarted) return
-        memecubFetchStarted = true
-        val repo = memeRepository ?: return
-        serviceScope.launch {
-            val remote = runCatching { repo.fetchMemecub() }.getOrDefault(emptyList())
-            if (remote.isEmpty()) return@launch
-            memecubMemes = remote
-            // 当前正停在斗图面板时，抓取完成立即刷新
-            panelController?.let { if (it.isMemeMode) it.refreshMemeList() }
-        }
     }
 
     private fun editPhrase(entry: com.board.ime.database.entity.PhraseEntry) {
@@ -862,17 +803,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     /** 表情 / 符号检索（纯本地 assets，后台预热） */
     private var emojiRepository: EmojiRepository? = null
 
-    /** 斗图表情清单（本地 assets + memecub 网络源） */
-    private var memeRepository: MemeRepository? = null
-
-    /** memecub 网络梗图缓存（抓取成功后填充；为空说明未抓到，斗图面板回退本地图） */
-    @Volatile
-    private var memecubMemes: List<MemeRepository.Meme> = emptyList()
-
-    /** 是否已经开始抓取 memecub（只抓一次，避免每次打开斗图都请求） */
-    @Volatile
-    private var memecubFetchStarted = false
-
     /** 网络恢复回调：Push 失败后自动补一次剪贴板同步（不必用户进设置页） */
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
 
@@ -921,6 +851,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         super.onCreate()
         active = this
         preferences = BoardPreferences(this)
+        // 音效：进程级单例，SoundPool 懒初始化并预加载四段音效
+        KeyboardSoundManager.init(this)
+        KeyboardSoundManager.configure(preferences.soundEnabled, preferences.soundVolume)
+        KeyboardSoundManager.setStyle(KeyboardSoundManager.SoundStyle.fromName(preferences.soundStyle))
         // P3：本地中英释义表（纯本地 assets 小文件，同步读一次；loadOnce 幂等，
         // 读取失败也只按“无释义”处理，不影响输入、不联网、不访问数据库）。
         ChineseEnglishLexiconLoader.loadOnce(this)
@@ -928,11 +862,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // 失败时保留内置兜底词表，不影响输入、不联网）。
         EnglishLexiconLoader.loadOnce(this)
         emojiRepository = EmojiRepository(this, preferences)
-        memeRepository = MemeRepository(this)
         // 表情数据只在第一次真正用到时解析；先在后台预热，点开面板不卡
         serviceScope.launch { runCatching { emojiRepository?.preload() } }
-        // 后台抓取一次 memecub 梗图（网络失败自动回退本地内置斗图）
-        prefetchMemecubMemes()
         dictionaryRepository = DictionaryRepository(BoardDatabase.get(this).dictionaryDao(), this)
         buildController(preferences.engineKind, initialLetterMode())
 
@@ -968,6 +899,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         this.binding = binding
 
         binding.keyboardView.listener = this
+        // 长按触发语音的阈值从设置读取（默认 400ms，可配置）
+        binding.keyboardView.longPressDelayMs = preferences.voiceLongPressDelayMs.toLong()
 
         val panel = TopPanelController(
             toolbar = binding.toolbarView,
@@ -983,7 +916,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             phrasesPanel = binding.phrasesPanel,
             emojiHeader = binding.emojiHeader,
             emojiPanel = binding.emojiPanel,
-            memePanel = binding.memePanel,
             candidateGridPanel = binding.candidateGridPanel,
         )
         panel.onCandidateSelected = { index -> controller.pickCandidate(index) }
@@ -1011,8 +943,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onSwitchKeyboard = { onSwitchKeyboard() }
         panel.onVoiceCancel = { voiceSession?.cancel() }
         panel.onVoiceStop = { voiceSession?.toggle() }
-        panel.onVoiceMicStop = { voiceSession?.toggle() }
-        panel.onVoiceInfo = { showVoicePrivacyCard(consent = false) }
         panel.onTranslationClose = { translationSession().close() }
         panel.onTranslationRun = { translationSession().translate() }
         panel.onTranslationCopy = { translationSession().copyResult() }
@@ -1045,13 +975,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         panel.onEmojiSearch = { query -> emojiRepository?.search(query).orEmpty() }
         panel.onEmojiAll = { emojiRepository?.all().orEmpty() }
         panel.onEmojiRecent = { emojiRepository?.recent().orEmpty() }
-        panel.onMemeList = {
-            val local = memeRepository?.all().orEmpty()
-            val remote = memecubMemes
-            // 网络梗图在前、本地内置图兜底在后；网络没抓到就用纯本地
-            if (remote.isEmpty()) local else remote + local
-        }
-        panel.onMemePick = { meme -> shareMeme(meme) }
         panel.onToolLayoutChanged = { layout ->
             // 复用现有 SharedPreferences（不新增数据库 / 表）
             preferences.toolbarTools = layout.encodeToolbar()
@@ -1097,6 +1020,8 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         val collapseOnly = hidingForCollapse
         hidingForCollapse = false
         Log.d(TAG, "onFinishInputView finishing=$finishingInput collapse=$collapseOnly")
+        // 键盘收起 / 结束输入时，若语音正在录音，立即取消并释放录音资源（不提交）
+        voiceSession?.pressCancel()
         if (!collapseOnly) {
             controller.onFinishInput()
             panelController?.resetToIdle()
@@ -1166,10 +1091,10 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // 剪贴板搜索：按键先给搜索框，不打断、也不污染正在编辑的输入框
         val panel = panelController
         if (panel != null && panel.handleSearchKey(key)) {
-            playKeyFeedback()
+            playKeyFeedback(key)
             return
         }
-        playKeyFeedback()
+        playKeyFeedback(key)
         // 译模式：回车换用译文（没有新鲜译文时仍按普通回车处理）
         if (key.type == KeyType.ENTER && translateMode && commitLiveTranslationIfFresh()) {
             return
@@ -1190,6 +1115,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         } else if (key.type == KeyType.SHIFT) {
             // 长按 Shift：开 / 关「译」模式
             toggleTranslateMode()
+        } else if (key.type == KeyType.SPACE) {
+            // 长按空格：启动离线语音输入（按住录音，松开提交，移出取消）
+            onSpaceVoicePress()
         }
     }
 
@@ -1199,19 +1127,19 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
     }
 
     override fun onKeyRepeat(key: KeySpec) {
-        playKeyFeedback()
+        playKeyFeedback(key)
         controller.onKeyRepeat(key)
     }
 
     override fun onKeySwipeDown(key: KeySpec) {
-        playKeyFeedback()
+        playKeyFeedback(key)
         controller.onLetterSwipeDown(key.text.orEmpty())
     }
 
     /** 逗号键按住上滑：句号（中文「。」/ 英文「.」） */
     override fun onKeySwipeUp(key: KeySpec) {
         if (key.type != KeyType.PUNCTUATION) return
-        playKeyFeedback()
+        playKeyFeedback(key)
         controller.onPunctuationPeriod()
     }
 
@@ -1222,6 +1150,23 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
      */
     override fun onCursorMove(direction: Int, steps: Int) {
         controller.moveCursor(direction, steps)
+    }
+
+    /** 长按空格后手指移出空格键：取消语音，不提交 */
+    override fun onSpaceVoiceCancel() {
+        voiceSession?.pressCancel()
+    }
+
+    /** 长按空格后松开：停止录音并提交 */
+    override fun onSpaceVoiceRelease() {
+        voiceSession?.pressStop()
+    }
+
+    /** 长按空格触发：启动离线语音输入（按住录音） */
+    private fun onSpaceVoicePress() {
+        val session = voiceSession
+            ?: VoiceInputSession(this, voiceHost, voiceEngine).also { voiceSession = it }
+        session.pressStart()
     }
 
     // ------------------------------------------------------------ 顶部面板
@@ -1679,9 +1624,6 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         // 分隔线始终保留：面板与下方内容（键盘 / 剪贴板）的分界在四种状态下一致
         binding.panelDivider.visibility = View.VISIBLE
 
-        // 斗图面板默认隐藏，只有 EMOJI_ONLY 且停在「斗图」子页时才显示
-        binding.memePanel.visibility = View.GONE
-
         when (mode) {
             PanelLayoutMode.KEYBOARD_ONLY -> {
                 binding.keyboardView.visibility = View.VISIBLE
@@ -1745,17 +1687,16 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
             }
 
             PanelLayoutMode.EMOJI_ONLY -> {
-                // 表情 / 斗图面板占键盘位置：与剪贴板 / 常用语一样，总高度不变
+                // 表情面板占键盘位置：与剪贴板 / 常用语一样，总高度不变
                 binding.keyboardView.visibility = View.GONE
                 binding.clipboardPanel.visibility = View.GONE
                 binding.translationPanel.visibility = View.GONE
                 binding.phrasesPanel.visibility = View.GONE
                 binding.candidateGridPanel.visibility = View.GONE
-                val meme = panelController?.isMemeMode == true
-                binding.emojiPanel.visibility = if (meme) View.GONE else View.VISIBLE
-                binding.memePanel.visibility = if (meme) View.VISIBLE else View.GONE
-                val active = if (meme) binding.memePanel else binding.emojiPanel
-                active.layoutParams = active.layoutParams.apply { height = keyboardHeight }
+                binding.emojiPanel.visibility = View.VISIBLE
+                binding.emojiPanel.layoutParams = binding.emojiPanel.layoutParams.apply {
+                    height = keyboardHeight
+                }
             }
 
             PanelLayoutMode.EMOJI_WITH_KEYBOARD -> {
@@ -2238,6 +2179,9 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         controller.setLetterMode(letterModeFor(preferences.keyboardKind, preferences.mode))
         applyTheme()
         syncRimeOptionsIfChanged()
+        // 音效开关 / 音量 / 风格变化立即生效（不必重启输入法）
+        KeyboardSoundManager.configure(preferences.soundEnabled, preferences.soundVolume)
+        KeyboardSoundManager.setStyle(KeyboardSoundManager.SoundStyle.fromName(preferences.soundStyle))
     }
 
     /**
@@ -2266,14 +2210,23 @@ class BoardInputMethodService : InputMethodService(), com.board.ime.ui.KeyboardV
         }
     }
 
-    private fun playKeyFeedback() {
-        val view = binding?.keyboardView ?: return
-        if (preferences.soundEnabled) {
-            view.playSoundEffect(SoundEffectConstants.CLICK)
-        }
+    private fun playKeyFeedback(key: KeySpec) {
+        // 语音录制期间不播放按键点击音效（长按空格录音时键盘按键不应出声）
+        val voiceState = voiceSession?.currentState
+        val recording = voiceState == VoiceState.LISTENING || voiceState == VoiceState.PROCESSING
+        if (recording) return
+        KeyboardSoundManager.play(soundTypeFor(key))
         if (preferences.vibrateEnabled) {
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            binding?.keyboardView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         }
+    }
+
+    /** 按键类型 → 音效类别（普通键 / 空格 / 删除 / 回车略有区别） */
+    private fun soundTypeFor(key: KeySpec): KeyboardSoundManager.SoundType = when (key.type) {
+        KeyType.SPACE -> KeyboardSoundManager.SoundType.SPACE
+        KeyType.BACKSPACE -> KeyboardSoundManager.SoundType.DELETE
+        KeyType.ENTER, KeyType.ENTER_NEWLINE -> KeyboardSoundManager.SoundType.ENTER
+        else -> KeyboardSoundManager.SoundType.KEY
     }
 
     /** 首次启动清理旧的英文种子词，并登记本机设备 */

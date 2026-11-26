@@ -47,6 +47,8 @@ class BaiduVoiceTranslateEngine(
 
     override var onEvent: ((VoiceRecognitionEvent) -> Unit)? = null
 
+    override var onVolume: ((Float) -> Unit)? = null
+
     private val lock = Any()
     private var recorder: AudioRecord? = null
     private var recordingThread: Thread? = null

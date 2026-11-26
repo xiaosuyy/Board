@@ -23,6 +23,12 @@ interface VoiceRecognitionEngine {
 
     var onEvent: ((VoiceRecognitionEvent) -> Unit)?
 
+    /**
+     * 实时麦克风音量（0.0~1.0），用于声波动画。
+     * 在录音工作线程回调（与 [onEvent] 一致），宿主需自行切回主线程再驱动 UI。
+     */
+    var onVolume: ((Float) -> Unit)?
+
     /** 开始这一轮识别（打开麦克风 + 建立连接） */
     fun start(language: VoiceLanguage)
 
@@ -68,6 +74,14 @@ sealed class VoiceFailure(val message: String) {
     data object NotConfigured :
         VoiceFailure("请先配置语音识别服务（设置 → 语音）")
 
+    /** 本地离线模型不可用（已内置进 APK，正常不会出现） */
+    data object ModelNotReady :
+        VoiceFailure("离线语音模型不可用，请重新安装应用")
+
+    /** 本地离线模型加载失败（文件损坏 / 不完整） */
+    data object ModelLoadFailed :
+        VoiceFailure("离线语音模型加载失败，请重新安装应用")
+
     data object Permission :
         VoiceFailure("需要麦克风权限才能使用语音输入")
 
@@ -91,6 +105,10 @@ sealed class VoiceFailure(val message: String) {
 
     data object NoSpeech :
         VoiceFailure("没有听清，请再试一次")
+
+    /** 录音时间太短（快速松开 / 未发声） */
+    data object TooShort :
+        VoiceFailure("说话时间太短，请按住说话")
 
     /** 服务端错误码：只回显码，不猜含义、不显示原始 JSON */
     data class Service(val code: String?) :

@@ -46,6 +46,8 @@ class BaiduRealtimeVoiceRecognitionProvider(
 
     override var onEvent: ((VoiceRecognitionEvent) -> Unit)? = null
 
+    override var onVolume: ((Float) -> Unit)? = null
+
     private val lock = Any()
     private var webSocket: WebSocket? = null
     private var recorder: AudioRecord? = null

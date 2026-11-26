@@ -18,13 +18,11 @@ import com.board.ime.voice.VoiceState
  *
  * ```
  * [←]  今天天气怎么样
- *      系统语音识别 · 可能联网
  * ```
- * - **左侧固定返回**；右侧**没有**确认按钮（避免"确认/提交"语义）
- * - 中间整块区域就是状态/识别文本，**整块可点**（不是只有文字像素）
- * - 成功时直接显示识别文本（不显示"识别成功/已识别/完成"等多余文字）
- * - 字号**自适应**：10sp～19sp 之间自动缩放，最多两行，任何情况下不超出面板、不遮挡返回键
- * - 底部**常驻一行隐私说明**（不占用结果区），点它打开完整说明
+ * - **左侧固定返回**（取消本次识别）；右侧不再有多余按钮
+ * - 中间是实时识别文本，**整块可点**
+ * - 声波动画只画在空格键上（见 KeyboardView），此处保持简洁
+ * - 字号**自适应**：10sp～19sp 之间自动缩放，最多两行，不溢出面板、不遮挡返回键
  */
 class VoiceHeader @JvmOverloads constructor(
     context: Context,
@@ -41,27 +39,13 @@ class VoiceHeader @JvmOverloads constructor(
      */
     var onPrimary: (() -> Unit)? = null
 
-    /** 点击底部「语音内容会发送给识别服务 · 点此了解」：查看完整隐私说明 */
-    var onInfo: (() -> Unit)? = null
-
-    /**
-     * 点击右侧麦克风：**结束本次识别**（不是确认、不是提交）。
-     * 结果仍要用户点文字才上屏。
-     */
-    var onStop: (() -> Unit)? = null
-
     private var theme: KeyboardTheme = KeyboardTheme.from(
         context,
         com.board.ime.settings.ThemeMode.SYSTEM,
     )
 
     private val backSlot = PanelIconSlot(context, PanelIcon.BACK)
-
-    /** 右侧「结束识别」麦克风：VoiceHeader 专属操作位，不参与工具栏排布 */
-    private val micSlot = PanelIconSlot(context, PanelIcon.VOICE)
     private val textView = TextView(context)
-    private val hintView = TextView(context)
-    private val column = LinearLayout(context)
     private val pressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
     private var pressed = false
@@ -97,32 +81,9 @@ class VoiceHeader @JvmOverloads constructor(
             )
         }
 
-        hintView.apply {
-            text = HINT_TEXT
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            includeFontPadding = false
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, HINT_SP)
-            // 提示可点（这是查看完整隐私说明的入口）
-            paint.isUnderlineText = true
-        }
-
-        column.apply {
-            orientation = VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(textView, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-            addView(hintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        }
-        addView(column, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
-
-        // 最右侧固定给麦克风（不做任何工具栏布局计算；中间文本宽度自然减去左右两块）
-        addView(micSlot, LayoutParams(theme.toolHitSize, LayoutParams.MATCH_PARENT))
-        micSlot.visibility = android.view.View.GONE
+        addView(textView, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
 
         backSlot.onSlotClick = { onBack?.invoke() }
-        micSlot.onSlotClick = { onStop?.invoke() }
-        hintView.setOnClickListener { onInfo?.invoke() }
 
         textView.setOnTouchListener { _, event ->
             when (event.actionMasked) {
@@ -173,9 +134,7 @@ class VoiceHeader @JvmOverloads constructor(
     fun applyTheme(theme: KeyboardTheme) {
         this.theme = theme
         setBackgroundColor(theme.panelBackground)
-        hintView.setTextColor(theme.candidateMutedText)
         backSlot.applyTheme(theme)
-        micSlot.applyTheme(theme)
         render(lastState, lastText)
         requestLayout()
         invalidate()
@@ -190,10 +149,10 @@ class VoiceHeader @JvmOverloads constructor(
             pressPaint.color = theme.panelSurfacePressed
             val radius = theme.radiusSmall * 2f
             canvas.drawRoundRect(
-                column.left.toFloat(),
-                column.top.toFloat(),
-                column.right.toFloat(),
-                (column.top + textView.bottom).toFloat(),
+                textView.left.toFloat(),
+                textView.top.toFloat(),
+                textView.right.toFloat(),
+                textView.bottom.toFloat(),
                 radius,
                 radius,
                 pressPaint,
@@ -201,28 +160,33 @@ class VoiceHeader @JvmOverloads constructor(
         }
     }
 
-    /** 渲染：LISTENING/PROCESSING/RESULT 显示文本；ERROR 显示原因；都不带额外前缀 */
+    /** 渲染：LISTENING/PROCESSING 显示实时文字；RESULT 显示最终文本；ERROR 显示原因 */
     fun render(state: VoiceState, text: String) {
         lastState = state
         lastText = text
         textView.text = text
-        // 只有「最终结果」的文字可点（点文字 = 上屏）；识别中由右侧麦克风负责结束，
+        // 只有「最终结果」的文字可点（点文字 = 上屏）；识别中整块点击负责结束，
         // 这样绝不会把中途的 partial 当成最终文本提交。
         primaryEnabled = state == VoiceState.RESULT && text.isNotEmpty()
-        // 右侧麦克风只在"正在识别"出现；RESULT / ERROR 一律不显示任何右侧按钮（尤其不再有 ✓）
-        micSlot.visibility = if (state == VoiceState.LISTENING || state == VoiceState.PROCESSING) {
-            android.view.View.VISIBLE
-        } else {
-            android.view.View.GONE
-        }
         textView.setTextColor(
             when (state) {
                 VoiceState.RESULT, VoiceState.LISTENING, VoiceState.PROCESSING -> theme.candidateText
                 else -> theme.candidateMutedText
             },
         )
+        // 识别文字平滑更新：文本变化时轻微淡入，不闪烁、不突兀
+        if (text.isNotEmpty() && state == VoiceState.LISTENING) {
+            animateTextUpdate()
+        }
         if (!primaryEnabled && pressed) pressed = false
         invalidate()
+    }
+
+    /** 文字更新的轻量淡入（识别中的 partial 每约 1s 更新一次，短淡入最自然） */
+    private fun animateTextUpdate() {
+        textView.animate().cancel()
+        textView.alpha = 0.55f
+        textView.animate().alpha(1f).setDuration(140L).start()
     }
 
     override fun performClick(): Boolean {
@@ -234,9 +198,5 @@ class VoiceHeader @JvmOverloads constructor(
         /** 自适应字号范围：短文本明显更大，长文本自动缩小 */
         const val MIN_TEXT_SP = 10f
         const val MAX_TEXT_SP = 19f
-
-        /** 底部常驻隐私说明（不占用结果区） */
-        const val HINT_TEXT = "语音内容会发送给识别服务 · 点此了解"
-        const val HINT_SP = 9f
     }
 }

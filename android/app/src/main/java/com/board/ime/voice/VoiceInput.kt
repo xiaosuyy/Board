@@ -54,6 +54,9 @@ class VoiceInputController(
     /** (状态, 展示文本)：LISTENING 时是 partial 预览，SUCCESS 时是最终结果，ERROR 时是提示语 */
     var onState: ((VoiceState, String) -> Unit)? = null
 
+    /** 实时音量（0..1），主线程回调，驱动声波动画 */
+    var onVolume: ((Float) -> Unit)? = null
+
     private var recognizer: SpeechRecognizer? = null
     private var listening = false
     private var released = false
@@ -63,10 +66,8 @@ class VoiceInputController(
     /** 云端引擎的回调在工作线程上，统一 post 回主线程 */
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
-    /** 百度已配置就一定能用；否则才看系统有没有识别服务 */
-    fun isAvailable(): Boolean = cloud() != null || runCatching {
-        SpeechRecognizer.isRecognitionAvailable(context)
-    }.getOrDefault(false)
+    /** 只在本地引擎（模型已就绪）时可用；**不回退**系统识别服务，避免任何联网 */
+    fun isAvailable(): Boolean = cloud() != null
 
     private fun cloud(): VoiceRecognitionEngine? = cloudEngine?.takeIf { it.isConfigured() }
 
@@ -75,32 +76,20 @@ class VoiceInputController(
         if (released) return
         if (listening) return
 
-        // 首选云端实时识别（百度）：WebSocket 边录边发
+        // 只走本地离线引擎（模型未就绪时上层已拦截，这里兜底不再回退系统/云端）
         val engine = cloud()
-        if (engine != null) {
-            listening = true
-            engine.onEvent = { event -> onEngineEvent(event) }
-            emit(VoiceState.LISTENING, "")
-            runCatching {
-                engine.start(VoiceLanguage.forChineseMode(languageTag.startsWith("zh")))
-            }.onFailure {
-                listening = false
-                emit(VoiceState.ERROR, "无法启动语音识别")
-            }
+        if (engine == null) {
+            emit(VoiceState.ERROR, "离线语音模型未就绪，请先下载模型")
             return
         }
-
-        if (!isAvailable()) {
-            emit(VoiceState.ERROR, "此设备没有可用的语音识别服务")
-            return
-        }
-        val systemEngine = ensureRecognizer() ?: return
-        this.languageTag = languageTag
-        languageRetried = !allowLanguageRetry
-        val intent = buildIntent(languageTag)
         listening = true
+        engine.onEvent = { event -> onEngineEvent(event) }
+        // 音量在工作线程回调 → 切回主线程再驱动动画
+        engine.onVolume = { volume -> mainHandler.post { onVolume?.invoke(volume) } }
         emit(VoiceState.LISTENING, "")
-        runCatching { systemEngine.startListening(intent) }.onFailure {
+        runCatching {
+            engine.start(VoiceLanguage.forChineseMode(languageTag.startsWith("zh")))
+        }.onFailure {
             listening = false
             emit(VoiceState.ERROR, "无法启动语音识别")
         }
@@ -145,7 +134,12 @@ class VoiceInputController(
             when (event) {
                 is VoiceRecognitionEvent.Partial -> emit(VoiceState.LISTENING, event.text)
 
-                is VoiceRecognitionEvent.Final -> emit(VoiceState.RESULT, event.text)
+                is VoiceRecognitionEvent.Final -> {
+                    // 关键：复位 listening，否则下次长按会被 start() 的 `if (listening) return` 拦截，
+                    // 造成「第二次录音无法启动」的卡死。
+                    listening = false
+                    emit(VoiceState.RESULT, event.text)
+                }
 
                 // 用户已点停止、正在等收尾：保持"识别中"外观（麦克风仍在），不会被当成错误
                 is VoiceRecognitionEvent.Stopping -> emit(VoiceState.PROCESSING, event.text)
@@ -288,6 +282,12 @@ class VoiceInputSession(
         fun showVoicePanel()
         fun hideVoicePanel()
         fun updateVoicePanel(state: VoiceState, text: String)
+
+        /** 实时音量（0..1），驱动语音面板的声波动画 */
+        fun updateVoiceVolume(volume: Float)
+
+        /** 录音真正开始（已开麦）时给一次轻微触觉反馈 */
+        fun onVoiceRecordingStarted()
         /** 引导用户去授权（打开设置页请求权限 / 系统设置） */
         fun requestMicPermission()
         fun notify(message: String)
@@ -308,8 +308,12 @@ class VoiceInputSession(
     /** 最终识别文本；只有用户点击才提交，返回则丢弃 */
     private var pendingText = ""
 
+    /** 长按空格模式：Final 到达后自动提交，无需再点文本 */
+    private var autoCommit = false
+
     init {
         controller.onState = { newState, text -> handleState(newState, text) }
+        controller.onVolume = { volume -> host.updateVoiceVolume(volume) }
     }
 
     val currentState: VoiceState
@@ -322,6 +326,25 @@ class VoiceInputSession(
             VoiceState.RESULT -> commitPending()
             else -> start()
         }
+    }
+
+    /** 长按空格：开始录音（松开后自动提交，无需点文本） */
+    fun pressStart() {
+        autoCommit = true
+        start()
+    }
+
+    /** 长按空格：松开，停止收音（Final 到达后自动提交） */
+    fun pressStop() {
+        if (state == VoiceState.LISTENING || state == VoiceState.PROCESSING) {
+            controller.stop()
+        }
+    }
+
+    /** 长按空格：手指移出，取消（不提交任何文字） */
+    fun pressCancel() {
+        autoCommit = false
+        cancel()
     }
 
     /** 点击面板中间的文字：识别中 = 结束收音；有结果 = 提交上屏 */
@@ -364,6 +387,11 @@ class VoiceInputSession(
      * 用户已确认隐私说明：**这时才真正开始识别**（此前不碰麦克风）。
      */
     fun onPrivacyAccepted() {
+        if (autoCommit) {
+            // 长按空格场景：确认隐私时手指早已松开，不自动开始，等用户再次长按
+            autoCommit = false
+            return
+        }
         start()
     }
 
@@ -395,6 +423,8 @@ class VoiceInputSession(
         host.showVoicePanel()
         host.updateVoicePanel(VoiceState.LISTENING, "")
         controller.start(if (host.isChineseMode) LANGUAGE_ZH else LANGUAGE_EN)
+        // 轻微触觉反馈，明确「录音已开始」
+        host.onVoiceRecordingStarted()
     }
 
     private fun handleState(newState: VoiceState, text: String) {
@@ -403,9 +433,13 @@ class VoiceInputSession(
             VoiceState.LISTENING, VoiceState.PROCESSING -> host.updateVoicePanel(newState, text)
 
             VoiceState.RESULT -> {
-                // 只显示，不上屏：等用户点击文本才提交（partial 永不提交）
+                // 长按空格：松开即上屏；点击工具：等用户点文本再上屏
                 pendingText = text
-                host.updateVoicePanel(newState, text)
+                if (autoCommit) {
+                    commitPending()
+                } else {
+                    host.updateVoicePanel(newState, text)
+                }
             }
 
             VoiceState.ERROR -> {
@@ -431,9 +465,9 @@ class VoiceInputSession(
         const val LANGUAGE_EN = "en-US"
         private const val CURSOR_AT_END = 1
 
-        /** 无服务 / 无权限：面板上两行说明（不依赖 Toast、不依赖通知权限） */
+        /** 模型不可用：面板上两行说明（不依赖 Toast、不依赖通知权限） */
         const val UNAVAILABLE_MESSAGE =
-            "没有可用的语音识别服务\n请在「设置 → 语音」配置百度的 AppID / API Key"
+            "离线语音模型不可用\n请重新安装应用，或到「设置 → 语音」检查模型状态"
         const val PERMISSION_MESSAGE =
             "需要麦克风权限才能使用语音输入\n请在系统弹窗中允许，然后再次点击语音按钮"
 

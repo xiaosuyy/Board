@@ -65,10 +65,10 @@ android {
         applicationId = "com.board.ime"
         minSdk = 26
         targetSdk = 36
-        // v1.2.4：输入体验优化（词库 / 候选 / 符号 / 毛玻璃 / 斗图 / 金额）。
-        // versionCode 保持单调递增（1 → 2 → … → 9 → 10），不破坏已有升级链。
-        versionCode = 10
-        versionName = "1.2.4"
+        // v1.3.0：语音输入交互重构 + 按键音效系统（开关 / 音量 / 双音效风格），移除斗图。
+        // versionCode 保持单调递增（1 → 2 → … → 10 → 11），不破坏已有升级链。
+        versionCode = 11
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -95,6 +95,12 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+    }
+
+    androidResources {
+        // 内置的 onnx 是已量化权重，二次压缩收益极小、却会显著拖慢打包与首次加载；
+        // 不压缩还能让 AssetManager 更高效地读取模型。
+        noCompress += "onnx"
     }
 
     compileOptions {
@@ -180,6 +186,9 @@ dependencies {
     implementation(libs.material)
 
     implementation(libs.kotlinx.coroutines.android)
+
+    // 本地离线语音识别：sherpa-onnx Android SDK（含各 ABI 原生库）
+    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

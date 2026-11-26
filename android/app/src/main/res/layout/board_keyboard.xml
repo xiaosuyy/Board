@@ -116,13 +116,6 @@
             android:layout_height="0dp"
             android:visibility="gone" />
 
-        <!-- 斗图内容区：与表情互斥，占键盘位置（总高度不变） -->
-        <com.board.ime.ui.panel.MemePanel
-            android:id="@+id/meme_panel"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:visibility="gone" />
-
         <com.board.ime.ui.KeyboardView
             android:id="@+id/keyboard_view"
             android:layout_width="match_parent"

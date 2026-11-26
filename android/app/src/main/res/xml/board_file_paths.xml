@@ -7,8 +7,4 @@
     <files-path
         name="clipboard_images"
         path="clipboard-images/" />
-    <!-- 斗图分享：图片从 assets 复制到私有 cache，再经 FileProvider 分享到微信 / QQ -->
-    <cache-path
-        name="meme_share"
-        path="meme_share/" />
 </paths>

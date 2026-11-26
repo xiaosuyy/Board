@@ -68,6 +68,16 @@ class BoardPreferences(context: Context) : SyncContentGate {
         get() = prefs.getBoolean(KEY_SOUND, true)
         set(value) = prefs.edit().putBoolean(KEY_SOUND, value).apply()
 
+    /** 按键音效音量（0~100，默认 50）。关闭音效时保留上次值。 */
+    var soundVolume: Int
+        get() = prefs.getInt(KEY_SOUND_VOLUME, 50)
+        set(value) = prefs.edit().putInt(KEY_SOUND_VOLUME, value.coerceIn(0, 100)).apply()
+
+    /** 按键音效风格（"DEFAULT" / "PURE"，默认 DEFAULT）。 */
+    var soundStyle: String
+        get() = prefs.getString(KEY_SOUND_STYLE, "DEFAULT") ?: "DEFAULT"
+        set(value) = prefs.edit().putString(KEY_SOUND_STYLE, value).apply()
+
     /** 按键震动 */
     var vibrateEnabled: Boolean
         get() = prefs.getBoolean(KEY_VIBRATE, true)
@@ -171,6 +181,14 @@ class BoardPreferences(context: Context) : SyncContentGate {
     var voicePrivacyAcknowledged: Boolean
         get() = prefs.getBoolean(KEY_VOICE_PRIVACY_ACK, false)
         set(value) = prefs.edit().putBoolean(KEY_VOICE_PRIVACY_ACK, value).apply()
+
+    /**
+     * 长按空格触发语音输入的时长（毫秒）。默认 400ms。
+     * 只存一个整数；绝不涉及语音内容或识别文本。
+     */
+    var voiceLongPressDelayMs: Int
+        get() = prefs.getInt(KEY_VOICE_LONG_PRESS_MS, 400)
+        set(value) = prefs.edit().putInt(KEY_VOICE_LONG_PRESS_MS, value).apply()
 
     /**
      * 翻译语言选择（只记住选过哪个语言）。
@@ -307,6 +325,8 @@ class BoardPreferences(context: Context) : SyncContentGate {
         val DEFAULT_MODE_FRESH_INSTALL = InputMode.CHINESE
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_SOUND = "sound_enabled"
+        const val KEY_SOUND_VOLUME = "sound_volume"
+        const val KEY_SOUND_STYLE = "sound_style"
         const val KEY_VIBRATE = "vibrate_enabled"
         const val KEY_ENGINE = "engine_kind"
         const val KEY_LAYOUT = "layout_mode"
@@ -326,6 +346,7 @@ class BoardPreferences(context: Context) : SyncContentGate {
         const val KEY_RIME_FUZZY_GROUPS = "rime_fuzzy_groups"
         const val KEY_SKIP_SENSITIVE = "skip_sensitive_clipboard"
         const val KEY_VOICE_PRIVACY_ACK = "voice_privacy_acknowledged"
+        const val KEY_VOICE_LONG_PRESS_MS = "voice_long_press_ms"
         const val KEY_TRANSLATION_SOURCE = "translation_source_language"
         const val KEY_TRANSLATION_TARGET = "translation_target_language"
         const val KEY_DEVELOPER = "developer_mode"
